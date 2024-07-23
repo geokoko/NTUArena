@@ -9,6 +9,7 @@ const PlayerSchema = new mongoose.Schema({
     isPlaying : { type : Boolean, default : true },
     waitingSince : { type : Date, default : Date.now },
     gameHistory : [{ type : mongoose.Schema.Types.ObjectId, ref : 'Game' }],
+    colorHistory : [{ type : String, enum : ['white', 'black'] }]
 });
 
 module.exports = mongoose.model('Player', PlayerSchema);
