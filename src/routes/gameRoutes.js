@@ -7,3 +7,5 @@ router.post('/create', gameController.createGame);
 
 // Route to finish a game
 router.post('/finish', gameController.finishGame);
+
+module.exports = router;
