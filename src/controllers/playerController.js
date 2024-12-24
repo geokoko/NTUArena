@@ -18,6 +18,21 @@ exports.getPlayers = async (req, res) => {
     }
 };
 
+exports.getPlayerById = async (req, res) => {
+	try {
+		const { playerID } = req.params;
+		const player = await Player.findById(playerID);
+
+		if (player) {
+			res.status(200).json({ player });
+		} else {
+			res.status(404).json({ message: 'Player not found' });
+		}
+	} catch (err) {
+		res.status(500).json({ error: err.message });
+	}
+};
+
 exports.addPlayer = async (req, res) => {
     try {
         const { first_name, last_name, elo } = req.body;
@@ -28,6 +43,24 @@ exports.addPlayer = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+exports.updatePlayer = async (req, res) => {
+	try {
+		const { playerID } = req.params;
+		const updatedDetails = req.body;
+		const player = await Player.findById(playerID);
+
+		if (player) {
+			player.set(updatedDetails);
+			await player.save();
+			res.status(200).json({ player });
+		} else {
+			res.status(404).json({ message: 'Player not found' });
+		}
+	} catch (err) {
+		res.status(500).json({ error: err.message });
+	}
+}
 
 exports.changePlayingState = async (req, res) => {
     try {

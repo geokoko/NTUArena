@@ -2,7 +2,7 @@ const express = require('express');
 const connectDB = require('./config/database');
 const bodyParser = require('body-parser');
 
-require('dotenv').config();
+require('dotenv').config({ path: __dirname + '/.env' });
 
 const app = express();
 
@@ -15,7 +15,11 @@ const playerroutes = require('./routes/playerRoutes');
 app.use('/game', gameroutes);
 app.use('/player', playerroutes);
 
-app.listen(3000, () => { 
-    console.log('Server is running on port 3000');
-    connectDB();
+connectDB().then(() => {
+	app.listen(process.env.PORT, () => {
+		console.log(`Server is running on port ${process.env.PORT}`);
+	});
+}).catch(err => {
+	console.log("Failed to connect to database:", err.message);
+	process.exit(1);
 });
