@@ -1,22 +1,26 @@
 const express = require('express');
 const connectDB = require('./config/database');
-const bodyParser = require('body-parser');
 
 require('dotenv').config({ path: __dirname + '/.env' });
 
 const app = express();
+app.use(express.json());
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// Import routes
+const tournamentRoutes = require('./routes/tournamentRoutes');
+app.use('/tournaments', tournamentRoutes);
 
-const gameroutes = require('./routes/gameRoutes');
-const playerroutes = require('./routes/playerRoutes');
+const playerRoutes = require('./routes/playerRoutes');
+app.use('/players', playerRoutes);
 
-app.use('/game', gameroutes);
-app.use('/player', playerroutes);
+const gameRoutes = require('./routes/gameRoutes');
+app.use('/games', gameRoutes);
+
+const userRoutes = require('./routes/userRoutes');
+app.use('/users', userRoutes);
 
 connectDB().then(() => {
-	app.listen(process.env.PORT, () => {
+	app.listen(5000, () => {
 		console.log(`Server is running on port ${process.env.PORT}`);
 	});
 }).catch(err => {

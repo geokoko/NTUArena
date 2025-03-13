@@ -2,25 +2,17 @@ const express = require('express');
 const router = express.Router();
 const playerController = require('../controllers/playerController');
 
-// Route to get the player count
-router.get('/', playerController.getPlayerCount);
-
-// Route to get all players
+router.get('/count', playerController.getPlayerCount);
 router.get('/', playerController.getPlayers);
-
-// Route to get a player by ID
 router.get('/:id', playerController.getPlayerById);
+router.get('/:id/stats', playerController.getPlayerStats);
 
-// Route to add a new player
 router.post('/', playerController.addPlayer);
+router.put('/:id', playerController.updatePlayer);
+router.put('/toggle-playing', playerController.changePlayingState);
 
-// Route to update a player's details
-router.put('/update/:id', playerController.updatePlayer);
-
-// Route to change the playing state of a player
-router.post('/changePlayingState/:id', playerController.changePlayingState);
-
-// Route to delete a player
-router.delete('/delete/:id', playerController.deletePlayer);
+router.delete('/', playerController.deletePlayer);
+router.post('/recent-opponent', playerController.addRecentOpponent);
 
 module.exports = router;
+

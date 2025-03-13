@@ -1,65 +1,41 @@
-const Game = require('../models/Game');
-const Player = require('../models/Player');
+const gameService = require('../services/gameService');
 
-exports.createGame = async (req, res) => {
+const createGame = async (req, res) => {
     try {
-        const { playerWhiteId, playerBlackId } = req.body;
-        const playerWhite = await Player.findById(playerWhiteId);
-        const playerBlack = await Player.findById(playerBlackId);
-        
-        if (!playerWhite || !playerBlack) {
-            return res.status(404).json({ message: 'Player not found' });
-        }
-
-        const newGame = new Game({ playerWhite: playerWhite._id, playerBlack: playerBlack._id });
-        await newGame.save();
-
-        playerWhite.isPlaying = true;
-        playerBlack.isPlaying = true;
-        playerWhite.gameHistory.push(newGame._id);
-        playerBlack.gameHistory.push(newGame._id);
-        playerWhite.colorHistory.push('white');
-        playerBlack.colorHistory.push('black');
-
-        await playerWhite.save();
-        await playerBlack.save();
-
-        res.status(201).json({ game: newGame });
+        const game = await gameService.createGame(req.body);
+        res.status(201).json({ game });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-}
+};
 
-exports.finishGame = async (req, res) => {
+const getAllGames = async (req, res) => {
     try {
-        const { gameId, resultColor } = req.body;
-        const game = await Game.findById(gameId);
+        const games = await gameService.getAllGames();
+        res.status(200).json({ games });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
 
-        if (!game) {
-            return res.status(404).json({ message: 'Game not found' });
-        }
-
-        game.isFinished = true;
-        game.resultColor = resultColor;
-        await game.save();
-
-        const playerWhite = await Player.findById(game.playerWhite);
-        const playerBlack = await Player.findById(game.playerBlack);
-
-        if (playerWhite) {
-            playerWhite.isPlaying = false;
-            playerWhite.waitingSince = Date.now();
-            await playerWhite.save();
-        }
-
-        if (playerBlack) {
-            playerBlack.isPlaying = false;
-            playerBlack.waitingSince = Date.now();
-            await playerBlack.save();
-        }
-
+const getGameById = async (req, res) => {
+    try {
+        const game = await gameService.getGameById(req.params.id);
+        if (!game) return res.status(404).json({ message: 'Game not found' });
         res.status(200).json({ game });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
+
+const updateGameResult = async (req, res) => {
+    try {
+        const updatedGame = await gameService.updateGameResult(req.params.id, req.body);
+        res.status(200).json({ game: updatedGame });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+module.exports = { createGame, getAllGames, getGameById, updateGameResult };
+

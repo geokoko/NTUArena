@@ -9,22 +9,22 @@ function justPlayedTogether (player1, player2) {
 }
 
 function calculateColorScore (player) {
-    const color_Threshold = 3; // penalizing repeated color choices after having one color occur three times more than the other
-    const colorPenalty = 200;
+    const COLOR_THRESHOLD = 3; // penalizing repeated color choices after having one color occur three times more than the other
+    const COLOR_PENALTY = 200;
 
     const countColor = (colorHistory, color) => colorHistory.filter(c => c === color).length;
 
-    const playerWhite = countColor(player.colorHistory, 'white');``
+    const playerWhite = countColor(player.colorHistory, 'white');
     const playerBlack = countColor(player.colorHistory, 'black');
 
     let colorScore = 0;
 
-    if (playerWhite - playerBlack > color_Threshold) {
-        colorScore += colorPenalty;
+    if (playerWhite - playerBlack > COLOR_THRESHOLD) {
+        colorScore += COLOR_PENALTY;
     }
 
-    if (playerBlack - playerWhite > color_Threshold) {
-        colorScore -= colorPenalty;
+    if (playerBlack - playerWhite > COLOR_THRESHOLD) {
+        colorScore -= COLOR_PENALTY;
     }
 
     return colorScore;
@@ -38,8 +38,12 @@ function pairingPenalty (player1, player2) {
     const colorScore2 = calculateColorScore(player2);
 
     let colorPenalty = 0;
+	const extremeThreshold = 2 * 200;
 
-    if (colorScore1 >= 2*200 && colorScore2 >= 2*200 || colorScore1 <= -2*200 && colorScore2 <= -2*200) {
+    if (
+		(colorScore1 >= extremeThreshold && colorScore2 >= extremeThreshold) || 
+		(colorScore1 <= -extremeThreshold && colorScore2 <= -extremeThreshold)
+	) {
         colorPenalty = 2000;
     }
 
@@ -62,25 +66,34 @@ function generatePairingScores(players) {
 }
 
 function sortPairsByScore(pairs) {
-	pairs.sort((a, b) => a.score - b.score);
+	return pairs.sort((a, b) => a.score - b.score);
 }
 
 function greedyPairing(players) {
 	const pairings = [];
 	const pairedPlayers = new Set();
 
+	// Create a list of all possible pairs with penalties
 	const possiblePairs = generatePairingScores(players);
+	// Sort them by ascending penalty
 	const sortedPairs = sortPairsByScore(possiblePairs);
 
-	for (const {player1, player2} of sortedPairs) {
-		if (penalty > MAX_PENALTY_THRESHOLD) {
+	// Pick pairs from lowest to highest penalty
+	for (const {player1, player2, score} of sortedPairs) {
+		if (score > MAX_PENALTY_THRESHOLD) {
+			// Skip if penalty is too large
 			continue;
 		}
-		if (!pairedPlayers.has(player1.id) && !pairedPlayers.has(player2.id)) {
-			pairings.push({player1, player2});
-			pairedPlayers.add(player1.id);
-			pairedPlayers.add(player2.id);
-		}
+
+		// skip if either player is already paired
+        if (pairedPlayers.has(player1.id) || pairedPlayers.has(player2.id)) {
+            continue;
+        }
+
+        // accept this pair
+        pairings.push({ player1, player2 });
+        pairedPlayers.add(player1.id);
+        pairedPlayers.add(player2.id);
 	}
 
 	return pairings;
