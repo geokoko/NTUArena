@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 
+const User = require('./User');
+const Tournament = require('./Tournament');
+
 const PlayerSchema = new mongoose.Schema({
 	user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 	tournament: { type: mongoose.Schema.Types.ObjectId, ref: 'Tournament', required: true },
@@ -11,3 +14,5 @@ const PlayerSchema = new mongoose.Schema({
     colorHistory : [{ type : String, enum : ['white', 'black'] }],
     recentOpponents : [{ type : mongoose.Schema.Types.ObjectId, ref : 'Player' }]
 });
+
+module.exports = mongoose.model('Player', PlayerSchema);

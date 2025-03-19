@@ -40,6 +40,7 @@ const getPlayerStats = async (req, res) => {
 const addPlayer = async (req, res) => {
 	try {
 		const player = await playerService.createPlayer(req.body);
+		await player.save();
 		res.status(201).json({ player });
 	} catch (err) {
 		res.status(500).json({ error: err.message });
