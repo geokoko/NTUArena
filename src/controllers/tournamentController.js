@@ -1,9 +1,11 @@
 const Tournament = require('../models/Tournament');
 const Player = require('../models/Player');
+const tournamentService = require('../services/tournamentService');
 
 const createTournament = async (req, res) => {
 	try {
 		const newTournament = new Tournament(req.body);
+		await newTournament.save();
 		res.status(201).json({ message: 'Tournament created successfully', tournament: newTournament });
 	} catch (err) {
 		res.status(500).json({ err: err.message });
@@ -13,6 +15,7 @@ const createTournament = async (req, res) => {
 const getTournaments = async (req, res) => {
 	try {
 		const tournaments = await tournamentService.getAllTournaments();
+		console.log(tournaments);
 		res.status(200).json(tournaments);
 	} catch (err) {
 		res.status(500).json({ message: err.message });

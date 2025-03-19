@@ -8,5 +8,9 @@ const getUserById = async (id) => {
     return await User.findById(id);
 };
 
-module.exports = { getAllUsers, getUserById };
+const addUser = async (data) => {
+    return await User.create(data);
+}
+
+module.exports = { getAllUsers, getUserById, addUser};
 

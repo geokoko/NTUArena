@@ -19,5 +19,16 @@ const getUserById = async (req, res) => {
     }
 };
 
-module.exports = { getAllUsers, getUserById };
+const addUser = async (req, res) => {
+    try {
+        const user = await userService.addUser(req.body);
+        await user.save();
+        res.status(201).json({ user });
+    }
+    catch {
+        res.status(500).json({error: err.message});
+    }
+}
+
+module.exports = { getAllUsers, getUserById, addUser};
 
