@@ -4,16 +4,13 @@ const tournamentController = require('../controllers/tournamentController');
 
 // Create tournament
 router.post('/create', tournamentController.createTournament);
+router.put('/:id', tournamentController.updateTournament);
 
 // Load arena (tournament view)
 router.get('/', tournamentController.getTournaments);
 
-// Player actions
-//router.post('/:id/join', tournamentController.joinTournament);
-//router.post('/:id/leave', tournamentController.leaveTournament);
+// Get Standings (new route)
+router.get('/:id/standings', tournamentController.getStandings);
 
-// Game & Progress
-//router.get('/:id/games', tournamentController.getOngoingGames);
-//router.get('/:id/standings', tournamentController.getTournamentStandings);
 
 module.exports = router;
