@@ -1,0 +1,29 @@
+@startuml
+actor Admin
+actor Player
+
+rectangle "ArenaManager" {
+		(Register for Tournament) as R
+		(View Live Stats) as S
+		(View Historical Stats) as H
+
+		(Create Tournament) as C
+		(Start Tournament) as ST
+		(View Players and Games) as VP
+		(Manage Players and Games) as MP
+		(Record Game Results) as RG
+		(End Tournament) as ET
+
+		User --> R
+		User --> S
+		User --> H
+
+		Admin --> C
+		Admin --> ST
+		Admin --> VP
+		Admin --> MP
+		Admin --> RG
+		Admin --> ET
+}
+@enduml
+

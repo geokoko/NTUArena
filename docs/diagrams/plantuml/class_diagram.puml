@@ -1,0 +1,49 @@
+@startuml
+class User {
+		+String username
+		+String email
+		+String password
+		+String role
+		+Number fide_id
+		+Number globalElo
+		+Date registeredAt
+}
+
+class Player {
+		+User user
+		+Tournament tournament
+		+Number score
+		+Number liveRating
+		+Boolean isPlaying
+		+Date waitingSince
+		+List<Game> gameHistory
+		+List<String> colorHistory
+		+List<Player> recentOpponents
+}
+
+class Tournament {
+		+String name
+		+String location
+		+Date startDate
+		+Date endDate
+		+String status
+		+List<Player> participants
+		+List<{player: Player, score: Number}> scoreboard
+		+List<Game> games
+}
+
+class Game {
+		+Player playerWhite
+		+Player playerBlack
+		+Boolean isFinished
+		+Date finishedAt
+		+String resultColor
+}
+
+User "1" -- "1..*" Player : has
+Tournament "1" -- "0..*" Player : has
+Tournament "1" -- "0..*" Game : hosts
+Player "1" -- "0..*" Game : plays
+Game "1" --> "1" Player : White
+Game "1" --> "1" Player : Black
+@enduml

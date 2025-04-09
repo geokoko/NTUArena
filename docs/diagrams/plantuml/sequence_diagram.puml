@@ -1,0 +1,80 @@
+@startuml
+actor Player
+actor Admin
+participant Frontend
+participant Backend
+database MongoDB
+
+== Registration Phase ==
+
+Player -> Frontend : Sign up (username, email, password)
+Frontend -> Backend : POST /register
+Backend -> MongoDB : Save User
+MongoDB --> Backend : User created
+Backend --> Frontend : Registration success
+
+Player -> Frontend : Log in (username, password)
+Frontend -> Backend : POST /login
+Backend -> MongoDB : Authenticate User
+MongoDB --> Backend : User authenticated
+Backend --> Frontend : Login success
+
+Player -> Frontend : Join Tournament (select tournament)
+Frontend -> Backend : POST /joinTournament
+Backend -> MongoDB : Create Player document
+MongoDB --> Backend : Player created
+Backend --> Frontend : Join success
+
+== Pre-Tournament Preparation ==
+
+Admin -> Frontend : Log in (admin credentials)
+Frontend -> Backend : POST /admin/login
+Backend -> MongoDB : Authenticate Admin
+MongoDB --> Backend : Admin authenticated
+Backend --> Frontend : Admin dashboard access
+
+Admin -> Frontend : Create Tournament (name, date, settings)
+Frontend -> Backend : POST /createTournament
+Backend -> MongoDB : Save Tournament
+MongoDB --> Backend : Tournament created
+Backend --> Frontend : Tournament listed
+
+== Tournament Start ==
+
+Admin -> Frontend : Start Tournament
+Frontend -> Backend : POST /startTournament
+Backend -> MongoDB : Update Tournament status
+MongoDB --> Backend : Tournament started
+Backend --> Frontend : Show live dashboard
+
+== Live Play / Arena Flow ==
+
+Backend -> MongoDB : Monitor available Players
+loop Continuous Pairing
+    Backend -> Backend : Auto-pair available players
+    Backend -> MongoDB : Create Game document (PlayerWhite vs PlayerBlack)
+    MongoDB --> Backend : Game created
+    Backend --> Frontend : Show new pairings
+end
+
+== Game Finish ==
+
+Admin -> Frontend : Record Game Result (select winner / draw)
+Frontend -> Backend : POST /recordResult
+Backend -> MongoDB : Update Game document
+MongoDB --> Backend : Game result updated
+Backend -> MongoDB : Update Player scores
+MongoDB --> Backend : Scores updated
+Backend --> Backend : Make new players available for pairing
+Backend --> Frontend : Standings refreshed
+
+== Tournament End ==
+
+Admin -> Frontend : End Tournament
+Frontend -> Backend : POST /endTournament
+Backend -> MongoDB : Mark Tournament completed
+MongoDB --> Backend : Tournament finished
+Backend --> Frontend : Final standings shown
+
+@enduml
+

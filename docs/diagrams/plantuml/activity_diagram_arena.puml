@@ -1,0 +1,26 @@
+// Explains how the tournament is organized and how players are paired for games.
+@startuml
+start
+
+:Players Register Online;
+:Admin Prepares Tournament;
+
+:Players Arrive at Venue;
+
+:Admin Starts Tournament;
+
+repeat
+    :Detect Available Players;
+    :Pair Players Automatically;
+    :Players Play Game (OTB);
+
+    :Admin Records Game Results;
+    :Update Player Scores;
+repeat while (Tournament Time Ongoing?)
+
+:Announce Final Standings;
+:End Tournament;
+
+stop
+@enduml
+
