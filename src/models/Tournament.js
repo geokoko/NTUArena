@@ -13,7 +13,6 @@ const tournamentSchema = new mongoose.Schema({
 		score: { type: Number, default: 0 }
 	}],
 	games: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Game' }]
-	//players: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }]
-});
+);
 
 module.exports = mongoose.model('Tournament', tournamentSchema);
