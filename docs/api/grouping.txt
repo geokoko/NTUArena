@@ -1,6 +1,7 @@
 /auth
   POST /register
   POST /login
+  POST /logout
 
 /tournaments
   POST /                		-> Admin creates tournament
@@ -10,11 +11,19 @@
   GET  /:id/standings   		-> Public standings view
   POST /:id/join        		-> Player joins tournament
   GET  /:id/players     		-> Admin view of players
+  GET  /:id/games	   			-> Admin view of games
+
+/users
+  GET /:userId/profile          -> Get user public profile
+  GET /addUser  				-> Add new user
+  GET /:userId/update        	-> Update user info
+  DELETE /:userId/delete        -> Delete user account
 
 /players
   GET /:playerId/stats  		-> Player views their stats
 
 /games
   POST /:gameId/submitResult 	-> Admin records game result
-  GET /activegames           	-> Admin view of ongoing games
+  GET /active		           	-> Admin view of ongoing games
+  GET /:gameId			       	-> Admin view of game details
 
