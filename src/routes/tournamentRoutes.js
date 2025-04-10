@@ -2,15 +2,20 @@ const express = require('express');
 const router = express.Router();
 const tournamentController = require('../controllers/tournamentController');
 
-// Create tournament
-router.post('/create', tournamentController.createTournament);
-router.put('/:id', tournamentController.updateTournament);
+// Create, start and end tournament
+router.post('/', tournamentController.createTournament);
+router.post('/:id/start', tournamentController.startTournament);
+router.post('/:id/end', tournamentController.endTournament);
 
-// Load arena (tournament view)
-router.get('/', tournamentController.getTournaments);
+// Get tournament public info by id
+router.get('/:id', tournamentController.getTournamentById);
 
-// Get Standings (new route)
+// Get Standings & active Players & games
 router.get('/:id/standings', tournamentController.getStandings);
+router.get('/:id/players', tournamentController.getPlayers);
+router.get('/:id/games', tournamentController.getGames);
 
+// Public endpoint to join a tournament
+router.post('/:id/join', tournamentController.joinTournament);
 
 module.exports = router;
