@@ -2,8 +2,6 @@ require('dotenv').config({ path: __dirname + '/../.env' });
 
 const express = require('express');
 const connectDB = require('./config/database');
-const Player = require('./models/Player');
-
 
 const app = express();
 app.use(express.json());
@@ -20,6 +18,9 @@ app.use('/games', gameRoutes);
 
 const userRoutes = require('./routes/userRoutes');
 app.use('/users', userRoutes);
+
+const authRoutes = require('./routes/authRoutes');
+app.use('/auth', authRoutes);
 
 connectDB().then(() => {
 	app.listen(5000, () => {
