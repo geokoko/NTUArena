@@ -4,27 +4,27 @@
   POST /logout
 
 /tournaments
-  POST /                		    -> Admin creates tournament
-  POST /:id/start       		    -> Admin starts tournament
-  POST /:id/end         		    -> Admin ends tournament
-  GET  /:id             		    -> Get tournament public info
-  GET  /:id/standings   		    -> Public standings view
-  POST /:id/join        		    -> Player joins tournament
-  POST /:id/leave               -> Player leaves tournament
-  GET  /:id/players     		    -> Admin view of players
-  GET  /:id/games	   			      -> Admin view of games
+  POST /                		                     -> Admin creates tournament
+  POST /:id/start       		                     -> Admin starts tournament
+  POST /:id/end         		                     -> Admin ends tournament
+  GET  /:id             		                     -> Get tournament public info
+  GET  /:id/standings   		                     -> Public standings view
+  POST /:id/join        		                     -> Player joins tournament
+  POST /:id/leave                                -> Player leaves tournament
+  GET  /:id/players     		                     -> Admin view of players
+  GET  /:id/games	   			                       -> Admin view of all in a tournament games
+  GET  /:id/active		                           -> Admin view of ongoing games in a specific tournament
 
 /users
-  GET /:userId/profile          -> Get user public profile
-  GET /addUser  				        -> Admin add new user
-  GET /:userId/update        	  -> Update user info
-  DELETE /:userId/delete        -> Delete user account
+  GET /:userId/profile                           -> Get user public profile
+  GET /addUser  				                         -> Admin add new user
+  GET /:userId/update        	                   -> Update user info
+  DELETE /:userId/delete                         -> Delete user account
 
 /players
-  GET /:userId/:tournamentId/stats  		      -> Player views their stats
+  GET /:userId/:tournamentId/stats  		         -> Player views their stats
 
 /games
-  POST /:gameId/submitResult 	  -> Admin records game result
-  GET /active		           	    -> Admin view of ongoing games
-  GET /:gameId			       	    -> Admin view of game details
+  POST /:gameId/submitResult 	                   -> Admin records game result
+  GET /:gameId			       	                     -> Admin view of game details
 
