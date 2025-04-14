@@ -10,6 +10,7 @@
   GET  /:id             		    -> Get tournament public info
   GET  /:id/standings   		    -> Public standings view
   POST /:id/join        		    -> Player joins tournament
+  POST /:id/leave               -> Player leaves tournament
   GET  /:id/players     		    -> Admin view of players
   GET  /:id/games	   			      -> Admin view of games
 
