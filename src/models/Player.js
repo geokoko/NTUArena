@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const User = require('./User');
 const Tournament = require('./Tournament');
+const Game = require('./Game');
 
 const PlayerSchema = new mongoose.Schema({
 	user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

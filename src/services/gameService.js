@@ -1,20 +1,33 @@
 const Game = require('../models/Game');
 
-const createGame = async (data) => {
-    return await Game.create(data);
+async function submitGameResult (gameId, result) => {
+	const game = await Game.findById(gameId).populate('playerWhite playerBlack');
+	if (!game) {
+		throw new Error('Game not found');
+	}
+	
+	if (game.isFinished) {
+		throw new Error('Game already finished');
+	}
+
+	game.isFinished = true;
+	game.finishedAt = new Date();
+	game.resultColor = result;
+	await game.save();
+
+	return { message: 'Game result submitted successfully', game };
+}
+
+async function fetchGameById(gameId) {
+	const game = await Game.findById(gameId).populate('playerWhite playerBlack');
+	if (!game) {
+		throw new Error('Game not found');
+	}
+
+	return game;
+}
+
+module.exports = {
+	submitGameResult,
+	fetchGameById
 };
-
-const getAllGames = async () => {
-    return await Game.find().populate('playerWhite playerBlack');
-};
-
-const getGameById = async (id) => {
-    return await Game.findById(id).populate('playerWhite playerBlack');
-};
-
-const updateGameResult = async (id, { resultColor, isFinished }) => {
-    return await Game.findByIdAndUpdate(id, { resultColor, isFinished, finishedAt: new Date() }, { new: true });
-};
-
-module.exports = { createGame, getAllGames, getGameById, updateGameResult };
-

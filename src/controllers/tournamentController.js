@@ -2,106 +2,104 @@ const Tournament = require('../models/Tournament');
 const Player = require('../models/Player');
 const tournamentService = require('../services/tournamentService');
 
-const createTournament = async (req, res) => {
+exports.createTournament = async (req, res) => {
+	const settings = req.body;
 	try {
-		const newTournament = new Tournament(req.body);
-		await newTournament.save();
-		res.status(201).json({ message: 'Tournament created successfully', tournament: newTournament });
-	} catch (err) {
-		res.status(500).json({ err: err.message });
+		const tournament = await tournamentService.createTournament(settings);
+		res.status(201).json(tournament);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
 	}
 };
 
-const getTournaments = async (req, res) => {
+exports.startTournament = async (req, res) => {
+	const { tournamentId } = req.params;
 	try {
-		const tournaments = await tournamentService.getAllTournaments();
-		res.status(200).json(tournaments);
-	} catch (err) {
-		res.status(500).json({ message: err.message });
-	}
-};
-
-const getTournamentById = async (req, res) => {
-	try {
-		const tournament = await tournamentService.getTournamentById(req.params.id);
+		const tournament = await tournamentService.startTournament(tournamentId);
 		res.status(200).json(tournament);
-	} catch (err) {
-		res.status(500).json({ message: err.message });
+	} catch (error) {
+		res.status(500).json({ error: error.message });
 	}
 };
 
-const updateTournament = async (req, res) => {
+exports.endTournament = async (req, res) => {
+	const { tournamentId } = req.params;
 	try {
-		const updatedTournament = await tournamentService.updateTournament(req.params.id, req.body);
-		res.status(200).json(updatedTournament);
-	} catch (err) {
-		res.status(500).json({ message: err.message });
+		const tournament = await tournamentService.endTournament(tournamentId);
+		res.status(200).json(tournament);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
 	}
 };
 
-const deleteTournament = async (req, res) => {
+exports.getTournamentById = async (req, res) => {
+	const { tournamentId } = req.params;
 	try {
-		const deletedTournament = await tournamentService.deleteTournament(req.params.id);
-		res.status(200).json(deletedTournament);
-	} catch (err) {
-		res.status(500).json({ message: err.message });
+		const tournament = await tournamentService.getTournamentById(tournamentId);
+		res.status(200).json(tournament);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
 	}
 };
 
-//This function allows to create a get request and view standings
-const getStandings = async (req, res) => {
+exports.getTournamentStandings = async (req, res) => {
+	const { tournamentId } = req.params;
 	try {
-
-		//Populate the tournament's scoreboard field
-		const tournament = await Tournament.findById(req.params.id)
-		.populate({
-			path: 'scoreboard.player',
-			select: 'user',
-			populate: {
-				path: 'user',
-				select: 'username'	//Select only the username of the player
-			}
-		});
-
-		if(!tournament) {
-			return res.status(404).json({ message: 'Tournament not found'});
-		}
-
-		//This is needed initially, when the scoreboard list is empty 
-		//REQUIRES: The field 'participants' has been initialised, by hand 
-		if (tournament.scoreboard.length == 0) {
-			tournament.scoreboard = tournament.participants.map(participant => ({
-				player: participant._id,
-				score: participant.score
-			}));
-
-			await tournament.save();
-		}
-
-		//Re-populate after initialisation
-		await tournament.populate({
-			path: 'scoreboard.player',
-			select: 'user',
-			populate: {
-				path: 'user',
-				select: 'username'
-			}
-		});
-
-		//Sort scoreboard with descending order of scores
-		const Scoreboard = tournament.scoreboard.sort((a, b) => b.score - a.score);
-
-		//Create the standings list
-		const standings = Scoreboard.map(entry => ({
-			playerName: entry.player.user.username,
-			score: entry.score
-		}));
-
+		const standings = await tournamentService.getTournamentStandings(tournamentId);
 		res.status(200).json(standings);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
 	}
-	catch (err) {
-		res.status(500).json({ message: err.message});
-	}
-}
+};
 
-module.exports = { createTournament, getTournaments, getTournamentById, updateTournament, deleteTournament, getStandings };
+exports.joinTournament = async (req, res) => {
+	const { tournamentId } = req.params;
+	const { userId } = req.body;
+	try {
+		const player = await tournamentService.joinTournament(userId, tournamentId);
+		res.status(200).json(player);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+exports.leaveTournament = async (req, res) => {
+	const { tournamentId } = req.params;
+	const { userId } = req.body;
+	try {
+		const player = await tournamentService.leaveTournament(userId, tournamentId);
+		res.status(200).json(player);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+exports.getAllPlayersInTournament = async (req, res) => {
+	const { tournamentId } = req.params;
+	try {
+		const players = await tournamentService.getAllPlayersInTournament(tournamentId);
+		res.status(200).json(players);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+exports.getAllGamesInTournament = async (req, res) => {
+	const { tournamentId } = req.params;
+	try {
+		const games = await tournamentService.getAllGamesInTournament(tournamentId);
+		res.status(200).json(games);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};
+
+exports.getAllActiveGamesInTournament = async (req, res) => {
+	const { tournamentId } = req.params;
+	try {
+		const games = await tournamentService.getAllActiveGamesInTournament(tournamentId);
+		res.status(200).json(games);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+};

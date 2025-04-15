@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Player = require('./Player');
+const Game = require('./Game');
 
 const tournamentSchema = new mongoose.Schema({
 	name: { type: String, required: true },
