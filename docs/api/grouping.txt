@@ -17,8 +17,8 @@
 
 /users
   GET /:userId/profile                           -> Get user public profile
-  GET /addUser  				                         -> Admin add new user
-  GET /:userId/update        	                   -> Update user info
+  POST /addUser  				                         -> Admin add new user
+  POST /:userId/update        	                 -> Update user info
   DELETE /:userId/delete                         -> Delete user account
 
 /players
