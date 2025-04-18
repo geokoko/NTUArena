@@ -14,6 +14,6 @@ const tournamentSchema = new mongoose.Schema({
 		score: { type: Number, default: 0 }
 	}],
 	games: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Game' }]
-);
+});
 
 module.exports = mongoose.model('Tournament', tournamentSchema);

@@ -1,4 +1,4 @@
-require('dotenv').config({ path: __dirname + '/../.env' });
+require('dotenv').config({ path: './src/.env' });
 
 const express = require('express');
 const connectDB = require('./config/database');
@@ -30,3 +30,5 @@ connectDB().then(() => {
 	console.log("Failed to connect to database:", err.message);
 	process.exit(1);
 });
+
+console.log("ACCESS TOKEN:", process.env.ACCESS_TOKEN);

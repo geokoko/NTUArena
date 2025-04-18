@@ -1,6 +1,6 @@
 const Game = require('../models/Game');
 
-async function submitGameResult (gameId, result) => {
+async function submitGameResult (gameId, result) {
 	const game = await Game.findById(gameId).populate('playerWhite playerBlack');
 	if (!game) {
 		throw new Error('Game not found');

@@ -3,7 +3,7 @@ const router = express.Router();
 const userController = require('../controllers/userController');
 
 // Show user profile
-router.get('/:id/profile', userController.getProfile);
+router.get('/:id/profile', userController.getUserById);
 
 // Add new user
 router.post('/addUser', userController.addUser);
