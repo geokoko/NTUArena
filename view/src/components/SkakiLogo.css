@@ -1,0 +1,240 @@
+/* Skaki NTUA Logo Styles */
+.skaki-logo-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.skaki-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 5;
+}
+
+.skaki-logo .logo-circle {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  border: 2px solid rgba(255,255,255,0.3);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  transition: all 0.3s ease;
+}
+
+.skaki-logo .logo-circle:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+
+.skaki-logo .logo-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+}
+
+.skaki-logo .chess-pawn-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.skaki-logo .chess-pawn {
+  font-size: 3rem;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+  margin-bottom: -5px;
+}
+
+.skaki-logo .crown {
+  font-size: 1.5rem;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+  position: absolute;
+  top: -5px;
+}
+
+.skaki-logo .logo-text {
+  color: rgba(255,255,255,0.9);
+  font-family: 'Arial', sans-serif;
+  text-align: left;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.skaki-logo .logo-text .skaki {
+  font-size: 1.2rem;
+  font-weight: normal;
+  margin-bottom: 2px;
+  opacity: 0.9;
+}
+
+.skaki-logo .logo-text .ntua {
+  font-size: 1.8rem;
+  font-weight: bold;
+  opacity: 1;
+}
+
+/* Social media info */
+.social-info {
+  position: absolute;
+  left: 50px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255,255,255,0.8);
+  font-size: 0.9rem;
+  z-index: 5;
+}
+
+.social-info .social-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  opacity: 0.8;
+  transition: all 0.3s ease;
+  padding: 5px 10px;
+  border-radius: 5px;
+}
+
+.social-info .social-item:hover {
+  opacity: 1;
+  background: rgba(255,255,255,0.1);
+  transform: translateX(5px);
+}
+
+.social-info .social-item i {
+  margin-right: 10px;
+  width: 16px;
+  font-size: 1rem;
+}
+
+.social-info .social-item span {
+  font-size: 0.85rem;
+}
+
+/* Welcome message */
+.welcome-message {
+  position: absolute;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  color: rgba(255,255,255,0.9);
+  z-index: 5;
+}
+
+.welcome-message .title {
+  font-size: 2.2rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+  letter-spacing: 2px;
+}
+
+.welcome-message .subtitle {
+  font-size: 1rem;
+  opacity: 0.8;
+  letter-spacing: 1px;
+}
+
+/* Size variations */
+.skaki-logo-container.small .logo-circle {
+  width: 120px;
+  height: 120px;
+}
+
+.skaki-logo-container.small .chess-pawn {
+  font-size: 2rem;
+}
+
+.skaki-logo-container.small .logo-text .skaki {
+  font-size: 0.9rem;
+}
+
+.skaki-logo-container.small .logo-text .ntua {
+  font-size: 1.3rem;
+}
+
+.skaki-logo-container.large .logo-circle {
+  width: 300px;
+  height: 300px;
+}
+
+.skaki-logo-container.large .chess-pawn {
+  font-size: 4rem;
+}
+
+.skaki-logo-container.large .logo-text .skaki {
+  font-size: 1.5rem;
+}
+
+.skaki-logo-container.large .logo-text .ntua {
+  font-size: 2.5rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .skaki-logo .logo-circle {
+    width: 150px;
+    height: 150px;
+  }
+  
+  .skaki-logo .chess-pawn {
+    font-size: 2.5rem;
+  }
+  
+  .skaki-logo .logo-text .skaki {
+    font-size: 1rem;
+  }
+  
+  .skaki-logo .logo-text .ntua {
+    font-size: 1.5rem;
+  }
+  
+  .social-info {
+    left: 20px;
+    font-size: 0.8rem;
+  }
+  
+  .welcome-message .title {
+    font-size: 1.8rem;
+  }
+  
+  .welcome-message .subtitle {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .skaki-logo .logo-circle {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .skaki-logo .chess-pawn {
+    font-size: 2rem;
+  }
+  
+  .skaki-logo .logo-text .skaki {
+    font-size: 0.8rem;
+  }
+  
+  .skaki-logo .logo-text .ntua {
+    font-size: 1.2rem;
+  }
+  
+  .social-info {
+    display: none;
+  }
+  
+  .welcome-message .title {
+    font-size: 1.5rem;
+  }
+} 
