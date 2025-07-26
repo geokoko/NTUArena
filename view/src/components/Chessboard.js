@@ -1,140 +1,165 @@
-import React, { useState, useEffect } from 'react';
+// Custom Chessboard component based on react-chessboard library
+import React, { useState, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
-import './Chessboard.css';
 
-const ChessboardComponent = ({ gameState = null, onMove = null, isInteractive = true }) => {
-	const [game, setGame] = useState(new Chess());
-	const [moveHistory, setMoveHistory] = useState([]);
+const ChessboardComponent = forwardRef(({ 
+	gameState = null, 
+	onMove = null, 
+	isInteractive = true, 
+	onGameUpdate = null,
+	boardWidth = 560 
+}, ref) => {
+		const [game, setGame] = useState(() => new Chess());
+		const [moveHistory, setMoveHistory] = useState([]);
 
-	useEffect(() => {
-		if (gameState) {
-			// If a game state is provided, load it
-			const newGame = new Chess(gameState);
+		// Load game state when provided
+		useEffect(() => {
+			if (gameState) {
+				try {
+					const newGame = new Chess(gameState);
+					setGame(newGame);
+					setMoveHistory(newGame.history());
+				} catch (error) {
+					console.error('Invalid game state:', error);
+				}
+			}
+		}, [gameState]);
+
+		// Game status helper
+		const getGameStatus = useCallback((gameInstance = game) => {
+			if (gameInstance.isCheckmate()) return 'Checkmate';
+			if (gameInstance.isDraw()) return 'Draw';
+			if (gameInstance.isCheck()) return 'Check';
+			return 'In Progress';
+		}, [game]);
+
+		// Make a move
+		const makeAMove = useCallback((move) => {
+			try {
+				const gameCopy = new Chess(game.fen());
+				const result = gameCopy.move(move);
+
+				if (!result) return false; // Invalid move
+
+				const newHistory = gameCopy.history();
+
+				setGame(gameCopy);
+				setMoveHistory(newHistory);
+
+				// Notify parent of game update
+				if (onGameUpdate) {
+					onGameUpdate({
+						game: gameCopy,
+						moveHistory: newHistory,
+						gameStatus: getGameStatus(gameCopy)
+					});
+				}
+
+				// Notify parent of move
+				if (onMove) {
+					onMove({
+						from: move.from,
+						to: move.to,
+						piece: move.piece,
+						san: result.san,
+						fen: gameCopy.fen()
+					});
+				}
+
+				return true;
+			} catch (error) {
+				console.error('Move error:', error);
+				return false;
+			}
+		}, [game, onMove, onGameUpdate, getGameStatus]);
+
+		// Handle piece drop
+		const onDrop = useCallback((sourceSquare, targetSquare) => {
+			if (!isInteractive) return false;
+
+			return makeAMove({
+				from: sourceSquare,
+				to: targetSquare,
+				promotion: 'q'
+			});
+		}, [isInteractive, makeAMove]);
+
+		// Reset game
+		const resetGame = useCallback(() => {
+			const newGame = new Chess();
 			setGame(newGame);
-		}
-	}, [gameState]);
+			setMoveHistory([]);
 
-	const makeAMove = (move) => {
-		const gameCopy = new Chess(game.fen());
-
-		try {
-			const result = gameCopy.move(move);
-			if (result === null) return false; // Invalid move
-
-			setGame(gameCopy);
-			setMoveHistory(gameCopy.history());
-
-			if (onMove) {
-				onMove({
-					from: move.from,
-					to: move.to,
-					piece: move.piece,
-					san: result.san,
-					fen: gameCopy.fen()
+			if (onGameUpdate) {
+				onGameUpdate({
+					game: newGame,
+					moveHistory: [],
+					gameStatus: 'In Progress'
 				});
 			}
+		}, [onGameUpdate]);
 
-			return true;
-		} catch (error) {
-			return false;
-		}
-	};
+		// Undo move
+		const undoMove = useCallback(() => {
+			try {
+				const gameCopy = new Chess(game.fen());
+				const undoResult = gameCopy.undo();
 
-	const onDrop = (sourceSquare, targetSquare) => {
-		if (!isInteractive) return false;
+				if (undoResult) {
+					const newHistory = gameCopy.history();
+					setGame(gameCopy);
+					setMoveHistory(newHistory);
 
-		const move = makeAMove({
-			from: sourceSquare,
-			to: targetSquare,
-			promotion: 'q' 
-		});
+					if (onGameUpdate) {
+						onGameUpdate({
+							game: gameCopy,
+							moveHistory: newHistory,
+							gameStatus: getGameStatus(gameCopy)
+						});
+					}
+				}
+			} catch (error) {
+				console.error('Undo error:', error);
+			}
+		}, [game, onGameUpdate, getGameStatus]);
 
-		return move;
-	};
+		// Check if piece is draggable
+		const isDraggablePiece = useCallback(({ piece }) => {
+			return isInteractive;
+		}, [isInteractive]);
 
-	const resetGame = () => {
-		const newGame = new Chess();
-		setGame(newGame);
-		setMoveHistory([]);
-	};
+		// Expose methods to parent
+		useImperativeHandle(ref, () => ({
+			resetGame,
+			undoMove,
+			getGameStatus: () => getGameStatus(),
+			getCurrentPosition: () => game.fen(),
+			getMoveHistory: () => moveHistory,
+			getTurn: () => game.turn() === 'w' ? 'White' : 'Black'
+		}), [resetGame, undoMove, getGameStatus, game, moveHistory]);
 
-	const undoMove = () => {
-		const gameCopy = new Chess(game.fen());
-		gameCopy.undo();
-		setGame(gameCopy);
-		setMoveHistory(gameCopy.history());
-	};
-
-	const getGameStatus = () => {
-		if (game.isCheckmate()) return 'Checkmate';
-		if (game.isDraw()) return 'Draw';
-		if (game.isCheck()) return 'Check';
-		return 'In Progress';
-	};
-
-	return (
-		<div className="chessboard-container">
-			<div className="game-status mb-3">
-				<h4>Game Status: {getGameStatus()}</h4>
-				<p>Turn: {game.turn() === 'w' ? 'White' : 'Black'}</p>
-			</div>
-
-			{/* Chessboard */}
+		return (
 			<Chessboard
 				position={game.fen()}
 				onPieceDrop={onDrop}
-				boardWidth={Math.min(560, window.innerWidth - 40)}
+				boardWidth={boardWidth}
+				isDraggablePiece={isDraggablePiece}
 				customBoardStyle={{
 					borderRadius: '8px',
-					boxShadow: '0 8px 25px rgba(139, 69, 19, 0.3)',
-					margin: '0 auto 20px auto'
+					boxShadow: '0 8px 25px rgba(139, 69, 19, 0.3)'
 				}}
 				customDarkSquareStyle={{ backgroundColor: '#8B4513' }}
 				customLightSquareStyle={{ backgroundColor: '#F5DEB3' }}
-				areArrowsAllowed={true} // allow arrows
-				arePremovesAllowed={false}
-				isDraggablePiece={({ piece }) => isInteractive}
 				customDropSquareStyle={{
 					boxShadow: 'inset 0 0 1px 6px rgba(255,255,0,0.75)'
 				}}
+				areArrowsAllowed={false}
+				arePremovesAllowed={false}
 			/>
+		);
+	});
 
-			<div className="game-controls mt-3">
-				<button className="btn btn-primary me-2" onClick={resetGame}>
-					<i className="fas fa-redo"></i> New Game
-				</button>
-				<button className="btn btn-secondary me-2" onClick={undoMove} disabled={moveHistory.length === 0}>
-					<i className="fas fa-undo"></i> Undo
-				</button>
-				<button className="btn btn-info" onClick={() => console.log('FEN:', game.fen())}>
-					<i className="fas fa-code"></i> Show FEN
-				</button>
-			</div>
+ChessboardComponent.displayName = 'ChessboardComponent';
 
-			<div className="move-history mt-3">
-				<h5>Move History</h5>
-				<div className="history-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-					{moveHistory.length === 0 ? (
-						<p className="text-muted">No moves yet</p>
-					) : (
-							<div className="moves-list">
-								{moveHistory.map((move, index) => (
-									<span key={index} className="move-item">
-										{Math.floor(index / 2) + 1}.{index % 2 === 0 ? '' : ' '}{move} 
-									</span>
-								))}
-							</div>
-						)}
-				</div>
-			</div>
-		</div>
-	);
-};
-
-// Component props:
-// - gameState: string (FEN notation) - Initial game position 
-// - onMove: function - Callback when a move is made
-// - isInteractive: boolean - Whether pieces can be moved
-
-export default ChessboardComponent; 
+export default ChessboardComponent;

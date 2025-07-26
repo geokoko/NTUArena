@@ -29,13 +29,6 @@ const DynamicEffects = ({ children, effectType = 'chess-pieces', className = '' 
         <div className="effect-crown">♔</div>
       )}
       
-      {/* Pawn promotion effect */}
-      {effectType === 'promotion' && (
-        <>
-          <div className="effect-pawn">♟</div>
-          <div className="effect-queen">♛</div>
-        </>
-      )}
     </div>
   );
 };

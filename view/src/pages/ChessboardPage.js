@@ -1,146 +1,128 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import ChessboardComponent from '../components/Chessboard';
-import DynamicEffects from '../components/DynamicEffects';
 import './ChessboardPage.css';
 
 const ChessboardPage = () => {
-  const [gameHistory, setGameHistory] = useState([]);
-  const [currentMove, setCurrentMove] = useState(0);
+	const chessboardRef = useRef();
+	const [gameState, setGameState] = useState({
+		moveHistory: [],
+		gameStatus: 'In Progress',
+		turn: 'White'
+	});
 
-  const handleMove = (move) => {
-    const newHistory = [...gameHistory, move];
-    setGameHistory(newHistory);
-    setCurrentMove(newHistory.length);
-  };
+	const handleGameUpdate = useCallback((newGameState) => {
+		setGameState({
+			moveHistory: newGameState.moveHistory,
+			gameStatus: newGameState.gameStatus,
+			turn: newGameState.game.turn() === 'w' ? 'White' : 'Black'
+		});
+	}, []);
 
-  const resetGame = () => {
-    setGameHistory([]);
-    setCurrentMove(0);
-  };
+	const handleResetGame = useCallback(() => {
+		chessboardRef.current?.resetGame();
+	}, []);
 
-  const undoMove = () => {
-    if (currentMove > 0) {
-      setCurrentMove(currentMove - 1);
-    }
-  };
+	const handleUndoMove = useCallback(() => {
+		chessboardRef.current?.undoMove();
+	}, []);
 
-  const redoMove = () => {
-    if (currentMove < gameHistory.length) {
-      setCurrentMove(currentMove + 1);
-    }
-  };
+	const handleShowFEN = useCallback(() => {
+		const fen = chessboardRef.current?.getCurrentPosition();
+		if (fen) {
+			console.log('FEN:', fen);
+			alert(`Current FEN: ${fen}`);
+		}
+	}, []);
 
-  return (
-    <div className="container mt-4">
-      <div className="row">
-        <div className="col-md-8">
-          <div className="card">
-            <div className="card-header">
-              <h2 className="card-title">Interactive Chessboard</h2>
-              <p className="text-muted">Practice your moves or analyze positions</p>
-            </div>
-            <div className="card-body text-center">
-              <ChessboardComponent onMove={handleMove} isInteractive={true} />
-            </div>
-          </div>
-        </div>
-        
-        <div className="col-md-4">
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Game Controls</h3>
-            </div>
-            <div className="card-body">
-              <div className="d-grid gap-2">
-                <DynamicEffects effectType="chess-pieces">
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={resetGame}
-                  >
-                    <i className="fas fa-redo"></i> New Game
-                  </button>
-                </DynamicEffects>
-                
-                <DynamicEffects effectType="chess-pieces">
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={undoMove}
-                    disabled={currentMove === 0}
-                  >
-                    <i className="fas fa-undo"></i> Undo
-                  </button>
-                </DynamicEffects>
-                
-                <DynamicEffects effectType="chess-pieces">
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={redoMove}
-                    disabled={currentMove === gameHistory.length}
-                  >
-                    <i className="fas fa-redo"></i> Redo
-                  </button>
-                </DynamicEffects>
-              </div>
-              
-              <div className="mt-4">
-                <h5>Move History</h5>
-                <div className="move-history" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                  {gameHistory.length === 0 ? (
-                    <p className="text-muted">No moves yet</p>
-                  ) : (
-                    <div className="list-group">
-                      {gameHistory.map((move, index) => (
-                        <div 
-                          key={index} 
-                          className={`list-group-item ${index < currentMove ? 'active' : ''}`}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setCurrentMove(index + 1)}
-                        >
-                          <strong>Move {index + 1}:</strong> {move.piece} from {String.fromCharCode(97 + move.from.col)}{8 - move.from.row} to {String.fromCharCode(97 + move.to.col)}{8 - move.to.row}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div className="row mt-4">
-        <div className="col-12">
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Chess Tips</h3>
-            </div>
-            <div className="card-body">
-              <div className="row">
-                <div className="col-md-6">
-                  <h5>Opening Principles</h5>
-                  <ul>
-                    <li>Control the center</li>
-                    <li>Develop your pieces</li>
-                    <li>Castle early</li>
-                    <li>Don't move the same piece twice</li>
-                  </ul>
-                </div>
-                <div className="col-md-6">
-                  <h5>Middle Game</h5>
-                  <ul>
-                    <li>Look for tactical opportunities</li>
-                    <li>Control open files</li>
-                    <li>Coordinate your pieces</li>
-                    <li>Create weaknesses in opponent's position</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+	return (
+		<>
+			{/* Header Section */}
+			<div className="container mt-4">
+				<div className="row justify-content-center">
+					<div className="col-lg-8 col-md-10">
+						<div className="card">
+							<div className="card-header text-center">
+								<h2 className="card-title mb-1">Interactive Chessboard</h2>
+								<p className="text-muted mb-0">Practice your moves or analyze positions</p>
+							</div>
+							<div className="card-body">
+								{/* Game Status */}
+								<div className="game-status mb-4">
+									<h4>Game Status: {gameState.gameStatus}</h4>
+									<p>Turn: {gameState.turn}</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			{/* Chessboard Section */}
+			<div>
+				<ChessboardComponent
+					ref={chessboardRef}
+					onGameUpdate={handleGameUpdate}
+					isInteractive={true}
+					boardWidth={Math.min(560, window.innerWidth - 80)}
+				/>
+			</div>
+
+			{/* Controls and History Section */}
+			<div className="container">
+				<div className="row justify-content-center">
+					<div className="col-lg-8 col-md-10">
+						<div className="card">
+							<div className="card-body">
+								{/* Game Controls */}
+								<div className="game-controls mb-4">
+									<button 
+										className="btn btn-primary me-2" 
+										onClick={handleResetGame}
+										type="button"
+									>
+										<i className="fas fa-redo"></i> New Game
+									</button>
+									<button 
+										className="btn btn-secondary me-2" 
+										onClick={handleUndoMove} 
+										disabled={gameState.moveHistory.length === 0}
+										type="button"
+									>
+										<i className="fas fa-undo"></i> Undo
+									</button>
+									<button 
+										className="btn btn-info" 
+										onClick={handleShowFEN}
+										type="button"
+									>
+										<i className="fas fa-code"></i> Show FEN
+									</button>
+								</div>
+
+								{/* Move History */}
+								<div className="move-history">
+									<h5>Move History</h5>
+									<div className="history-container">
+										{gameState.moveHistory.length === 0 ? (
+											<p className="text-muted">No moves yet</p>
+										) : (
+												<div className="moves-list">
+													{gameState.moveHistory.map((move, index) => (
+														<span key={`${move}-${index}`} className="move-item">
+															{Math.floor(index / 2) + 1}{index % 2 === 0 ? '.' : '...'} {move}
+														</span>
+													))}
+												</div>
+											)}
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</>
+	);
 };
 
-export default ChessboardPage; 
+export default ChessboardPage;
