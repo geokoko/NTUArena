@@ -1,5 +1,6 @@
 import React from 'react';
 import './SkakiLogo.css';
+import leRoiLogo from './pictures/Le-Roi-logo.png';
 
 const SkakiLogo = ({ size = 'medium', showSocial = true, showWelcome = true }) => {
   return (
@@ -7,16 +8,11 @@ const SkakiLogo = ({ size = 'medium', showSocial = true, showWelcome = true }) =
       {/* Main Logo */}
       <div className="skaki-logo">
         <div className="logo-circle">
-          <div className="logo-content">
-            <div className="chess-pawn-container">
-              <div className="chess-pawn">♟</div>
-              <div className="crown">♔</div>
-            </div>
-            <div className="logo-text">
-              <div className="skaki">skaki</div>
-              <div className="ntua">NTUA</div>
-            </div>
-          </div>
+          <img 
+            src={leRoiLogo} 
+            alt="Skaki NTUA - Le Roi Logo" 
+            className="logo-image"
+          />
         </div>
       </div>
 

@@ -1,11 +1,42 @@
 /* App.css - Skaki NTUA Theme */
+/* 
+ * CSS Organization:
+ * - index.css: Global resets and base styles
+ * - App.css: Layout, shared components, z-index hierarchy
+ * - Component.css: Component-specific styles (properly scoped)
+ * 
+ * Z-Index Hierarchy (use CSS variables):
+ * --z-background: 1        (background gradient)
+ * --z-background-elements: 2 (falling pieces, logos)
+ * --z-content: 10          (main content areas)
+ * --z-logo: 50             (skaki logo components)
+ * --z-effects: 100         (visual effects)
+ * --z-navbar: 1000         (navigation bar)
+ * --z-social: 1001         (social media links)
+ * --z-modal: 2000          (modals and popups)
+ * --z-tooltip: 3000        (tooltips)
+ */
+
+/* Z-Index Hierarchy */
+:root {
+  --z-background: 1;
+  --z-background-elements: 2;
+  --z-content: 10;
+  --z-logo: 50;
+  --z-effects: 100;
+  --z-navbar: 1000;
+  --z-social: 1001;
+  --z-modal: 2000;
+  --z-tooltip: 3000;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
-  overflow-y: auto !important;
   overflow-x: hidden;
+  overflow-y: auto;
 }
 
 html, body {
@@ -13,23 +44,19 @@ html, body {
   padding: 0;
   width: 100%;
   overflow-x: hidden;
-  min-height: 100vh;
 }
 
 #root {
-  min-height: 100vh;
   width: 100%;
 }
 .App {
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: transparent;
-  overflow-x: hidden;
   width: 100%;
   padding-top: 0;
   position: relative;
-  overflow-y: auto;
+  min-height: 100vh;
 }
 
 .main-content {
@@ -41,10 +68,9 @@ html, body {
   background: transparent;
   box-sizing: border-box;
   margin-top: 80px;
-  min-height: calc(100vh - 80px);
-  overflow-y: auto;
+  padding-bottom: 40px;
   position: relative;
-  z-index: 10;
+  z-index: var(--z-content);
 }
 
 /* Loading spinner */
@@ -86,7 +112,7 @@ html, body {
   box-sizing: border-box;
   position: fixed;
   top: 0;
-  z-index: 1000;
+  z-index: var(--z-navbar);
 }
 
 .navbar-brand {
@@ -547,6 +573,9 @@ html, body {
     padding: 1rem;
     width: 100%;
     box-sizing: border-box;
+    position: fixed;
+    top: 0;
+    z-index: var(--z-navbar);
   }
   
   .navbar-nav {

@@ -32,6 +32,9 @@ services:
       - NODE_ENV=development
       - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
       - SERVICE_NAME=user-service
+    volumes:
+      - ./user-service/src:/app/src
+      - /app/node_modules
     depends_on:
       - user_db
       - rabbitmq
@@ -59,6 +62,9 @@ services:
       - NODE_ENV=development
       - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
       - SERVICE_NAME=tournament-service
+    volumes:
+      - ./tournament-service/src:/app/src
+      - /app/node_modules
     depends_on:
       - tournament_db
       - rabbitmq
@@ -86,6 +92,9 @@ services:
       - NODE_ENV=development
       - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
       - SERVICE_NAME=player-service
+    volumes:
+      - ./player-service/src:/app/src
+      - /app/node_modules
     depends_on:
       - player_db
       - rabbitmq
@@ -113,6 +122,9 @@ services:
       - NODE_ENV=development
       - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
       - SERVICE_NAME=game-service
+    volumes:
+      - ./game-service/src:/app/src
+      - /app/node_modules
     depends_on:
       - game_db
       - rabbitmq
@@ -139,6 +151,9 @@ services:
       - NODE_ENV=development
       - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
       - SERVICE_NAME=pairing-service
+    volumes:
+      - ./pairing-service/src:/app/src
+      - /app/node_modules
     depends_on:
       - rabbitmq
     restart: unless-stopped
@@ -158,6 +173,9 @@ services:
       - PLAYER_SERVICE_URL=http://player-service:3004
       - GAME_SERVICE_URL=http://game-service:3005
       - PAIRING_SERVICE_URL=http://pairing-service:3006
+    volumes:
+      - ./api-gateway/src:/app/src
+      - /app/node_modules
     depends_on:
       - user-service
       - tournament-service
@@ -172,6 +190,13 @@ services:
     container_name: arena_frontend
     ports:
       - "3000:3000"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - FAST_REFRESH=true
+    volumes:
+      - ./view/src:/app/src
+      - ./view/public:/app/public
+      - /app/node_modules
     depends_on:
       - api-gateway
     restart: unless-stopped

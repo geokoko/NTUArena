@@ -1,14 +1,14 @@
 /* Dynamic Background - Skaki NTUA Theme */
 .dynamic-background {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
   background: linear-gradient(135deg, #8B4513, #A0522D, #CD853F);
-  overflow: hidden;
+  background-attachment: fixed;
   transition: all 0.3s ease;
-  z-index: 1;
+  z-index: var(--z-background);
   pointer-events: none;
   will-change: transform;
 }
@@ -37,7 +37,7 @@
   color: rgba(255, 255, 255, 0.4);
   animation: falling 8s linear infinite;
   pointer-events: none;
-  z-index: 2;
+  z-index: var(--z-background-elements);
 }
 
 .falling-piece.pawn-1 {
@@ -167,7 +167,7 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  z-index: 2;
+  z-index: var(--z-background-elements);
   opacity: 0.1;
   pointer-events: none;
 }
@@ -202,23 +202,19 @@
 /* Content wrapper */
 .background-content {
   position: relative;
-  z-index: 10;
-  min-height: 100vh;
+  z-index: var(--z-content);
   display: flex;
   flex-direction: column;
   background: transparent;
   pointer-events: auto;
-  overflow-y: auto;
 }
 
 /* Content overlay for better readability */
 .content-overlay {
   position: relative;
-  z-index: 15;
+  z-index: var(--z-content);
   padding: 20px;
   pointer-events: auto;
-  overflow-y: auto;
-  min-height: 100vh;
 }
 
 .content-overlay .card {
@@ -238,7 +234,7 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 5;
+  z-index: var(--z-background-elements);
   pointer-events: none;
 }
 
@@ -282,98 +278,8 @@
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* Skaki NTUA Logo */
-.skaki-logo {
-  position: absolute;
-  top: 60%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  z-index: 5;
-  opacity: 0.1;
-  pointer-events: none;
-}
 
-.skaki-logo .logo-circle {
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 20px;
-  border: 2px solid rgba(255,255,255,0.2);
-}
 
-.skaki-logo .logo-text {
-  color: rgba(255,255,255,0.8);
-  font-family: 'Arial', sans-serif;
-  text-align: center;
-}
-
-.skaki-logo .logo-text .skaki {
-  font-size: 1.2rem;
-  font-weight: normal;
-  margin-bottom: 5px;
-}
-
-.skaki-logo .logo-text .ntua {
-  font-size: 1.8rem;
-  font-weight: bold;
-}
-
-/* Social media info */
-.social-info {
-  position: absolute;
-  left: 50px;
-  top: 60%;
-  transform: translateY(-50%);
-  color: rgba(255,255,255,0.7);
-  font-size: 0.9rem;
-  z-index: 5;
-}
-
-.social-info .social-item {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-  opacity: 0.8;
-  transition: opacity 0.3s ease;
-}
-
-.social-info .social-item:hover {
-  opacity: 1;
-}
-
-.social-info .social-item i {
-  margin-right: 8px;
-  width: 16px;
-}
-
-/* Welcome message */
-.welcome-message {
-  position: absolute;
-  bottom: 150px;
-  left: 50%;
-  transform: translateX(-50%);
-  text-align: center;
-  color: rgba(255,255,255,0.9);
-  z-index: 5;
-}
-
-.welcome-message .title {
-  font-size: 2.5rem;
-  font-weight: bold;
-  margin-bottom: 10px;
-  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-}
-
-.welcome-message .subtitle {
-  font-size: 1.2rem;
-  opacity: 0.9;
-  font-weight: 500;
-}
 
 /* Responsive design */
 @media (max-width: 768px) {
