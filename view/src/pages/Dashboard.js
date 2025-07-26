@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { healthAPI } from '../services/api';
+import './Dashboard.css';
 
 const Dashboard = () => {
   const [serviceHealth, setServiceHealth] = useState(null);

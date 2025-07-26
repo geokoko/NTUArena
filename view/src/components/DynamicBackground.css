@@ -1,308 +1,253 @@
 /* Dynamic Background - Skaki NTUA Theme */
 .dynamic-background {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #8B4513, #A0522D, #CD853F);
-  background-attachment: fixed;
-  transition: all 0.3s ease;
-  z-index: var(--z-background);
-  pointer-events: none;
-  will-change: transform;
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	min-height: 100vh;
+	background: linear-gradient(135deg, #8B4513, #A0522D, #CD853F);
+	background-attachment: fixed;
+	transition: all 0.3s ease;
+	z-index: var(--z-background);
+	pointer-events: none;
+	will-change: transform;
 }
 
 /* Time-based variations */
 .dynamic-background.morning {
-  background: linear-gradient(135deg, #D2691E, #F4A460, #DEB887);
+	background: linear-gradient(135deg, #D2691E, #F4A460, #DEB887);
 }
 
 .dynamic-background.afternoon {
-  background: linear-gradient(135deg, #CD853F, #DAA520, #B8860B);
+	background: linear-gradient(135deg, #CD853F, #DAA520, #B8860B);
 }
 
 .dynamic-background.evening {
-  background: linear-gradient(135deg, #8B4513, #A0522D, #CD853F);
+	background: linear-gradient(135deg, #8B4513, #A0522D, #CD853F);
 }
 
 .dynamic-background.night {
-  background: linear-gradient(135deg, #654321, #8B4513, #A0522D);
+	background: linear-gradient(135deg, #654321, #8B4513, #A0522D);
 }
 
 /* Permanent falling chess pieces */
 .falling-piece {
-  position: absolute;
-  font-size: 1.5rem;
-  color: rgba(255, 255, 255, 0.4);
-  animation: falling 8s linear infinite;
-  pointer-events: none;
-  z-index: var(--z-background-elements);
+	position: absolute;
+	font-size: 1.5rem;
+	color: rgba(255, 255, 255, 0.4);
+	animation: falling 8s linear infinite;
+	pointer-events: none;
+	z-index: var(--z-background-elements);
 }
 
 .falling-piece.pawn-1 {
-  left: 10%;
-  animation-delay: 0s;
-  animation-duration: 6s;
+	left: 10%;
+	animation-delay: 0s;
+	animation-duration: 6s;
 }
 
 .falling-piece.knight-1 {
-  left: 20%;
-  animation-delay: 1s;
-  animation-duration: 7s;
+	left: 20%;
+	animation-delay: 1s;
+	animation-duration: 7s;
 }
 
 .falling-piece.bishop-1 {
-  left: 30%;
-  animation-delay: 2s;
-  animation-duration: 8s;
+	left: 30%;
+	animation-delay: 2s;
+	animation-duration: 8s;
 }
 
 .falling-piece.rook-1 {
-  left: 40%;
-  animation-delay: 3s;
-  animation-duration: 9s;
+	left: 40%;
+	animation-delay: 3s;
+	animation-duration: 9s;
 }
 
 .falling-piece.queen-1 {
-  left: 50%;
-  animation-delay: 4s;
-  animation-duration: 10s;
+	left: 50%;
+	animation-delay: 4s;
+	animation-duration: 10s;
 }
 
 .falling-piece.king-1 {
-  left: 60%;
-  animation-delay: 5s;
-  animation-duration: 11s;
+	left: 60%;
+	animation-delay: 5s;
+	animation-duration: 11s;
 }
 
 .falling-piece.pawn-2 {
-  left: 70%;
-  animation-delay: 2.5s;
-  animation-duration: 7.5s;
+	left: 70%;
+	animation-delay: 2.5s;
+	animation-duration: 7.5s;
 }
 
 .falling-piece.knight-2 {
-  left: 80%;
-  animation-delay: 3.5s;
-  animation-duration: 8.5s;
+	left: 80%;
+	animation-delay: 3.5s;
+	animation-duration: 8.5s;
 }
 
 .falling-piece.bishop-2 {
-  left: 90%;
-  animation-delay: 4.5s;
-  animation-duration: 9.5s;
+	left: 90%;
+	animation-delay: 4.5s;
+	animation-duration: 9.5s;
 }
 
 .falling-piece.rook-2 {
-  left: 95%;
-  animation-delay: 5.5s;
-  animation-duration: 10.5s;
+	left: 95%;
+	animation-delay: 5.5s;
+	animation-duration: 10.5s;
 }
 
 @keyframes falling {
-  0% {
-    top: -50px;
-    transform: rotate(0deg);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    top: 100vh;
-    transform: rotate(360deg);
-    opacity: 0;
-  }
-}
-
-/* Corner brackets */
-.corner-bracket {
-  position: absolute;
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.8);
-  transition: all 0.3s ease;
-}
-
-.corner-bracket.top-left {
-  top: 100px;
-  left: 20px;
-  border-right: none;
-  border-bottom: none;
-}
-
-.corner-bracket.top-right {
-  top: 100px;
-  right: 20px;
-  border-left: none;
-  border-bottom: none;
-}
-
-.corner-bracket.bottom-left {
-  bottom: 20px;
-  left: 20px;
-  border-right: none;
-  border-top: none;
-}
-
-.corner-bracket.bottom-right {
-  bottom: 20px;
-  right: 20px;
-  border-left: none;
-  border-top: none;
-}
-
-.dynamic-background:hover .corner-bracket {
-  border-color: rgba(255, 255, 255, 1);
-  transform: scale(1.1);
+	0% {
+		top: -50px;
+		transform: rotate(0deg);
+		opacity: 0;
+	}
+	10% {
+		opacity: 1;
+	}
+	90% {
+		opacity: 1;
+	}
+	100% {
+		top: 100vh;
+		transform: rotate(360deg);
+		opacity: 0;
+	}
 }
 
 /* Skaki NTUA Background Logo */
 .skaki-background-logo {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: var(--z-background-elements);
-  opacity: 0.1;
-  pointer-events: none;
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	z-index: var(--z-background-elements);
+	opacity: 0.2;
+	pointer-events: none;
 }
 
-.skaki-background-logo .skaki-logo {
-  opacity: 0.8;
-}
-
-.skaki-background-logo .logo-circle {
-  width: 300px;
-  height: 300px;
-  background: radial-gradient(circle, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
-  border: 2px solid rgba(255,255,255,0.2);
-}
-
-.skaki-background-logo .chess-pawn {
-  font-size: 4rem;
-}
-
-.skaki-background-logo .crown {
-  font-size: 2rem;
-}
-
-.skaki-background-logo .logo-text .skaki {
-  font-size: 1.5rem;
-}
-
-.skaki-background-logo .logo-text .ntua {
-  font-size: 2.5rem;
+.background-logo-image {
+	width: 360px;
+	height: 320px;
+	object-fit: contain;
 }
 
 /* Content wrapper */
 .background-content {
-  position: relative;
-  z-index: var(--z-content);
-  display: flex;
-  flex-direction: column;
-  background: transparent;
-  pointer-events: auto;
+	position: relative;
+	z-index: var(--z-content);
+	display: flex;
+	flex-direction: column;
+	background: transparent;
+	pointer-events: auto;
 }
 
 /* Content overlay for better readability */
 .content-overlay {
-  position: relative;
-  z-index: var(--z-content);
-  padding: 20px;
-  pointer-events: auto;
+	position: relative;
+	z-index: var(--z-content);
+	padding: 20px;
+	pointer-events: auto;
 }
 
 .content-overlay .card {
-  backdrop-filter: blur(10px);
-  border-radius: 15px;
-  transition: all 0.3s ease;
+	backdrop-filter: blur(10px);
+	border-radius: 15px;
+	transition: all 0.3s ease;
 }
 
 .content-overlay .card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+	transform: translateY(-5px);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
 }
 
 /* Skaki NTUA Branding Elements */
 .skaki-branding {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: var(--z-background-elements);
-  pointer-events: none;
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: var(--z-background-elements);
+	pointer-events: none;
 }
 
 .branding-top-left {
-  position: absolute;
-  top: 100px;
-  left: 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+	position: absolute;
+	top: 100px;
+	left: 20px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
 }
 
 .branding-top-left::before {
-  content: '';
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.8);
-  border-right: none;
-  border-bottom: none;
+	content: '';
+	width: 20px;
+	height: 20px;
+	border: 2px solid rgba(255, 255, 255, 0.8);
+	border-right: none;
+	border-bottom: none;
 }
 
 .branding-text {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.9rem;
-  font-weight: 500;
-  letter-spacing: 0.5px;
+	color: rgba(255, 255, 255, 0.8);
+	font-size: 0.9rem;
+	font-weight: 500;
+	letter-spacing: 0.5px;
 }
 
 .branding-top-center {
-  position: absolute;
-  top: 100px;
-  left: 50%;
-  transform: translateX(-50%);
+	position: absolute;
+	top: 100px;
+	left: 50%;
+	transform: translateX(-50%);
 }
 
 .ntua-text {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 2.5rem;
-  font-weight: bold;
-  letter-spacing: 3px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+	color: rgba(255, 255, 255, 0.6);
+	font-size: 2.5rem;
+	font-weight: bold;
+	letter-spacing: 3px;
+	text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-
-
+/* Watermark */
+.watermark {
+	position: fixed;
+	bottom: 10px;
+	right: 10px;
+	opacity: 0.3;
+	font-size: 10px;
+	pointer-events: none;
+	z-index: 1000;
+}
 
 /* Responsive design */
 @media (max-width: 768px) {
-  .corner-bracket {
-    width: 30px;
-    height: 30px;
-  }
-  
-  .floating-piece {
-    font-size: 1.5rem;
-  }
-  
-  .skaki-logo .logo-circle {
-    width: 150px;
-    height: 150px;
-  }
-  
-  .social-info {
-    left: 20px;
-    font-size: 0.8rem;
-  }
-  
-  .welcome-message .title {
-    font-size: 1.5rem;
-  }
+	.corner-bracket {
+		width: 30px;
+		height: 30px;
+	}
+
+	.floating-piece {
+		font-size: 1.5rem;
+	}
+
+	.skaki-logo .logo-circle {
+		width: 150px;
+		height: 150px;
+	}
+
+	.social-info {
+		left: 20px;
+		font-size: 0.8rem;
+	}
+
+	.welcome-message .title {
+		font-size: 1.5rem;
+	}
 } 

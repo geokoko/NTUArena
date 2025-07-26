@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import SkakiLogo from './SkakiLogo';
 import './DynamicBackground.css';
+import skakiLogo from './pictures/Le-Roi-logo.png';
 
 const DynamicBackground = ({ children, variant = 'default' }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -23,13 +23,7 @@ const DynamicBackground = ({ children, variant = 'default' }) => {
   const backgroundClass = `dynamic-background ${variant} ${getTimeBasedVariant()}`;
 
   return (
-    <div className={backgroundClass}>
-      {/* Animated corner brackets */}
-      <div className="corner-bracket top-left"></div>
-      <div className="corner-bracket top-right"></div>
-      <div className="corner-bracket bottom-left"></div>
-      <div className="corner-bracket bottom-right"></div>
-      
+    <div className={backgroundClass}>      
       {/* Permanent falling chess pieces */}
       <div className="falling-piece pawn-1">♟</div>
       <div className="falling-piece knight-1">♞</div>
@@ -44,19 +38,25 @@ const DynamicBackground = ({ children, variant = 'default' }) => {
       
       {/* Skaki NTUA Background Logo */}
       <div className="skaki-background-logo">
-        <SkakiLogo size="large" showSocial={false} showWelcome={false} />
+        <img 
+          src={skakiLogo} 
+          alt="Skaki NTUA Background Logo" 
+          className="background-logo-image"
+        />
       </div>
       
       {/* Skaki NTUA Branding Elements */}
       <div className="skaki-branding">
-        <div className="branding-top-left">
-          <div className="branding-text">Σκακιστική Ομάδα ΕΜΠ Le Roi</div>
-        </div>
         <div className="branding-top-center">
-          <div className="ntua-text">NTUA</div>
+          <div className="ntua-text">SKAKI-NTUA</div>
         </div>
       </div>
-      
+
+	  { /* Skaki NTUA Watermark */ }
+	  <div className="watermark">
+	  	Σκακιστική Ομάδα ΕΜΠ Le Roi
+	  </div>
+
       {/* Content */}
       <div className="background-content">
         {children}

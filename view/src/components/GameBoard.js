@@ -1,5 +1,6 @@
 import React from 'react';
 import ChessboardComponent from './Chessboard';
+import './GameBoard.css';
 
 const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false }) => {
   return (

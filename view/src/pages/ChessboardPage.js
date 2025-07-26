@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ChessboardComponent from '../components/Chessboard';
 import DynamicEffects from '../components/DynamicEffects';
+import './ChessboardPage.css';
 
 const ChessboardPage = () => {
   const [gameHistory, setGameHistory] = useState([]);

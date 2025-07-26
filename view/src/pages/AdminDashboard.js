@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { tournamentAPI, userAPI, healthAPI } from '../services/api';
+import Card from '../components/Card';
+import Button from '../components/Button';
+import Badge from '../components/Badge';
+import Table from '../components/Table';
+import Form from '../components/Form';
+import Spinner from '../components/Spinner';
+import Alert from '../components/Alert';
+import './AdminDashboard.css';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('tournaments');

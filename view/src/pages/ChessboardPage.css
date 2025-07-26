@@ -1,0 +1,143 @@
+/* Chessboard Page Styles */
+
+.chessboard-page-container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 20px;
+}
+
+.chessboard-page-card {
+	background: rgba(255, 255, 255, 0.15);
+	backdrop-filter: blur(20px);
+	border-radius: 12px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+	padding: 1.5rem;
+	margin-bottom: 1rem;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	transition: all 0.3s ease;
+	position: relative;
+	overflow: hidden;
+	width: 100%;
+	max-width: 800px;
+}
+
+.chessboard-page-card-header {
+	background: rgba(255, 255, 255, 0.2);
+	margin: -1.5rem -1.5rem 1rem -1.5rem;
+	padding: 1rem 1.5rem;
+	border-radius: 12px 12px 0 0;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+	position: relative;
+	z-index: 1;
+}
+
+.chessboard-page-card-title {
+	margin: 0;
+	color: #2c3e50;
+	font-weight: 600;
+}
+
+/* Chessboard page buttons */
+.chessboard-page-btn {
+	padding: 0.75rem 1.5rem;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	border-radius: 6px;
+	font-size: 0.95rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	text-decoration: none;
+	display: inline-block;
+	text-align: center;
+	background: rgba(255, 255, 255, 0.1);
+	backdrop-filter: blur(10px);
+	color: #f8f9fa;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	letter-spacing: 0.5px;
+}
+
+.chessboard-page-btn:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+	background: rgba(255, 255, 255, 0.15);
+	border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chessboard-page-btn-primary {
+	background: rgba(52, 152, 219, 0.2);
+	border-color: rgba(52, 152, 219, 0.4);
+	color: #3498db;
+}
+
+.chessboard-page-btn-success {
+	background: rgba(46, 204, 113, 0.2);
+	border-color: rgba(46, 204, 113, 0.4);
+	color: #2ecc71;
+}
+
+.chessboard-page-btn-danger {
+	background: rgba(231, 76, 60, 0.2);
+	border-color: rgba(231, 76, 60, 0.4);
+	color: #e74c3c;
+}
+
+.chessboard-page-btn-secondary {
+	background: rgba(149, 165, 166, 0.2);
+	border-color: rgba(149, 165, 166, 0.4);
+	color: #95a5a6;
+}
+
+/* Chessboard page layout utilities */
+.chessboard-page-d-flex {
+	display: flex;
+}
+
+.chessboard-page-justify-content-center {
+	justify-content: center;
+}
+
+.chessboard-page-align-items-center {
+	align-items: center;
+}
+
+.chessboard-page-flex-wrap {
+	flex-wrap: wrap;
+}
+
+.chessboard-page-gap-2 {
+	gap: 0.5rem;
+}
+
+.chessboard-page-mb-4 {
+	margin-bottom: 1.5rem;
+}
+
+.chessboard-page-mt-3 {
+	margin-top: 1rem;
+}
+
+.chessboard-page-text-center {
+	text-align: center;
+}
+
+.chessboard-page-text-muted {
+	color: #bdc3c7;
+}
+
+/* Responsive design for chessboard page */
+@media (max-width: 768px) {
+	.chessboard-page-container {
+		padding: 10px;
+	}
+	
+	.chessboard-page-card {
+		margin: 10px;
+		padding: 1rem;
+	}
+	
+	.chessboard-page-btn {
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
+	}
+}

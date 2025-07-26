@@ -1,0 +1,52 @@
+/* Form Components */
+.form-container {
+	max-width: 400px;
+	margin: 50px auto;
+	padding: 2rem;
+	background: rgba(255, 255, 255, 0.15);
+	backdrop-filter: blur(20px);
+	border-radius: 8px;
+	box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+	border: 1px solid rgba(255,255,255,0.3);
+}
+
+.form-container h2 {
+	text-align: center;
+	margin-bottom: 2rem;
+	color: #2c3e50;
+}
+
+.form-group {
+	margin-bottom: 1rem;
+}
+
+.form-group label {
+	display: block;
+	margin-bottom: 0.5rem;
+	color: #2c3e50;
+	font-weight: 500;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+	width: 100%;
+	padding: 0.75rem;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	border-radius: 4px;
+	font-size: 1rem;
+	transition: border-color 0.3s;
+	background: rgba(255, 255, 255, 0.15);
+	color: #2c3e50;
+	backdrop-filter: blur(10px);
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+	outline: none;
+	border-color: rgba(255, 255, 255, 0.6);
+	background: rgba(255, 255, 255, 0.15);
+}
+
+

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { tournamentAPI, gameAPI, playerAPI } from '../services/api';
 import GameBoard from '../components/GameBoard';
+import './TournamentDetail.css';
 
 const TournamentDetail = ({ user }) => {
   const { id } = useParams();
