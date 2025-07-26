@@ -1,79 +1,91 @@
-/* Global Styles */
+/* index.css - Global Resets & Base Styles */
+
+/* Universal reset */
 * {
-  box-sizing: border-box;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
 }
 
+/* Base typography */
 body {
-  margin: 0;
-  color: #DCDCDC;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f5f5;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+		'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	color: #DCDCDC;
+	background-color: #f5f5f5;
 }
 
+/* Code elements */
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+	font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
-/* Reset some default styles */
+/* Typography resets */
 h1, h2, h3, h4, h5, h6 {
-  margin-top: 0;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
+	margin-top: 0;
+	margin-bottom: 0.5rem;
+	font-weight: 600;
 }
 
 p {
-  margin-top: 0;
-  margin-bottom: 1rem;
+	margin-top: 0;
+	margin-bottom: 1rem;
 }
 
 ul, ol {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  padding-left: 1.5rem;
+	margin-top: 0;
+	margin-bottom: 1rem;
+	padding-left: 1.5rem;
 }
 
 li {
-  margin-bottom: 0.25rem;
+	margin-bottom: 0.25rem;
 }
 
 a {
-  color: #007bff;
-  text-decoration: none;
+	color: #007bff;
+	text-decoration: none;
 }
 
 a:hover {
-  text-decoration: underline;
+	text-decoration: underline;
 }
 
-/* (Fix) Scrollbar styles - Apply globally to prevent flickering */
+/* Scrollbar styles (unified) */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: #888 transparent;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(136, 136, 136, 0.6) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
+	width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+	background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(136, 136, 136, 0.6);
-  border-radius: 4px;
-  border: none;
+	background: rgba(136, 136, 136, 0.6);
+	border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(85, 85, 85, 0.8);
+	background: rgba(85, 85, 85, 0.8);
 }
 
 ::-webkit-scrollbar-corner {
-  background: transparent;
-} 
+	background: transparent;
+}
+
+html {
+	scrollbar-gutter: stable;
+	overflow-y: scroll;
+}
+
+html, body {
+	width: 100%;
+}

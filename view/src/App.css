@@ -1,22 +1,4 @@
-/* App.css - Main Layout & Z-Index Hierarchy */
-/* 
- * CSS Organization:
- * - index.css: Global resets and base styles
- * - App.css: Main layout, z-index hierarchy
- * - components/*.css: Component-specific styles (properly scoped)
- * - styles/shared/*.css: Shared component styles
- * 
- * Z-Index Hierarchy (use CSS variables):
- * --z-background: 1        (background gradient)
- * --z-background-elements: 2 (falling pieces, logos)
- * --z-content: 10          (main content areas)
- * --z-logo: 50             (skaki logo components)
- * --z-effects: 100         (visual effects)
- * --z-navbar: 1000         (navigation bar)
- * --z-social: 1001         (social media links)
- * --z-modal: 2000          (modals and popups)
- * --z-tooltip: 3000        (tooltips)
- */
+/* App.css - Layout & Component Styles */
 
 /* Z-Index Hierarchy */
 :root {
@@ -31,22 +13,7 @@
 	--z-tooltip: 3000;
 }
 
-* {
-	box-sizing: border-box;
-}
-
-html {
-	scrollbar-gutter: stable;
-	overflow-y: scroll; /* Force scrollbar to always be visible */
-}
-
-html, body {
-	margin: 0;
-	padding: 0;
-	width: 100%;
-	overflow-x: hidden; /* Prevent horizontal scrolling */
-}
-
+/* App layout */
 #root {
 	width: 100%;
 }
@@ -57,48 +24,25 @@ html, body {
 	background: transparent;
 	width: 100%;
 	min-height: 100vh;
+	scrollbar-gutter: stable;
 }
 
 .main-content {
 	flex: 1;
 	padding: 20px;
 	max-width: 1200px;
-	margin: 0 auto;
+	margin: 80px auto 0;
 	width: 100%;
 	background: transparent;
-	box-sizing: border-box;
-	margin-top: 80px;
 	padding-bottom: 40px;
 	position: relative;
 	z-index: var(--z-content);
 }
 
-/* Global Shared Styles */
-
-/* Ensure consistent scrollbar behavior */
-* {
-	scrollbar-width: thin;
-	scrollbar-color: rgba(136, 136, 136, 0.6) transparent;
-}
-
-/* Prevent layout shifts from scrollbar */
-.App {
-	scrollbar-gutter: stable;
-}
-
-
-/* Utility Classes */
-.text-center {
-	text-align: center;
-}
-
-.text-right {
-	text-align: right;
-}
-
-.text-muted {
-	color: #bdc3c7;
-}
+/* Utility classes */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-muted { color: #bdc3c7; }
 
 .mt-1 { margin-top: 0.25rem; }
 .mt-2 { margin-top: 0.5rem; }
@@ -112,54 +56,25 @@ html, body {
 .mb-4 { margin-bottom: 1.5rem; }
 .mb-5 { margin-bottom: 3rem; }
 
-.d-flex {
-	display: flex;
-}
-
-.justify-content-between {
-	justify-content: space-between;
-}
-
-.justify-content-center {
-	justify-content: center;
-}
-
-.align-items-center {
-	align-items: center;
-}
-
-.flex-wrap {
-	flex-wrap: wrap;
-}
+.d-flex { display: flex; }
+.justify-content-between { justify-content: space-between; }
+.justify-content-center { justify-content: center; }
+.align-items-center { align-items: center; }
+.flex-wrap { flex-wrap: wrap; }
 
 .gap-1 { gap: 0.25rem; }
 .gap-2 { gap: 0.5rem; }
 .gap-3 { gap: 1rem; }
 
-
-/* Responsive */
+/* Responsive design */
 @media (max-width: 768px) {
 	.main-content {
 		padding: 10px;
-		width: 100%;
-		box-sizing: border-box;
+		margin-top: 70px;
 	}
-	
+
 	.btn {
 		padding: 0.5rem 1rem;
 		font-size: 0.875rem;
-	}
-	
-	.form-container {
-		margin: 20px;
-		padding: 1rem;
-		width: calc(100% - 40px);
-		box-sizing: border-box;
-	}
-	
-	.table {
-		font-size: 0.875rem;
-		width: 100%;
-		overflow-x: auto;
 	}
 }
