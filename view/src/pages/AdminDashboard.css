@@ -235,13 +235,13 @@
 		width: calc(100% - 40px);
 		box-sizing: border-box;
 	}
-	
+
 	.admin-table {
 		font-size: 0.875rem;
 		width: 100%;
 		overflow-x: auto;
 	}
-	
+
 	.admin-btn {
 		padding: 0.5rem 1rem;
 		font-size: 0.875rem;
