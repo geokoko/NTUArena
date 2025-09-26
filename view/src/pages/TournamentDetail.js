@@ -17,50 +17,21 @@ const TournamentDetail = ({ user }) => {
 	useEffect(() => {
 		const fetchTournamentDetails = async () => {
 			try {
-				// Simulate tournament data
-				const tournamentData = {
-					_id: id,
-					name: id === '1' ? 'Weekly Arena Championship' : 'Monthly Master Tournament',
-					startDate: new Date(),
-					endDate: new Date(Date.now() + 3600000 * 3),
-					tournLocation: 'Online',
-					tournStatus: 'active',
-					participants: [user?.id].filter(Boolean),
-					maxPlayers: 50,
-					timeControl: '5+3',
-					description: 'A competitive chess tournament for all skill levels'
-				};
+				const [tournamentRes, standingsRes, gamesRes, playersRes] = await Promise.all([
+					fetch(`/api/tournaments/${id}`),
+					fetch(`/api/tournaments/${id}/standings`),
+					fetch(`/api/tournaments/${id}/games`),
+					fetch(`/api/tournaments/${id}/players`),
+				]);
 
-				const standingsData = [
-					{ rank: 1, player: { username: 'ChessMaster', id: '1' }, score: 8.5, games: 12 },
-					{ rank: 2, player: { username: 'KnightRider', id: '2' }, score: 7.0, games: 11 },
-					{ rank: 3, player: { username: 'PawnStorm', id: '3' }, score: 6.5, games: 10 },
-				];
+				if (!tournamentRes.ok || !standingsRes.ok || !gamesRes.ok || !playersRes.ok) {
+					throw new Error('Failed to fetch tournament details');
+				}
 
-				const gamesData = [
-					{
-						_id: '1',
-						playerWhite: { username: 'ChessMaster', id: '1' },
-						playerBlack: { username: 'KnightRider', id: '2' },
-						isFinished: true,
-						finishedAt: new Date(Date.now() - 3600000),
-						resultColor: 'white'
-					},
-					{
-						_id: '2',
-						playerWhite: { username: 'PawnStorm', id: '3' },
-						playerBlack: { username: 'ChessMaster', id: '1' },
-						isFinished: false,
-						finishedAt: null,
-						resultColor: null
-					}
-				];
-
-				const playersData = [
-					{ username: 'ChessMaster', id: '1', score: 8.5, liveRating: 1850 },
-					{ username: 'KnightRider', id: '2', score: 7.0, liveRating: 1780 },
-					{ username: 'PawnStorm', id: '3', score: 6.5, liveRating: 1720 }
-				];
+				const tournamentData = await tournamentRes.json();
+				const standingsData = await standingsRes.json();
+				const gamesData = await gamesRes.json();
+				const playersData = await playersRes.json();
 
 				setTournament(tournamentData);
 				setStandings(standingsData);
@@ -75,7 +46,7 @@ const TournamentDetail = ({ user }) => {
 		};
 
 		fetchTournamentDetails();
-	}, [id, user?.id]);
+	}, [id]);
 
 	const getStatusBadge = (status) => {
 		switch (status) {

@@ -33,35 +33,19 @@ const AdminDashboard = () => {
 			setLoading(true);
 			try {
 				if (activeTab === 'tournaments') {
-					// Simulate tournament data
-					setTournaments([
-						{
-							_id: '1',
-							name: 'Weekly Arena Championship',
-							startDate: new Date().toISOString(),
-							endDate: new Date(Date.now() + 3600000 * 3).toISOString(),
-							tournLocation: 'Online',
-							tournStatus: 'active',
-							participants: ['user1', 'user2'],
-							maxPlayers: 50
-						},
-						{
-							_id: '2',
-							name: 'Monthly Master Tournament',
-							startDate: new Date(Date.now() + 86400000).toISOString(),
-							endDate: new Date(Date.now() + 86400000 + 3600000 * 4).toISOString(),
-							tournLocation: 'Chess Club',
-							tournStatus: 'upcoming',
-							participants: [],
-							maxPlayers: 30
-						}
-					]);
+					const response = await fetch('/api/tournaments');
+					if (!response.ok) {
+						throw new Error('Network response was not ok');
+					}
+					const data = await response.json();
+					setTournaments(data);
 				} else if (activeTab === 'users') {
-					// Simulate user data
-					setUsers([
-						{ _id: '1', username: 'testuser', email: 'test@example.com', role: 'user', globalElo: 1500 },
-						{ _id: '2', username: 'admin', email: 'admin@example.com', role: 'admin', globalElo: 2000 }
-					]);
+					const response = await fetch('/api/users');
+					if (!response.ok) {
+						throw new Error('Network response was not ok');
+					}
+					const data = await response.json();
+					setUsers(data.users);
 				} else if (activeTab === 'system') {
 					const healthResponse = await healthAPI.checkServicesHealth();
 					setSystemHealth(healthResponse.data);

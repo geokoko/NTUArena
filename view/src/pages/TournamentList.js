@@ -11,30 +11,12 @@ const TournamentList = () => {
 	useEffect(() => {
 		const fetchTournaments = async () => {
 			try {
-				// For now, we'll simulate some tournament data since we don't have a list endpoint
-				// In a real implementation, you would have an endpoint to list all tournaments
-				setTournaments([
-					{
-						_id: '1',
-						name: 'Weekly Arena Championship',
-						startDate: new Date(),
-						endDate: new Date(Date.now() + 3600000 * 3), // 3 hours from now
-						tournLocation: 'Online',
-						tournStatus: 'active',
-						participants: [],
-						maxPlayers: 50
-					},
-					{
-						_id: '2',
-						name: 'Monthly Master Tournament',
-						startDate: new Date(Date.now() + 86400000), // tomorrow
-						endDate: new Date(Date.now() + 86400000 + 3600000 * 4), // tomorrow + 4 hours
-						tournLocation: 'Chess Club',
-						tournStatus: 'upcoming',
-						participants: [],
-						maxPlayers: 30
-					}
-				]);
+				const response = await fetch('/api/tournaments');
+				if (!response.ok) {
+					throw new Error('Network response was not ok');
+				}
+				const data = await response.json();
+				setTournaments(data);
 			} catch (err) {
 				setError('Failed to load tournaments');
 				console.error(err);
