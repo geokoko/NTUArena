@@ -5,6 +5,9 @@ const tournamentController = require('../controllers/tournamentController');
 // Create tournament
 router.post('/', tournamentController.createTournament);
 
+// Get all tournaments
+router.get('/', tournamentController.getAllTournaments);
+
 // Start tournament
 router.post('/:id/start', tournamentController.startTournament);
 

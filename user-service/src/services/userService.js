@@ -276,6 +276,16 @@ class UserService {
             throw error;
         }
     }
+
+    async getAllUsers() {
+        try {
+            const users = await User.find();
+            return users;
+        } catch (error) {
+            console.error('Error getting all users:', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new UserService(); 

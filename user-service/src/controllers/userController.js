@@ -70,6 +70,16 @@ class UserController {
             res.status(400).json({ error: error.message });
         }
     }
+
+    async getAllUsers(req, res) {
+        try {
+            const users = await userService.getAllUsers();
+            res.status(200).json({ users });
+        } catch (error) {
+            console.error('Error getting all users:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
 }
 
 module.exports = new UserController(); 

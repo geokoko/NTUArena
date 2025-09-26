@@ -112,6 +112,16 @@ class TournamentController {
             res.status(500).json({ error: error.message });
         }
     }
+
+    async getAllTournaments(req, res) {
+        try {
+            const tournaments = await tournamentService.getAllTournaments();
+            res.status(200).json(tournaments);
+        } catch (error) {
+            console.error('Error getting all tournaments:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
 }
 
 module.exports = new TournamentController(); 

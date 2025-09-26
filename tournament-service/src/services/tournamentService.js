@@ -396,6 +396,16 @@ class TournamentService {
             throw error;
         }
     }
+
+    async getAllTournaments() {
+        try {
+            const tournaments = await Tournament.find();
+            return tournaments;
+        } catch (error) {
+            console.error('Error getting all tournaments:', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new TournamentService(); 
