@@ -10,22 +10,22 @@ const serviceRoutes = {
 	user: {
 		path: '/api/users',
 		target: services.user,
-		pathRewrite: { '^/api/users': '/users' }
+		pathRewrite: { '^/api/users': '' }
 	},
 	tournament: {
 		path: '/api/tournaments',
 		target: services.tournament,
-		pathRewrite: { '^/api/tournaments': '/tournaments' }
+		pathRewrite: { '^/api/tournaments': '' }
 	},
 	player: {
 		path: '/api/players',
 		target: services.player,
-		pathRewrite: { '^/api/players': '/players' }
+		pathRewrite: { '^/api/players': '' }
 	},
 	game: {
 		path: '/api/games',
 		target: services.game,
-		pathRewrite: { '^/api/games': '/games' }
+		pathRewrite: { '^/api/games': '' }
 	},
 	pairing: {
 		path: '/api/pairing',
