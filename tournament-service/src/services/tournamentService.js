@@ -39,12 +39,23 @@ class TournamentService {
         const { gameId, tournamentId, whitePlayerId, blackPlayerId, result } = message.data;
         
         try {
-            // Update game in tournament
-            await Game.findByIdAndUpdate(gameId, {
-                isFinished: true,
-                finishedAt: new Date(),
-                resultColor: result
-            });
+            // Update game in tournament cache (idempotent)
+            await Game.findByIdAndUpdate(
+                gameId,
+                {
+                    $set: {
+                        isFinished: true,
+                        finishedAt: new Date(),
+                        resultColor: result
+                    },
+                    $setOnInsert: {
+                        playerWhite: whitePlayerId,
+                        playerBlack: blackPlayerId,
+                        tournament: tournamentId
+                    }
+                },
+                { upsert: true, new: true }
+            );
 
             // Update player scores
             const whitePlayer = await Player.findById(whitePlayerId);
@@ -94,12 +105,26 @@ class TournamentService {
 
     async handleGameCreated(message) {
         console.log('Game created:', message.data);
-        const { gameId, tournamentId } = message.data;
+        const { gameId, tournamentId, whitePlayerId, blackPlayerId } = message.data;
         
         try {
-            // Add game to tournament
+            // Create/ensure local game cache document
+            await Game.findByIdAndUpdate(
+                gameId,
+                {
+                    $setOnInsert: {
+                        playerWhite: whitePlayerId,
+                        playerBlack: blackPlayerId,
+                        tournament: tournamentId,
+                        isFinished: false
+                    }
+                },
+                { upsert: true, new: true }
+            );
+
+            // Add game to tournament list
             await Tournament.findByIdAndUpdate(tournamentId, {
-                $push: { games: gameId }
+                $addToSet: { games: gameId }
             });
         } catch (error) {
             console.error('Error handling game created:', error);
