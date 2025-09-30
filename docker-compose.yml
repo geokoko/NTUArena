@@ -80,36 +80,6 @@ services:
       - tournament_db_data:/data/db
     restart: unless-stopped
 
-  # Player Service
-  player-service:
-    build: ./player-service
-    container_name: arena_player_service
-    ports:
-      - "3004:3004"
-    environment:
-      - MONGO_URI=mongodb://player_db:27017/player_service
-      - PORT=3004
-      - NODE_ENV=development
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
-      - SERVICE_NAME=player-service
-    volumes:
-      - ./player-service/src:/app/src
-      - /app/node_modules
-    depends_on:
-      - player_db
-      - rabbitmq
-    restart: unless-stopped
-
-  # Player DB
-  player_db:
-    image: mongo:latest
-    container_name: arena_player_db
-    ports:
-      - "27021:27017"
-    volumes:
-      - player_db_data:/data/db
-    restart: unless-stopped
-
   # Game Service
   game-service:
     build: ./game-service
