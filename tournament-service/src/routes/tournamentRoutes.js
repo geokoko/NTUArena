@@ -21,10 +21,10 @@ router.get('/:id', tournamentController.getTournamentById);
 router.get('/:id/standings', tournamentController.getTournamentStandings);
 
 // Join tournament
-router.post('/:id/join', tournamentController.joinTournament);
+router.post('/:id/playerjoin', tournamentController.joinTournament);
 
 // Leave tournament
-router.post('/:id/leave', tournamentController.leaveTournament);
+router.post('/:id/playerleave', tournamentController.leaveTournament);
 
 // Get all players in tournament
 router.get('/:id/players', tournamentController.getAllPlayersInTournament);

@@ -17,11 +17,6 @@ const serviceRoutes = {
 		target: services.tournament,
 		pathRewrite: { '^/api/tournaments': '' }
 	},
-	player: {
-		path: '/api/players',
-		target: services.player,
-		pathRewrite: { '^/api/players': '' }
-	},
 	game: {
 		path: '/api/games',
 		target: services.game,

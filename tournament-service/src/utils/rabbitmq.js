@@ -15,12 +15,12 @@ class RabbitMQClient {
     }
 
     calculateRetryDelay(attempt) {
-        // Exponential backoff with jitter
+        // Exponential backoff
         const exponentialDelay = Math.min(
             this.retryDelay * Math.pow(2, attempt),
             this.maxRetryDelay
         );
-        // Add jitter to prevent thundering herd
+
         const jitter = Math.random() * 0.1 * exponentialDelay;
         return Math.floor(exponentialDelay + jitter);
     }
