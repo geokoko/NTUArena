@@ -37,27 +37,28 @@ api.interceptors.response.use(
 
 // User API
 export const userAPI = {
+	getAll: () => api.get('/api/users'),
 	getProfile: (userId) => api.get(`/api/users/${userId}`),
 	updateProfile: (userId, userData) => api.put(`/api/users/${userId}`, userData),
-	searchUsers: (query) => api.get(`/api/users/search?q=${query}`),
+	searchUsers: (query) => api.get(`/api/users/search?q=${encodeURIComponent(query)}`),
 	getUserStatistics: (userId) => api.get(`/api/users/${userId}/statistics`),
-	addUser: (userData) => api.post('/api/users/addUser', userData),
-	deleteUser: (userId) => api.delete(`/api/users/${userId}/delete`),
+	addUser: (userData) => api.post('/api/users', userData),
+	deleteUser: (userId) => api.delete(`/api/users/${userId}`),
 };
 
 // Tournament API
 export const tournamentAPI = {
-	createTournament: (tournamentData) => api.post('/api/tournaments', tournamentData),
-	getAllTournaments: () => api.get('/api/tournaments'),
-	getTournament: (tournamentId) => api.get(`/api/tournaments/${tournamentId}`),
-	startTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/start`),
-	endTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/end`),
-	getTournamentStandings: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/standings`),
-	joinTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/join`),
-	leaveTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/leave`),
-	getTournamentPlayers: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/players`),
-	getTournamentGames: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/games`),
-	getActiveTournamentGames: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/active`),
+    createTournament: (tournamentData) => api.post('/api/tournaments', tournamentData),
+    getAllTournaments: () => api.get('/api/tournaments'),
+    getTournament: (tournamentId) => api.get(`/api/tournaments/${tournamentId}`),
+    startTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/start`),
+    endTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/end`),
+    getTournamentStandings: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/standings`),
+	joinTournament: (tournamentId, userId) => api.post(`/api/tournaments/${tournamentId}/join`, { userId }),
+	leaveTournament: (tournamentId, userId) => api.post(`/api/tournaments/${tournamentId}/leave`, { userId }),
+    getTournamentPlayers: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/players`),
+    getTournamentGames: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/games`),
+    getActiveTournamentGames: (tournamentId) => api.get(`/api/tournaments/${tournamentId}/active`),
 };
 
 // Player API
@@ -69,16 +70,18 @@ export const playerAPI = {
 
 // Game API
 export const gameAPI = {
-	submitGameResult: (gameId, result) => api.post(`/api/games/${gameId}/submitResult`, { result }),
-	getGame: (gameId) => api.get(`/api/games/${gameId}`),
-	getGamesByTournament: (tournamentId) => api.get(`/api/games/tournament/${tournamentId}`),
+    createFromPairing: (whitePlayerId, blackPlayerId, tournamentId) =>
+        api.post(`/api/games/createFromPairing`, { whitePlayerId, blackPlayerId, tournamentId }),
+    submitGameResult: (gameId, result) => api.post(`/api/games/${gameId}/submitResult`, { result }),
+    getGame: (gameId) => api.get(`/api/games/${gameId}`),
+    getGamesByTournament: (tournamentId) => api.get(`/api/games/tournament/${tournamentId}`),
 };
 
 // Pairing API
 export const pairingAPI = {
-	requestPairing: (tournamentId) => api.post('/api/pairing/request', { tournamentId }),
-	getAvailablePlayers: () => api.get('/api/pairing/available-players'),
-	generatePairings: (tournamentId) => api.get(`/api/pairing/generate/${tournamentId}`),
+    requestPairing: (tournamentId) => api.post('/api/pairing/request', { tournamentId }),
+    getAvailablePlayers: () => api.get('/api/pairing/available-players'),
+    generatePairings: (tournamentId) => api.get(`/api/pairing/generate/${tournamentId}`),
 };
 
 // Health API

@@ -1,156 +1,29 @@
 services:
-  # Message Queue
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: arena_rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=admin123
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: unless-stopped
-
-  # User Service
-  user-service:
-    build: ./user-service
-    container_name: arena_user_service
-    ports:
-      - "3002:3002"
-    environment:
-      - MONGO_URI=mongodb://user_db:27017/user_service
-      - PORT=3002
-      - NODE_ENV=development
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
-      - SERVICE_NAME=user-service
-    volumes:
-      - ./user-service/src:/app/src
-      - /app/node_modules
-    depends_on:
-      - user_db
-      - rabbitmq
-    restart: unless-stopped
-
-  # User DB
-  user_db:
-    image: mongo:latest
-    container_name: arena_user_db
-    ports:
-      - "27019:27017"
-    volumes:
-      - user_db_data:/data/db
-    restart: unless-stopped
-
-  # Tournament Service
-  tournament-service:
-    build: ./tournament-service
-    container_name: arena_tournament_service
-    ports:
-      - "3003:3003"
-    environment:
-      - MONGO_URI=mongodb://tournament_db:27017/tournament_service
-      - PORT=3003
-      - NODE_ENV=development
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
-      - SERVICE_NAME=tournament-service
-    volumes:
-      - ./tournament-service/src:/app/src
-      - /app/node_modules
-    depends_on:
-      - tournament_db
-      - rabbitmq
-    restart: unless-stopped
-
-  # Tournament DB
-  tournament_db:
-    image: mongo:latest
-    container_name: arena_tournament_db
-    ports:
-      - "27020:27017"
-    volumes:
-      - tournament_db_data:/data/db
-    restart: unless-stopped
-
-  # Game Service
-  game-service:
-    build: ./game-service
-    container_name: arena_game_service
-    ports:
-      - "3005:3005"
-    environment:
-      - MONGO_URI=mongodb://game_db:27017/game_service
-      - PORT=3005
-      - NODE_ENV=development
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
-      - SERVICE_NAME=game-service
-    volumes:
-      - ./game-service/src:/app/src
-      - /app/node_modules
-    depends_on:
-      - game_db
-      - rabbitmq
-    restart: unless-stopped
-
-  # Game DB
-  game_db:
-    image: mongo:latest
-    container_name: arena_game_db
-    ports:
-      - "27022:27017"
-    volumes:
-      - game_db_data:/data/db
-    restart: unless-stopped
-
-  # Pairing Service
-  pairing-service:
-    build: ./pairing-service
-    container_name: arena_pairing_service
-    ports:
-      - "3006:3006"
-    environment:
-      - PORT=3006
-      - NODE_ENV=development
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
-      - SERVICE_NAME=pairing-service
-    volumes:
-      - ./pairing-service/src:/app/src
-      - /app/node_modules
-    depends_on:
-      - rabbitmq
-    restart: unless-stopped
-
-  # API Gateway
-  api-gateway:
-    build: ./api-gateway
-    container_name: arena_api_gateway
+  # Monolith API
+  api:
+    build: ./api
+    container_name: arena_api_monolith
     ports:
       - "5000:5000"
-    expose:
-      - "5000"
     environment:
       - PORT=5000
       - NODE_ENV=development
-      - AUTH_SERVICE_URL=http://auth-service:3001
-      - USER_SERVICE_URL=http://user-service:3002
-      - TOURNAMENT_SERVICE_URL=http://tournament-service:3003
-      - PLAYER_SERVICE_URL=http://player-service:3004
-      - GAME_SERVICE_URL=http://game-service:3005
-      - PAIRING_SERVICE_URL=http://pairing-service:3006
+      - MONGO_URI=mongodb://monolith_db:27017/arena_monolith
     volumes:
-      - ./api-gateway/src:/app/src
+      - ./api/src:/app/src
       - /app/node_modules
     depends_on:
-      - user-service
-      - tournament-service
-      - game-service
-      - pairing-service
+      - monolith_db
+    restart: unless-stopped
+
+  # Monolith DB
+  monolith_db:
+    image: mongo:latest
+    container_name: arena_monolith_db
+    ports:
+      - "27023:27017"
+    volumes:
+      - monolith_db_data:/data/db
     restart: unless-stopped
 
   # Frontend
@@ -167,12 +40,8 @@ services:
       - ./view/public:/app/public
       - /app/node_modules
     depends_on:
-      - api-gateway
+      - api
     restart: unless-stopped
 
 volumes:
-  user_db_data:
-  tournament_db_data:
-  player_db_data:
-  game_db_data:
-  rabbitmq_data: 
+  monolith_db_data:

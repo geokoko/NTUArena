@@ -42,8 +42,8 @@ const TournamentList = () => {
 		switch (status) {
 			case 'upcoming':
 				return <span className="badge badge-warning">Upcoming</span>;
-			case 'active':
-				return <span className="badge badge-success">Active</span>;
+			case 'in progress':
+				return <span className="badge badge-success">In Progress</span>;
 			case 'completed':
 				return <span className="badge badge-secondary">Completed</span>;
 			default:

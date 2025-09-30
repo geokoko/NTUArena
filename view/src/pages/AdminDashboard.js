@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { tournamentAPI, userAPI, healthAPI } from '../services/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { tournamentAPI, userAPI, healthAPI, pairingAPI, gameAPI } from '../services/api';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
@@ -11,124 +11,207 @@ import './AdminDashboard.css';
 
 const AdminDashboard = () => {
 	const [activeTab, setActiveTab] = useState('tournaments');
-	const [tournaments, setTournaments] = useState([]);
-	const [users, setUsers] = useState([]);
+    const [tournaments, setTournaments] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [activeGamesByTournament, setActiveGamesByTournament] = useState({});
 	const [systemHealth, setSystemHealth] = useState(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 
-	// Tournament form state
-	const [tournamentForm, setTournamentForm] = useState({
-		name: '',
-		startDate: '',
-		endDate: '',
-		tournLocation: '',
-		maxPlayers: 50,
-		timeControl: '5+3',
-		description: ''
-	});
+    // Tournament form state
+    const [tournamentForm, setTournamentForm] = useState({
+        name: '',
+        startDate: '',
+        endDate: '',
+        tournLocation: '',
+        maxPlayers: 50,
+        timeControl: '5+3',
+        description: ''
+    });
 
-	useEffect(() => {
-		const fetchData = async () => {
-			setLoading(true);
-			try {
-				if (activeTab === 'tournaments') {
-					const response = await fetch('/api/tournaments');
-					if (!response.ok) {
-						throw new Error('Network response was not ok');
-					}
-					const data = await response.json();
-					setTournaments(data);
-				} else if (activeTab === 'users') {
-					const response = await fetch('/api/users');
-					if (!response.ok) {
-						throw new Error('Network response was not ok');
-					}
-					const data = await response.json();
-					setUsers(data.users);
-				} else if (activeTab === 'system') {
-					const healthResponse = await healthAPI.checkServicesHealth();
-					setSystemHealth(healthResponse.data);
-				}
-			} catch (err) {
-				setError('Failed to load data');
-				console.error(err);
-			} finally {
-				setLoading(false);
-			}
-		};
-		fetchData();
-	}, [activeTab]);
+    // Admin: create user form
+    const [newUser, setNewUser] = useState({ username: '', email: '', globalElo: 1200 });
 
-	const handleTournamentSubmit = async (e) => {
-		e.preventDefault();
-		try {
-			await tournamentAPI.createTournament(tournamentForm);
-			alert('Tournament created successfully!');
-			setTournamentForm({
-				name: '',
-				startDate: '',
-				endDate: '',
-				tournLocation: '',
-				maxPlayers: 50,
-				timeControl: '5+3',
-				description: ''
-			});
-			// Refresh tournaments
-			setActiveTab('tournaments');
-		} catch (err) {
-			alert(err.response?.data?.error || 'Failed to create tournament');
-		}
-	};
+    // UI: selected user per tournament for adding participants
+    const [selectedUserByTournament, setSelectedUserByTournament] = useState({});
 
-	const handleDeleteTournament = async (tournamentId) => {
-		if (window.confirm('Are you sure you want to delete this tournament?')) {
-			try {
-				await tournamentAPI.deleteTournament(tournamentId);
-				alert('Tournament deleted successfully!');
-				setTournaments(tournaments.filter(t => t._id !== tournamentId));
-			} catch (err) {
-				alert(err.response?.data?.error || 'Failed to delete tournament');
-			}
-		}
-	};
+    useEffect(() => {
+        const fetchData = async () => {
+            setLoading(true);
+            setError('');
+            try {
+                if (activeTab === 'tournaments') {
+                    const [tournRes, usersRes] = await Promise.all([
+                        tournamentAPI.getAllTournaments(),
+                        userAPI.getAll(),
+                    ]);
+                    setTournaments(tournRes.data || []);
+                    setUsers(usersRes.data?.users || []);
+                } else if (activeTab === 'users') {
+                    const usersRes = await userAPI.getAll();
+                    setUsers(usersRes.data?.users || []);
+                } else if (activeTab === 'system') {
+                    const healthResponse = await healthAPI.checkServicesHealth();
+                    setSystemHealth(healthResponse.data);
+                }
+            } catch (err) {
+                if (err.status === 0) setError('Cannot reach server. Please try again.');
+                else setError(err.message || 'Failed to load data');
+                console.error('Admin fetch error:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
+    }, [activeTab]);
 
-	const handleStartTournament = async (tournamentId) => {
-		try {
-			await tournamentAPI.startTournament(tournamentId);
-			alert('Tournament started successfully!');
-			setTournaments(tournaments.map(t => 
-				t._id === tournamentId ? { ...t, tournStatus: 'active' } : t
-			));
-		} catch (err) {
-			alert(err.response?.data?.error || 'Failed to start tournament');
-		}
-	};
+    // Helper: refresh active games for a tournament
+    const loadActiveGames = useCallback(async (tournamentId) => {
+        try {
+            const { data } = await tournamentAPI.getActiveTournamentGames(tournamentId);
+            setActiveGamesByTournament(prev => ({ ...prev, [tournamentId]: data }));
+        } catch (err) {
+            console.error('Load active games error:', err);
+        }
+    }, []);
 
-	const handleEndTournament = async (tournamentId) => {
-		try {
-			await tournamentAPI.endTournament(tournamentId);
-			alert('Tournament ended successfully!');
-			setTournaments(tournaments.map(t => 
-				t._id === tournamentId ? { ...t, tournStatus: 'completed' } : t
-			));
-		} catch (err) {
-			alert(err.response?.data?.error || 'Failed to end tournament');
-		}
-	};
+    // Auto scheduler: start tournaments when start time passes and generate games
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            try {
+                const { data: tlist } = await tournamentAPI.getAllTournaments();
+                const now = new Date();
+                for (const t of tlist) {
+                    const start = new Date(t.startDate);
+                    if (t.tournStatus === 'upcoming' && start <= now) {
+                        try {
+                            await tournamentAPI.startTournament(t._id);
+                        } catch (e) {
+                            // ignore if already started by another instance
+                        }
+                        await generateAndCreateGames(t._id);
+                        await loadActiveGames(t._id);
+                    }
+                }
+                setTournaments(tlist);
+            } catch (e) {
+                // silent
+            }
+        }, 15000);
+        return () => clearInterval(interval);
+    }, [loadActiveGames]);
 
-	const getStatusBadge = (status) => {
-		switch (status) {
-			case 'upcoming':
-				return <span className="badge badge-warning">Upcoming</span>;
-			case 'active':
-				return <span className="badge badge-success">Active</span>;
-			case 'completed':
-				return <span className="badge badge-secondary">Completed</span>;
-			default:
-				return <span className="badge badge-primary">{status}</span>;
-		}
-	};
+    const handleTournamentSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            // If only duration given, compute endDate; otherwise use provided
+            const payload = { ...tournamentForm };
+            if (payload.startDate && payload.endDate && new Date(payload.endDate) <= new Date(payload.startDate)) {
+                throw new Error('End date must be after start date');
+            }
+            await tournamentAPI.createTournament(payload);
+            alert('Tournament created successfully!');
+            setTournamentForm({
+                name: '',
+                startDate: '',
+                endDate: '',
+                tournLocation: '',
+                maxPlayers: 50,
+                timeControl: '5+3',
+                description: ''
+            });
+            // Refresh tournaments
+            const { data } = await tournamentAPI.getAllTournaments();
+            setTournaments(data || []);
+        } catch (err) {
+            alert(err.message || 'Failed to create tournament');
+        }
+    };
+
+
+
+    const handleStartTournament = async (tournamentId) => {
+        try {
+            await tournamentAPI.startTournament(tournamentId);
+            alert('Tournament started successfully!');
+            setTournaments(tournaments.map(t => 
+                t._id === tournamentId ? { ...t, tournStatus: 'in progress' } : t
+            ));
+            await generateAndCreateGames(tournamentId);
+            await loadActiveGames(tournamentId);
+        } catch (err) {
+            alert(err.message || 'Failed to start tournament');
+        }
+    };
+
+    const handleEndTournament = async (tournamentId) => {
+        try {
+            await tournamentAPI.endTournament(tournamentId);
+            alert('Tournament ended successfully!');
+            setTournaments(tournaments.map(t => 
+                t._id === tournamentId ? { ...t, tournStatus: 'completed' } : t
+            ));
+        } catch (err) {
+            alert(err.message || 'Failed to end tournament');
+        }
+    };
+
+    // Add player to tournament
+    const handleAddPlayer = async (tournamentId) => {
+        const userId = selectedUserByTournament[tournamentId];
+        if (!userId) return alert('Select a user to add');
+        try {
+            await tournamentAPI.joinTournament(tournamentId, userId);
+            alert('Player added to tournament');
+            const { data } = await tournamentAPI.getTournament(tournamentId);
+            setTournaments(prev => prev.map(t => t._id === tournamentId ? data : t));
+        } catch (err) {
+            alert(err.message || 'Failed to add player');
+        }
+    };
+
+    // Generate pairings and create games via game-service
+    const generateAndCreateGames = async (tournamentId) => {
+        try {
+            const { data } = await pairingAPI.generatePairings(tournamentId);
+            const pairings = data?.pairings || [];
+            for (const p of pairings) {
+                const white = p.playerWhite?._id || p.playerWhite?.id || p.playerWhite;
+                const black = p.playerBlack?._id || p.playerBlack?.id || p.playerBlack;
+                if (white && black) {
+                    await gameAPI.createFromPairing(white, black, tournamentId);
+                }
+            }
+        } catch (err) {
+            console.error('Generate/Create games error:', err);
+        }
+    };
+
+    // Submit result for a game
+    const finishGame = async (tournamentId, gameId, result) => {
+        try {
+            await gameAPI.submitGameResult(gameId, result);
+            await loadActiveGames(tournamentId);
+            // Try to create next games
+            await generateAndCreateGames(tournamentId);
+            await loadActiveGames(tournamentId);
+        } catch (err) {
+            alert(err.message || 'Failed to submit result');
+        }
+    };
+
+    const getStatusBadge = (status) => {
+        switch (status) {
+            case 'upcoming':
+                return <span className="badge badge-warning">Upcoming</span>;
+            case 'in progress':
+                return <span className="badge badge-success">In Progress</span>;
+            case 'completed':
+                return <span className="badge badge-secondary">Completed</span>;
+            default:
+                return <span className="badge badge-primary">{status}</span>;
+        }
+    };
 
 
 
@@ -187,60 +270,123 @@ const AdminDashboard = () => {
 								<div className="loading-spinner"></div>
 								<p>Loading tournaments...</p>
 							</div>
-						) : (
-								<table className="table">
-									<thead>
-										<tr>
-											<th>Name</th>
-											<th>Status</th>
-											<th>Location</th>
-											<th>Players</th>
-											<th>Start Date</th>
-											<th>Actions</th>
-										</tr>
-									</thead>
-									<tbody>
-										{tournaments.map((tournament) => (
-											<tr key={tournament._id}>
-												<td>{tournament.name}</td>
-												<td>{getStatusBadge(tournament.tournStatus)}</td>
-												<td>{tournament.tournLocation}</td>
-												<td>{tournament.participants.length} / {tournament.maxPlayers}</td>
-												<td>{new Date(tournament.startDate).toLocaleDateString()}</td>
-												<td>
-													<div className="d-flex gap-2">
-														{tournament.tournStatus === 'upcoming' && (
-															<button 
-																onClick={() => handleStartTournament(tournament._id)}
-																className="btn btn-sm btn-success"
-															>
-																Start
-															</button>
-														)}
-														{tournament.tournStatus === 'active' && (
-															<button 
-																onClick={() => handleEndTournament(tournament._id)}
-																className="btn btn-sm btn-warning"
-															>
-																End
-															</button>
-														)}
-														<button 
-															onClick={() => handleDeleteTournament(tournament._id)}
-															className="btn btn-sm btn-danger"
-														>
-															Delete
-														</button>
-													</div>
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							)}
-					</div>
-				</div>
-			)}
+                            ) : (
+                                    <>
+                                    <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Status</th>
+                                    <th>Location</th>
+                                    <th>Players</th>
+                                    <th>Start Date</th>
+                                    <th>Add Player</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {tournaments.map((tournament) => (
+                                    <tr key={tournament._id}>
+                                        <td>{tournament.name}</td>
+                                        <td>{getStatusBadge(tournament.tournStatus)}</td>
+                                        <td>{tournament.tournLocation}</td>
+                                        <td>{tournament.participants.length} / {tournament.maxPlayers}</td>
+                                        <td>{new Date(tournament.startDate).toLocaleDateString()}</td>
+                                        <td>
+                                            <div className="d-flex gap-2">
+                                                <select
+                                                    value={selectedUserByTournament[tournament._id] || ''}
+                                                    onChange={(e) => setSelectedUserByTournament({
+                                                        ...selectedUserByTournament,
+                                                        [tournament._id]: e.target.value
+                                                    })}
+                                                >
+                                                    <option value="">Select user</option>
+                                                    {users.map(u => (
+                                                        <option key={u._id} value={u._id}>{u.username}</option>
+                                                    ))}
+                                                </select>
+                                                <button className="btn btn-sm btn-primary" onClick={() => handleAddPlayer(tournament._id)}>
+                                                    Add
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div className="d-flex gap-2">
+                                                {tournament.tournStatus === 'upcoming' && (
+                                                    <button 
+                                                        onClick={() => handleStartTournament(tournament._id)}
+                                                        className="btn btn-sm btn-success"
+                                                    >
+                                                        Start
+                                                    </button>
+                                                )}
+                                                {tournament.tournStatus === 'in progress' && (
+                                                    <button 
+                                                        onClick={() => handleEndTournament(tournament._id)}
+                                                        className="btn btn-sm btn-warning"
+                                                    >
+                                                        End
+                                                    </button>
+                                                )}
+                                                <button 
+                                                    onClick={() => loadActiveGames(tournament._id)}
+                                                    className="btn btn-sm btn-secondary"
+                                                >
+                                                    Refresh Games
+                                                </button>
+                                                
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        
+                        {tournaments.map((t) => (
+                            <div key={t._id} className="mt-3">
+                                <h4>{t.name} - Active Games</h4>
+                                {Array.isArray(activeGamesByTournament[t._id]) && activeGamesByTournament[t._id].length > 0 ? (
+                                    <table className="table">
+                                        <thead>
+                                            <tr>
+                                                <th>Game ID</th>
+                                                <th>White</th>
+                                                <th>Black</th>
+                                                <th>Status</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {activeGamesByTournament[t._id].map(g => (
+                                                <tr key={g._id}>
+                                                    <td>{g._id}</td>
+                                                    <td>{g.playerWhite?.username || g.playerWhite}</td>
+                                                    <td>{g.playerBlack?.username || g.playerBlack}</td>
+                                                    <td>{g.isFinished ? 'Finished' : 'Ongoing'}</td>
+                                                    <td>
+                                                        {!g.isFinished && (
+                                                            <div className="d-flex gap-1">
+                                                                <button className="btn btn-sm btn-success" onClick={() => finishGame(t._id, g._id, 'white')}>White wins</button>
+                                                                <button className="btn btn-sm btn-dark" onClick={() => finishGame(t._id, g._id, 'black')}>Black wins</button>
+                                                                <button className="btn btn-sm btn-secondary" onClick={() => finishGame(t._id, g._id, 'draw')}>Draw</button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                ) : (
+                                    <p className="text-muted">No active games</p>
+                                )}
+                            </div>
+                        ))}
+                        </>
+                    )}
+                </div>
+            </div>
+        )}
 
 			{activeTab === 'create' && (
 				<div className="card">
@@ -338,52 +484,81 @@ const AdminDashboard = () => {
 				</div>
 			)}
 
-			{activeTab === 'users' && (
-				<div className="card">
-					<div className="card-header">
-						<h3 className="card-title">User Management</h3>
-					</div>
-					<div>
-						{loading ? (
-							<div className="text-center">
-								<div className="loading-spinner"></div>
-								<p>Loading users...</p>
-							</div>
-						) : (
-								<table className="table">
-									<thead>
-										<tr>
-											<th>Username</th>
-											<th>Email</th>
-											<th>Role</th>
-											<th>Global ELO</th>
-											<th>Actions</th>
-										</tr>
-									</thead>
-									<tbody>
-										{users.map((user) => (
-											<tr key={user._id}>
-												<td>{user.username}</td>
-												<td>{user.email}</td>
-												<td>
-													<span className={`badge ${user.role === 'admin' ? 'badge-success' : 'badge-primary'}`}>
-														{user.role}
-													</span>
-												</td>
-												<td>{user.globalElo}</td>
-												<td>
-													<button className="btn btn-sm btn-secondary">
-														Edit
-													</button>
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							)}
-					</div>
-				</div>
-			)}
+            {activeTab === 'users' && (
+                <div className="card">
+                    <div className="card-header">
+                        <h3 className="card-title">User Management</h3>
+                    </div>
+                    <div>
+                        {loading ? (
+                            <div className="text-center">
+                                <div className="loading-spinner"></div>
+                                <p>Loading users...</p>
+                            </div>
+                        ) : (
+                            <>
+                            <form className="mb-3" onSubmit={async (e) => {
+                                e.preventDefault();
+                                try {
+                                    await userAPI.addUser(newUser);
+                                    alert('User created');
+                                    setNewUser({ username: '', email: '', globalElo: 1200 });
+                                    const res = await userAPI.getAll();
+                                    setUsers(res.data?.users || []);
+                                } catch (err) {
+                                    alert(err.message || 'Failed to create user');
+                                }
+                            }}>
+                                <div className="row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                                    <input type="text" placeholder="Username" value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} required />
+                                    <input type="email" placeholder="Email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required />
+                                    <input type="number" placeholder="Global ELO" value={newUser.globalElo} onChange={(e) => setNewUser({ ...newUser, globalElo: parseInt(e.target.value || '0') })} />
+                                    <button type="submit" className="btn btn-primary">Create User</button>
+                                </div>
+                            </form>
+                            <table className="table">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th>Global ELO</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {users.map((user) => (
+                                        <tr key={user._id}>
+                                            <td>{user.username}</td>
+                                            <td>{user.email}</td>
+                                            <td>
+                                                <span className={`badge ${user.role === 'admin' ? 'badge-success' : 'badge-primary'}`}>
+                                                    {user.role}
+                                                </span>
+                                            </td>
+                                            <td>{user.globalElo}</td>
+                                            <td>
+                                                <button className="btn btn-sm btn-danger" onClick={async () => {
+                                                    if (!window.confirm('Delete this user?')) return;
+                                                    try {
+                                                        await userAPI.deleteUser(user._id);
+                                                        setUsers(users.filter(u => u._id !== user._id));
+                                                    } catch (err) {
+                                                        alert(err.message || 'Failed to delete user');
+                                                    }
+                                                }}>
+                                                    Delete
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
 
 			{activeTab === 'system' && (
 				<div className="card">
