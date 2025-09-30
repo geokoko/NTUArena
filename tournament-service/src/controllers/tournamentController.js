@@ -41,7 +41,9 @@ class TournamentController {
             res.status(200).json(tournament);
         } catch (error) {
             console.error('Error getting tournament:', error);
-            res.status(500).json({ error: error.message });
+            const message = (error && error.message) || 'Error fetching tournament';
+            const status = /not found/i.test(message) ? 404 : 500;
+            res.status(status).json({ error: message });
         }
     }
 
@@ -52,7 +54,9 @@ class TournamentController {
             res.status(200).json(standings);
         } catch (error) {
             console.error('Error getting tournament standings:', error);
-            res.status(500).json({ error: error.message });
+            const message = (error && error.message) || 'Error fetching standings';
+            const status = /not found/i.test(message) ? 404 : 500;
+            res.status(status).json({ error: message });
         }
     }
 
@@ -64,7 +68,12 @@ class TournamentController {
             res.status(200).json(player);
         } catch (error) {
             console.error('Error joining tournament:', error);
-            res.status(500).json({ error: error.message });
+            const msg = (error && error.message) || 'Error joining tournament';
+            let status = 500;
+            if (/not found/i.test(msg)) status = 404;
+            else if (/already/i.test(msg) || /started|completed/i.test(msg)) status = 409;
+            else if (/invalid|missing/i.test(msg)) status = 400;
+            res.status(status).json({ error: msg });
         }
     }
 
@@ -76,7 +85,11 @@ class TournamentController {
             res.status(200).json(result);
         } catch (error) {
             console.error('Error leaving tournament:', error);
-            res.status(500).json({ error: error.message });
+            const msg = (error && error.message) || 'Error leaving tournament';
+            let status = 500;
+            if (/not found/i.test(msg)) status = 404;
+            else if (/invalid|missing/i.test(msg)) status = 400;
+            res.status(status).json({ error: msg });
         }
     }
 
@@ -87,7 +100,9 @@ class TournamentController {
             res.status(200).json(players);
         } catch (error) {
             console.error('Error getting players in tournament:', error);
-            res.status(500).json({ error: error.message });
+            const message = (error && error.message) || 'Error fetching players';
+            const status = /not found/i.test(message) ? 404 : 500;
+            res.status(status).json({ error: message });
         }
     }
 
@@ -98,7 +113,9 @@ class TournamentController {
             res.status(200).json(games);
         } catch (error) {
             console.error('Error getting games in tournament:', error);
-            res.status(500).json({ error: error.message });
+            const message = (error && error.message) || 'Error fetching games';
+            const status = /not found/i.test(message) ? 404 : 500;
+            res.status(status).json({ error: message });
         }
     }
 
@@ -109,7 +126,9 @@ class TournamentController {
             res.status(200).json(games);
         } catch (error) {
             console.error('Error getting active games in tournament:', error);
-            res.status(500).json({ error: error.message });
+            const message = (error && error.message) || 'Error fetching active games';
+            const status = /not found/i.test(message) ? 404 : 500;
+            res.status(status).json({ error: message });
         }
     }
 
@@ -119,7 +138,8 @@ class TournamentController {
             res.status(200).json(tournaments);
         } catch (error) {
             console.error('Error getting all tournaments:', error);
-            res.status(500).json({ error: error.message });
+            const message = (error && error.message) || 'Error fetching tournaments';
+            res.status(500).json({ error: message });
         }
     }
 }

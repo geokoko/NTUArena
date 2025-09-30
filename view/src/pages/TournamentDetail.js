@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { tournamentAPI, gameAPI, playerAPI } from '../services/api';
+import { tournamentAPI } from '../services/api';
 import GameBoard from '../components/GameBoard';
 import './TournamentDetail.css';
 
@@ -18,28 +18,25 @@ const TournamentDetail = ({ user }) => {
 		const fetchTournamentDetails = async () => {
 			try {
 				const [tournamentRes, standingsRes, gamesRes, playersRes] = await Promise.all([
-					fetch(`/api/tournaments/${id}`),
-					fetch(`/api/tournaments/${id}/standings`),
-					fetch(`/api/tournaments/${id}/games`),
-					fetch(`/api/tournaments/${id}/players`),
+					tournamentAPI.getTournament(id),
+					tournamentAPI.getTournamentStandings(id),
+					tournamentAPI.getTournamentGames(id),
+					tournamentAPI.getTournamentPlayers(id),
 				]);
 
-				if (!tournamentRes.ok || !standingsRes.ok || !gamesRes.ok || !playersRes.ok) {
-					throw new Error('Failed to fetch tournament details');
-				}
-
-				const tournamentData = await tournamentRes.json();
-				const standingsData = await standingsRes.json();
-				const gamesData = await gamesRes.json();
-				const playersData = await playersRes.json();
-
-				setTournament(tournamentData);
-				setStandings(standingsData);
-				setGames(gamesData);
-				setPlayers(playersData);
+				setTournament(tournamentRes.data);
+				setStandings(standingsRes.data);
+				setGames(gamesRes.data);
+				setPlayers(playersRes.data);
 			} catch (err) {
-				setError('Failed to load tournament details');
-				console.error(err);
+				if (err.status === 404) {
+					setError('Tournament not found');
+				} else if (err.status === 0) {
+					setError('Cannot reach server. Please try again.');
+				} else {
+					setError(err.message || 'Failed to load tournament details');
+				}
+				console.error('Load tournament details error:', err);
 			} finally {
 				setLoading(false);
 			}

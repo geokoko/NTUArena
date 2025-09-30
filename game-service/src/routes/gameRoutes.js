@@ -5,6 +5,9 @@ const gameController = require('../controllers/gameController');
 // Submit game result
 router.post('/:gameId/result', gameController.submitGameResult);
 
+// Alias for frontend compatibility
+router.post('/:gameId/submitResult', gameController.submitGameResult);
+
 // Get game by ID
 router.get('/:gameId', gameController.getGameById);
 

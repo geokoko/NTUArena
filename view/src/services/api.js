@@ -1,21 +1,35 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+// Use explicit gateway URL if provided, else rely on CRA proxy via relative paths
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 // Create axios instance with base configuration
 const api = axios.create({
 	baseURL: API_BASE_URL,
-	timeout: 10000,
+	timeout: 15000,
 	headers: {
 		'Content-Type': 'application/json',
 	},
 });
 
-// Response interceptor to handle errors
+// Normalize errors to include status and message for better UI feedback
 api.interceptors.response.use(
 	(response) => response,
 	(error) => {
-		return Promise.reject(error);
+		const normalized = new Error('Request failed');
+		if (error.response) {
+			normalized.status = error.response.status;
+			normalized.data = error.response.data;
+			normalized.message =
+				(error.response.data && (error.response.data.error || error.response.data.message)) ||
+				`${error.response.status} ${error.response.statusText}`;
+		} else if (error.request) {
+			normalized.status = 0;
+			normalized.message = 'Network error: no response from server';
+		} else {
+			normalized.message = error.message || 'Unexpected error';
+		}
+		return Promise.reject(normalized);
 	}
 );
 
@@ -34,6 +48,7 @@ export const userAPI = {
 // Tournament API
 export const tournamentAPI = {
 	createTournament: (tournamentData) => api.post('/api/tournaments', tournamentData),
+	getAllTournaments: () => api.get('/api/tournaments'),
 	getTournament: (tournamentId) => api.get(`/api/tournaments/${tournamentId}`),
 	startTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/start`),
 	endTournament: (tournamentId) => api.post(`/api/tournaments/${tournamentId}/end`),

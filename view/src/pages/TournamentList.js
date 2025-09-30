@@ -11,15 +11,17 @@ const TournamentList = () => {
 	useEffect(() => {
 		const fetchTournaments = async () => {
 			try {
-				const response = await fetch('/api/tournaments');
-				if (!response.ok) {
-					throw new Error('Network response was not ok');
-				}
-				const data = await response.json();
+				const { data } = await tournamentAPI.getAllTournaments();
 				setTournaments(data);
 			} catch (err) {
-				setError('Failed to load tournaments');
-				console.error(err);
+				if (err.status === 404) {
+					setError('Tournaments not found');
+				} else if (err.status === 0) {
+					setError('Cannot reach server. Please try again.');
+				} else {
+					setError(err.message || 'Failed to load tournaments');
+				}
+				console.error('Load tournaments error:', err);
 			} finally {
 				setLoading(false);
 			}
