@@ -1,38 +1,47 @@
 services:
-  # Monolith API
-  api:
-    build: ./api
-    container_name: arena_api_monolith
+  mongodb:
+    image: mongo:7
+    container_name: ntuarena-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_DATABASE: ntuarena
+      MONGO_APP_USER: appuser
+      MONGO_APP_PASS: apppass
+    volumes:
+      - mongo-data:/data/db
+      - ./backend/scripts/mongo-init.js:/docker-entrypoint-initdb.d/01-mongo-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "-u", "root", "-p", "example", "--authenticationDatabase", "admin", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ntuarena-backend
     ports:
       - "5000:5000"
     environment:
-      - PORT=5000
-      - NODE_ENV=development
-      - MONGO_URI=mongodb://monolith_db:27017/arena_monolith
-    volumes:
-      - ./api/src:/app/src
-      - /app/node_modules
+      PORT: 5000
+      MONGODB_URI: "mongodb://root:example@mongodb:27017/ntuarena?authSource=admin"
+      NODE_ENV: development
     depends_on:
-      - monolith_db
-    restart: unless-stopped
+      - mongodb
 
-  # Monolith DB
-  monolith_db:
-    image: mongo:latest
-    container_name: arena_monolith_db
-    ports:
-      - "27023:27017"
-    volumes:
-      - monolith_db_data:/data/db
-    restart: unless-stopped
-
-  # Frontend
+      # Frontend
   frontend:
     build: ./view
     container_name: arena_frontend
     ports:
       - "3000:3000"
     environment:
+      - REACT_APP_API_URL=http://localhost:5000
       - CHOKIDAR_USEPOLLING=true
       - FAST_REFRESH=true
     volumes:
@@ -40,8 +49,10 @@ services:
       - ./view/public:/app/public
       - /app/node_modules
     depends_on:
-      - api
+      - backend
     restart: unless-stopped
 
+
+
 volumes:
-  monolith_db_data:
+  mongo-data:
