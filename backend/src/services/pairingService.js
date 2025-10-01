@@ -1,5 +1,5 @@
-const { PairingWorker } = require('../pairing/pairingWorker');
-const { enqueue } = require('../queue/redisQueue');
+const { PairingWorker } = require('./pairing/pairingWorker');
+const { enqueue } = require('./queue/redisQueue');
 const Player = require('../models/Player');
 
 class PairingService {

@@ -4,14 +4,14 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 
 // Models
-const Tournament = require('../models/Tournament');
-const Player     = require('../models/Player');
-const Game       = require('../models/Game');
-const User       = require('../models/User');
+const Tournament = require('../src/models/Tournament');
+const Player     = require('../src/models/Player');
+const Game       = require('../src/models/Game');
+const User       = require('../src/models/User');
 
 // Services (these are the ones you showed)
-const tournamentService = require('../services/tournamentService');
-const gameService       = require('../services/gameService');
+const tournamentService = require('../src/services/tournamentService');
+const gameService       = require('../src/services/gameService');
 
 // Helpers
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
