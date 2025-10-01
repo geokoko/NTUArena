@@ -30,28 +30,31 @@ class PairingService {
 				enqueuedAt: Date.now(),
 			});
 		}
+
+		console.log(`[pairing] Seeded queue with ${players.length} non-playing players for tournament ${tournamentId}.`);
 	}
 
 	async startPairingLoop(tournamentId) {
 		if (this.workers.has(String(tournamentId))) return;
 		if (redis.status !== 'ready' && redis.status !== 'connect') {
-  			console.log('[pairing] waiting for Redis...');
-  			await new Promise(resolve => {
-    			const onReady = () => { 
+			console.log('[pairing] waiting for Redis...');
+			await new Promise(resolve => {
+				const onReady = () => { 
 					redis.off('ready', onReady); 
 					resolve(); 
 				};
-    			redis.once('ready', onReady);
-    			setTimeout(resolve, 3000); // fallback to proceed anyway
-  			});
+				redis.once('ready', onReady);
+				setTimeout(resolve, 3000); // fallback to proceed anyway
+			});
 
-		// seed queue with all non-playing players
-		await this.seedQueueOnStart(tournamentId);
+			// seed queue with all non-playing players
+			await this.seedQueueOnStart(tournamentId);
 
-		const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400 });
-		this.workers.set(String(tournamentId), worker);
-		// begin worker
-		worker.start(tournamentId);
+			const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400 });
+			this.workers.set(String(tournamentId), worker);
+			// begin worker
+			worker.start(tournamentId);
+		}
 	}
 
 	stopPairingLoop(tournamentId) {

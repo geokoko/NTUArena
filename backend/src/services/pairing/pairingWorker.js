@@ -127,6 +127,8 @@ class PairingWorker {
 				game.save({ session }),
 			]);
 
+			console.log(`[PairingWorker] Created game ${game._id} | ${pW.user} (White) vs ${pB.user} (Black) in tournament ${tournamentId}`);
+
 			await session.commitTransaction();
 			session.endSession();
 			return game;

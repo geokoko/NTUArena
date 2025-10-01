@@ -48,6 +48,8 @@ async function registerPlayers(tournamentId, users) {
 		recentOpponents: [],
 	}));
 	await Player.insertMany(docs, { ordered: false });
+	console.log(`[SIM] Registered ${docs.length} players into tournament ${tournamentId}.`);
+	console.log('[SIM] Sample players:', docs.slice(0, 3));
 }
 
 async function summarize(tournamentId) {
@@ -57,6 +59,12 @@ async function summarize(tournamentId) {
 		Game.countDocuments({ tournament: tournamentId, isFinished: false }),
 		Game.countDocuments({ tournament: tournamentId, isFinished: true }),
 	]);
+
+	console.log(`[SIM] Tournament ${tournamentId} summary:`);
+	console.log(`       Players: ${players}`);
+	console.log(`          Games: ${games}`);
+	console.log(`      Ongoing: ${ongoing}`);
+	console.log(`      Finished: ${finished}`);
 	return { players, games, ongoing, finished };
 }
 
@@ -82,7 +90,7 @@ async function simulate() {
 	await registerPlayers(TID, users);
 	console.log(`[SIM] Registered ${users.length} players.`);
 
-	// 3) Admin starts tournament (this seeds Redis queue & starts pairing worker via your service)
+	// 3) Admin starts tournament (this seeds Redis queue & starts pairing worker via tournamentService)
 	await tournamentService.startTournament(TID);
 	console.log('[SIM] Tournament started. Pairing worker running...');
 
