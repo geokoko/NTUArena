@@ -42,6 +42,7 @@ services:
     environment:
       PORT: 5000
       MONGODB_URI: "mongodb://root:example@mongodb:27017/ntuarena?authSource=admin"
+      REDIS_URL: "redis://redis:6379"
       NODE_ENV: development
     depends_on:
       mongodb:
