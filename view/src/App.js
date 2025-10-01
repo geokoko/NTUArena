@@ -8,6 +8,7 @@ import TournamentList from './pages/TournamentList';
 import TournamentDetail from './pages/TournamentDetail';
 import AdminDashboard from './pages/AdminDashboard';
 import ChessboardPage from './pages/ChessboardPage';
+import AdminOngoingGames from './pages/AdminOngoingGames';
 import './App.css';
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
 							<Route path="/tournaments" element={<TournamentList />} />
 							<Route path="/tournament/:id" element={<TournamentDetail />} />
 							<Route path="/admin" element={<AdminDashboard />} />
+							<Route path="/admin/games" element={<AdminOngoingGames />} />
 							<Route path="/chessboard" element={<ChessboardPage />} />
 						</Routes>
 					</main>
