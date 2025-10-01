@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-	"seed": "node src/scripts/mongo-init.js"
+	"seed": "node src/scripts/mongo-init.js",
+	"simulate:tournament": "node scripts/simulateTournament.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

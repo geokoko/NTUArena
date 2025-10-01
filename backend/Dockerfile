@@ -15,3 +15,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 
 USER node
 CMD [ "sh", "-c", "npm run seed || true && npm start" ]
+# second to last CMD is ignored
+CMD [ "npm", "run", "simulate:tournament"]
