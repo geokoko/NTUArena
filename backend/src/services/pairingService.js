@@ -1,94 +1,54 @@
+const { PairingWorker } = require('../pairing/pairingWorker');
+const { enqueue } = require('../queue/redisQueue');
 const Player = require('../models/Player');
-const Tournament = require('../models/Tournament');
-const gameService = require('./gameService');
 
 class PairingService {
-	#loops = new Map(); // tournamentId -> setInterval handle
-
-	justPlayedTogether(player1, player2) {
-		const recentOpponents1 = player1.recentOpponents || [];
-		return recentOpponents1.includes(player2.user);
+	constructor() {
+		this.workers = new Map(); // tournamentId -> worker
 	}
 
-	colorImbalance(player, color) {
-		const history = player.colorHistory || [];
-		const lastColors = history.slice(-4);
-		return lastColors.filter(c => c === color).length >= 3;
-	}
+	async seedQueueOnStart(tournamentId) {
+		// Put all non-playing players into the queue (and set waitingSince)
+		const now = new Date();
+		const players = await Player.find({ tournament: tournamentId, isPlaying: false })
+			.select('_id user score liveRating recentOpponents colorHistory waitingSince');
+		await Player.updateMany(
+			{ tournament: tournamentId, isPlaying: false },
+			{ $set: { waitingSince: now } }
+		);
 
-	greedyPairing(players) {
-		const out = [];
-		const used = new Set();
-
-		for (let i = 0; i < players.length; i++) {
-			if (used.has(players[i]._id.toString())) continue;
-
-			for (let j = i + 1; j < players.length; j++) {
-				if (used.has(players[j]._id.toString())) continue;
-
-				const p1 = players[i];
-				const p2 = players[j];
-
-				if (this.justPlayedTogether(p1, p2)) continue;
-
-				// Decide colors (balance history)
-				let white = p1, black = p2;
-				if (this.colorImbalance(p1, 'white')) {
-					white = p2;
-					black = p1;
-				} else if (this.colorImbalance(p2, 'black')) {
-					white = p2;
-					black = p1;
-				}
-
-				out.push({ playerWhite: white, playerBlack: black });
-				used.add(p1._id.toString());
-				used.add(p2._id.toString());
-				break;
-			}
-		}
-
-		return out;
-	}
-
-	async generatePairings(tournamentId) {
-		const players = await Player.find({
-			tournament: tournamentId,
-			isPlaying: false
-		});
-		return this.greedyPairing(players);
-	}
-
-	async #oneCycle(tournamentId) {
-		const t = await Tournament.findById(tournamentId).select('tournStatus');
-		if (!t || t.tournStatus !== 'in progress') return;
-
-		const pairings = await this.generatePairings(tournamentId);
-		if (!pairings.length) return;
-
-		for (const p of pairings) {
-			await gameService.createGameFromPairing(
-				p.playerWhite._id,
-				p.playerBlack._id,
-				tournamentId
-			);
+		for (const p of players) {
+			await enqueue(tournamentId, {
+				_id: String(p._id),
+				user: p.user,
+				score: p.score ?? 0,
+				liveRating: p.liveRating ?? 1200,
+				// store as strings for fast compare in scorer
+				recentOpponents: (p.recentOpponents ?? []).map(String),
+				colorHistory: p.colorHistory ?? [],
+				waitingSince: p.waitingSince ?? now,
+				enqueuedAt: Date.now(),
+			});
 		}
 	}
 
-	startPairingLoop(tournamentId, intervalMs = 3000) {
-		if (this.#loops.has(tournamentId)) return;
-		const handle = setInterval(() => {
-			this.#oneCycle(tournamentId).catch(() => {});
-		}, intervalMs);
-		this.#loops.set(tournamentId, handle);
+	async startPairingLoop(tournamentId) {
+		if (this.workers.has(String(tournamentId))) return;
+		await this.seedQueueOnStart(tournamentId);
+
+		const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400 });
+		this.workers.set(String(tournamentId), worker);
+		// begin worker
+		worker.start(tournamentId);
 	}
 
 	stopPairingLoop(tournamentId) {
-		const h = this.#loops.get(tournamentId);
-		if (h) {
-			clearInterval(h);
-			this.#loops.delete(tournamentId);
-		}
+		const key = String(tournamentId);
+		const worker = this.workers.get(key);
+		if (!worker) return;
+		// stop and delete worker
+		worker.stop();
+		this.workers.delete(key);
 	}
 }
 

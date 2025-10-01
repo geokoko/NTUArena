@@ -27,6 +27,8 @@ class TournamentService {
 
 		t.tournStatus = 'in progress';
 		await t.save();
+
+		// START THE ARENA PAIRING LOGIC HERE
 		pairingService.startPairingLoop(id);
 		return t;
 	}
@@ -39,6 +41,8 @@ class TournamentService {
 
 		t.tournStatus = 'completed';
 		await t.save();
+
+		// STOP THE ARENA PAIRING LOGIC HERE
 		pairingService.stopPairingLoop(id);
 		return t;
 	}
