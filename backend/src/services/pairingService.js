@@ -1,5 +1,5 @@
 const { PairingWorker } = require('./pairing/pairingWorker');
-const { enqueue } = require('./queue/redisQueue');
+const { redis, enqueue } = require('./queue/redisQueue');
 const Player = require('../models/Player');
 
 class PairingService {
@@ -34,6 +34,18 @@ class PairingService {
 
 	async startPairingLoop(tournamentId) {
 		if (this.workers.has(String(tournamentId))) return;
+		if (redis.status !== 'ready' && redis.status !== 'connect') {
+  			console.log('[pairing] waiting for Redis...');
+  			await new Promise(resolve => {
+    			const onReady = () => { 
+					redis.off('ready', onReady); 
+					resolve(); 
+				};
+    			redis.once('ready', onReady);
+    			setTimeout(resolve, 3000); // fallback to proceed anyway
+  			});
+
+		// seed queue with all non-playing players
 		await this.seedQueueOnStart(tournamentId);
 
 		const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400 });

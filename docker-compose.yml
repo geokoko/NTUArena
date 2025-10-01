@@ -1,4 +1,15 @@
 services:
+  # set redis as a different service
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # MongoDB service
   mongodb:
     image: mongo:7
     container_name: ntuarena-mongo
@@ -20,6 +31,7 @@ services:
       retries: 10
       start_period: 20s
 
+  # Backend
   backend:
     build:
       context: ./backend
@@ -32,9 +44,12 @@ services:
       MONGODB_URI: "mongodb://root:example@mongodb:27017/ntuarena?authSource=admin"
       NODE_ENV: development
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-      # Frontend
+  # Frontend
   frontend:
     build: ./view
     container_name: arena_frontend

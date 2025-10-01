@@ -1,6 +1,17 @@
-// queue/redisQueue.js
-const Redis = require('ioredis');
-const redis = new Redis(process.env.REDIS_URL);
+const IORedis = require('ioredis');
+
+const url = process.env.REDIS_URL || 'redis://localhost:6379'; // dev default
+const redis = new IORedis(url, {
+  retryStrategy(times) {
+    // backoff up to ~3s
+    const delay = Math.min(times * 200, 3000);
+    return delay;
+  },
+  maxRetriesPerRequest: null, // avoid unhandled promise rejections on boot
+});
+
+redis.on('connect', () => console.log('[redis] connected:', url));
+redis.on('error', (e) => console.warn('[redis] error:', e.message));
 
 /**
  * Tournament queue key helpers
