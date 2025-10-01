@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending } = require('../queue/redisQueue');
 const { evaluatePair } = require('./pairingScorer');
 
-const Player = require('../models/Player');
-const Game   = require('../models/Game');
-const Tournament = require('../models/Tournament');
+const Player = require('../../models/Player');
+const Game   = require('../../models/Game');
+const Tournament = require('../../models/Tournament');
 
 class PairingWorker {
 	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400 } = {}) {

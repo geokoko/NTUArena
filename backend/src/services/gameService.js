@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const Game = require('../models/Game');
 const Player = require('../models/Player');
 const tournamentService = require('./tournamentService'); // your existing service
-const { enqueue } = require('../queue/redisQueue');
+const { enqueue } = require('./queue/redisQueue');
 
 class GameService {
 	/**

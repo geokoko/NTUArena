@@ -9,7 +9,7 @@ const Player     = require('../src/models/Player');
 const Game       = require('../src/models/Game');
 const User       = require('../src/models/User');
 
-// Services (these are the ones you showed)
+// Services 
 const tournamentService = require('../src/services/tournamentService');
 const gameService       = require('../src/services/gameService');
 
