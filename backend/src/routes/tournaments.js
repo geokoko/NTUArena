@@ -8,8 +8,8 @@ const tCtrl = require('../controllers/tournamentController');
 router.get('/tournaments/:id', tCtrl.viewTournament);
 
 // Player actions (require authentication)
-router.post('/tournaments/:id/join', requireAuth, tCtrl.joinTournament);
-router.post('/tournaments/:id/leave', requireAuth, tCtrl.leaveTournament);
+router.post('/tournaments/:id/join', tCtrl.joinTournament);
+router.post('/tournaments/:id/leave', tCtrl.leaveTournament);
 
 // ----- Admin-only routes -----
 //router.use(requireAuth, requireRole('admin'));

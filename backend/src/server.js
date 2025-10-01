@@ -18,7 +18,7 @@ if (process.env.NODE_ENV !== 'production') {
 	app.use(morgan('dev'));
 }
 
-// Health check
+// Health check route
 app.get('/health', (req, res) => {
 	res.status(200).json({
 		service: 'arena-monolith',
@@ -29,14 +29,14 @@ app.get('/health', (req, res) => {
 });
 
 
-app.use('/api', require('./routes/userRoutes'));
-app.use('/api', require('./routes/tournamentRoutes'));
-app.use('/api', require('./routes/gameRoutes'));
+app.use('/api', require('./routes/users'));
+app.use('/api', require('./routes/tournaments'));
+app.use('/api', require('./routes/games'));
 
 // 404 handler
 app.use('*', (req, res) => res.status(404).json({ error: 'Route not found' }));
 
-// Global error handler (keeps your controllers clean)
+// Global error handler 
 app.use((err, req, res, next) => {
 	console.error(err); // swap with your logger in prod
 	res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
