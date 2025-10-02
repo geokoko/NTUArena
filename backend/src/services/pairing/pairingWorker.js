@@ -2,9 +2,7 @@ const mongoose = require('mongoose');
 const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending } = require('../queue/redisQueue');
 const { evaluatePair } = require('./pairingScorer');
 
-const Player = require('../../models/Player');
-const Game   = require('../../models/Game');
-const Tournament = require('../../models/Tournament');
+const gameService = require('../gameService');
 
 class PairingWorker {
 	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400 } = {}) {
@@ -16,7 +14,10 @@ class PairingWorker {
 
 	async start(tournamentId) {
 		this.running = true;
+		// Reclaim any pending items from previous crashed worker
+		// to avoid "stuck" players in limbo
 		await reclaimPending(tournamentId, this.workerId);
+		// Main loop
 		while (this.running) {
 			try {
 				const t = await Tournament.findById(tournamentId).select('tournStatus');
@@ -27,6 +28,7 @@ class PairingWorker {
 				await this.#cycle(tournamentId);
 			} catch (err) {
 				console.error('[PairingWorker] cycle error:', err);
+				// wait a bit on error to avoid tight loop
 				await this.#sleep(1000);
 			}
 		}
@@ -35,13 +37,14 @@ class PairingWorker {
 	stop() { this.running = false; }
 
 	async #cycle(tournamentId) {
+		// 1. Fetch a batch from the queue
 		const batch = await batchDequeueToPending(tournamentId, this.workerId, this.batchSize);
 		if (batch.length === 0) {
 			await this.#sleep(this.idleMs);
 			return;
 		}
 
-		// Greedy: oldest-first anchor, find best partner among remaining
+		// 2. Try to pair them off
 		const remaining = [...batch];
 		const pairedCount = { count: 0 };
 
@@ -67,13 +70,20 @@ class PairingWorker {
 			}
 
 			const partner = remaining[bestIdx];
-			// remove partner first, then anchor
+			// remove partner (higher index) first, then anchor (index 0, intitial player pick)
 			remaining.splice(bestIdx, 1);
 			remaining.shift();
 
 			const { white, black } = bestEval.colors;
 
-			const gameDoc = await this.#createGameAtomic(white._id, black._id, tournamentId);
+			// 3) Create the game via GameService (atomic transaction inside)
+			let gameDoc = null;
+			try {
+				gameDoc = await gameService.createGameFromPairing(white._id, black._id, tournamentId);
+			} catch (e) {
+				// fall through to requeue both below
+			}
+
 			if (!gameDoc) {
 				// if race or validation failed, then requeue both
 				await enqueue(tournamentId, white);
@@ -93,51 +103,6 @@ class PairingWorker {
 		}
 
 		await this.#sleep(remaining.length > 0 ? 50 : 0);
-	}
-
-	async #createGameAtomic(whiteId, blackId, tournamentId) {
-		const session = await mongoose.startSession();
-		session.startTransaction();
-		try {
-			const [pW, pB] = await Promise.all([
-				Player.findOne({ _id: whiteId, tournament: tournamentId }).session(session).select('isPlaying user'),
-				Player.findOne({ _id: blackId, tournament: tournamentId }).session(session).select('isPlaying user'),
-			]);
-
-			if (!pW || !pB || pW.isPlaying || pB.isPlaying) {
-				await session.abortTransaction();
-				session.endSession();
-				return null;
-			}
-
-			pW.isPlaying = true;
-			pB.isPlaying = true;
-
-			const game = new Game({
-				tournament: tournamentId,
-				white: whiteId,
-				black: blackId,
-				startedAt: new Date(),
-				status: 'ongoing',
-			});
-
-			await Promise.all([
-				pW.save({ session }),
-				pB.save({ session }),
-				game.save({ session }),
-			]);
-
-			console.log(`[PairingWorker] Created game ${game._id} | ${pW.user} (White) vs ${pB.user} (Black) in tournament ${tournamentId}`);
-
-			await session.commitTransaction();
-			session.endSession();
-			return game;
-		} catch (err) {
-			await session.abortTransaction();
-			session.endSession();
-			console.error('[PairingWorker] createGameAtomic error:', err);
-			return null;
-		}
 	}
 
 	#sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

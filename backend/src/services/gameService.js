@@ -13,11 +13,11 @@ class GameService {
 	 */
 	async createGameFromPairing(whitePlayerId, blackPlayerId, tournamentId) {
 		/**
-   		* Called only by the pairing engine.
-   		* Atomically creates a game and flips both players to isPlaying=true.
-   		* Also updates colorHistory & recentOpponents (Player refs!) at creation time
-   		* so "just played together" is immediately visible to the next cycle.
-   		*/
+		* Called only by the pairing engine.
+		* Atomically creates a game and flips both players to isPlaying=true.
+		* Also updates colorHistory & recentOpponents (Player refs!) at creation time
+		* so "just played together" is immediately visible to the next cycle.
+		*/
 		const session = await mongoose.startSession();
 		session.startTransaction();
 		try {
@@ -65,18 +65,25 @@ class GameService {
 			await session.commitTransaction();
 			session.endSession();
 
-			// After commit, attach to tournament 
-			await tournamentService.addGameToTournament({
-				gameId: game._id,
-				tournamentId,
-				whitePlayerId,
-				blackPlayerId,
-			});
+			// After commit, attach to tournament
+			try {
+				await tournamentService.addGameToTournament({
+					gameId: game._id,
+					tournamentId,
+					whitePlayerId,
+					blackPlayerId,
+				});
+			} catch (e) {
+				// Non-fatal: game exists and players are marked as playing; log for ops
+				console.warn('[GameService] addGameToTournament failed:', e.message);
+			}
 
 			return game;
 		} catch (err) {
 			try { await session.abortTransaction(); } catch {}
 			session.endSession();
+
+			console.error('[GameService] createGameFromPairing error:', err);
 			throw err;
 		}
 	}
