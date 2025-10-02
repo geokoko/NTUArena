@@ -3,6 +3,8 @@ const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclai
 const { evaluatePair } = require('./pairingScorer');
 
 const gameService = require('../gameService');
+const Tournament = require('../../models/Tournament');
+const Player = require('../../models/Player');
 
 class PairingWorker {
 	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400 } = {}) {

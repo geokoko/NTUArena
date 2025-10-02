@@ -13,13 +13,13 @@ services:
   mongodb:
     image: mongo:7
     container_name: ntuarena-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
     environment:
       MONGO_INITDB_DATABASE: ntuarena
     volumes:
-      - mongo-data:/data/db
-      - ./backend/scripts/mongo-init.js:/docker-entrypoint-initdb.d/01-mongo-init.js:ro
+      - ./mongo-init/replica-init.js:/docker-entrypoint-initdb.d/replica-init.js:ro
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
       interval: 10s
