@@ -108,10 +108,10 @@ async function reclaimPending(tournamentId, workerId) {
 }
 
 module.exports = {
+	redis,
 	enqueue,
 	batchDequeueToPending,
 	ackFromPending,
 	requeueLeftovers,
 	reclaimPending,
 };
-

@@ -46,15 +46,15 @@ class PairingService {
 				redis.once('ready', onReady);
 				setTimeout(resolve, 3000); // fallback to proceed anyway
 			});
-
-			// seed queue with all non-playing players
-			await this.seedQueueOnStart(tournamentId);
-
-			const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400 });
-			this.workers.set(String(tournamentId), worker);
-			// begin worker
-			worker.start(tournamentId);
 		}
+
+		// seed queue with all non-playing players
+		await this.seedQueueOnStart(tournamentId);
+
+		const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400 });
+		this.workers.set(String(tournamentId), worker);
+		// begin worker
+		worker.start(tournamentId);
 	}
 
 	stopPairingLoop(tournamentId) {
@@ -68,4 +68,3 @@ class PairingService {
 }
 
 module.exports = new PairingService();
-
