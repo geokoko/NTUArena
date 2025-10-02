@@ -24,7 +24,8 @@ function randomName() {
 }
 
 async function connectMongo() {
-	const uri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGO_URL || 'mongodb://mongodb:27017/ntuarena';
+	const uri = process.env.MONGO_URI || 'mongodb://mongo:27017/ntuarena?replicaSet=rs0';
+	console.log("[SIM] Connecting to MongoDB at URI:", uri);
 	await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 });
 }
 

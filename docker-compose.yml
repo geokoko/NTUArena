@@ -1,33 +1,37 @@
 services:
-  # set redis as a different service
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
 
-  # MongoDB service
-  mongodb:
-    image: mongo:7
-    container_name: ntuarena-mongo
-    command: ["--replSet", "rs0", "--bind_ip_all"]
+  mongo:
+    image: mongo:latest
+    hostname: mongo
+    command: ["mongod" ,"--replSet", "rs0", "--bind_ip_all", "--quiet"]
+    networks:
+      default:
+        aliases:
+          - mongo
+    extra_hosts:
+      - "mongo:127.0.0.1"
     ports:
       - "27017:27017"
     environment:
       MONGO_INITDB_DATABASE: ntuarena
     volumes:
+      - mongo-data:/data/db
       - ./mongo-init/replica-init.js:/docker-entrypoint-initdb.d/replica-init.js:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
-      interval: 10s
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'rs.status().ok' | grep 1"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 20s
+      retries: 60
 
-  # Backend
   backend:
     build:
       context: ./backend
@@ -37,25 +41,25 @@ services:
       - "5000:5000"
     environment:
       PORT: 5000
-      MONGODB_URI: "mongodb://mongodb:27017/ntuarena"
-      REDIS_URL: "redis://redis:6379"
+      MONGO_URI: mongodb://mongo:27017/ntuarena?replicaSet=rs0
+      MONGO_DB: ntuarena
+      REDIS_URL: redis://redis:6379
       NODE_ENV: development
     depends_on:
-      mongodb:
+      mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-  # Frontend
   frontend:
     build: ./view
     container_name: arena_frontend
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_API_URL=http://backend:5000
-      - CHOKIDAR_USEPOLLING=true
-      - FAST_REFRESH=true
+      REACT_APP_API_URL: http://backend:5000
+      CHOKIDAR_USEPOLLING: true
+      FAST_REFRESH: true
     volumes:
       - ./view/src:/app/src
       - ./view/public:/app/public
@@ -64,7 +68,6 @@ services:
       - backend
     restart: unless-stopped
 
-
-
 volumes:
   mongo-data:
+

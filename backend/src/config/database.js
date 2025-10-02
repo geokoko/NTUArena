@@ -3,17 +3,29 @@ const mongoose = require('mongoose');
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function connectDB() {
-	const uri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://mongodb:27017/ntuarena';
-	const dbName = process.env.MONGO_DB || process.env.MONGODB_DB || undefined; // optional
+	const uri =
+		process.env.MONGO_URI ||
+		'mongodb://mongo:27017/?replicaSet=rs0';
+
+	if (!uri) {
+    	throw new Error('MongoDB connection URI is not defined.');
+  	}
+
+	console.log("[DB] STARTING: Aiming to connect to URI: " + uri)
+	const explicitDbName = process.env.MONGO_DB || 'ntuarena';
+
 	const maxAttempts = parseInt(process.env.MONGO_MAX_RETRIES || '30', 10);
-	const baseDelay = parseInt(process.env.MONGO_RETRY_DELAY || '1000', 10);
+	const baseDelay   = parseInt(process.env.MONGO_RETRY_DELAY || '1000', 10);
 
 	mongoose.set('strictQuery', true);
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
-			console.log(`[DB] Connecting to ${uri}${dbName ? ` (db=${dbName})` : ''} attempt ${attempt}/${maxAttempts}`);
-			await mongoose.connect(uri, dbName ? { dbName } : undefined);
+			console.log(`[DB] Connecting to ${uri}${explicitDbName ? ` (db=${explicitDbName})` : ''} attempt ${attempt}/${maxAttempts}`);
+			await mongoose.connect(uri, {
+    			dbName: explicitDbName,
+    			serverSelectionTimeoutMS: 10000,
+			});
 			console.log('[DB] Connected');
 			return;
 		} catch (err) {
