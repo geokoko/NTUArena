@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function connectDB() {
-	const uri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://mongodb:27017/ntuarena?authSource=admin';
+	const uri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://mongodb:27017/ntuarena';
 	const dbName = process.env.MONGO_DB || process.env.MONGODB_DB || undefined; // optional
 	const maxAttempts = parseInt(process.env.MONGO_MAX_RETRIES || '30', 10);
 	const baseDelay = parseInt(process.env.MONGO_RETRY_DELAY || '1000', 10);

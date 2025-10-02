@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const tournamentSchema = new mongoose.Schema({
 	name: { type: String, required: true },
-	tournLocation: { type: String, required: true },
+	tournLocation: { type: String },
 	startDate: { type: Date, required: true },
 	endDate: { type: Date, required: true },
 	tournStatus: { type: String, enum: ['upcoming', 'in progress', 'completed'], default: 'upcoming' },

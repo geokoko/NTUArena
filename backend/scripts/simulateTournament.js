@@ -24,7 +24,7 @@ function randomName() {
 }
 
 async function connectMongo() {
-	const uri = process.env.MONGO_URL || 'mongodb://localhost:27017/ntuarena';
+	const uri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGO_URL || 'mongodb://mongodb:27017/ntuarena';
 	await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 });
 }
 
@@ -72,12 +72,18 @@ async function simulate() {
 	await connectMongo();
 
 	// 1) Admin creates tournament
-	const t = await Tournament.create({
-		name: randomName(),
-		timeControl: '3+2',
+	const now = new Date();
+	const start = new Date(now.getTime() + 60 * 1000); // 1 min from now
+	const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 min after start
+	const t = new Tournament({
+		name: process.env.SIM_TOURNAMENT_NAME || randomName(),
+		timeControl: process.env.SIM_TIME_CONTROL || '5+0',
+		startDate: start,
+		endDate: end,
 		tournStatus: 'upcoming',
-		createdAt: new Date(),
+		participants: [],
 	});
+	await t.save();
 
 	const TID = String(t._id);
 	console.log('[SIM] Created tournament:', TID, '-', t.name);
@@ -142,4 +148,3 @@ simulate().catch(async (err) => {
 	try { await mongoose.disconnect(); } catch {}
 	process.exit(1);
 });
-

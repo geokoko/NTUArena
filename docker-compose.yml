@@ -16,16 +16,12 @@ services:
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
       MONGO_INITDB_DATABASE: ntuarena
-      MONGO_APP_USER: appuser
-      MONGO_APP_PASS: apppass
     volumes:
       - mongo-data:/data/db
       - ./backend/scripts/mongo-init.js:/docker-entrypoint-initdb.d/01-mongo-init.js:ro
     healthcheck:
-      test: ["CMD", "mongosh", "-u", "root", "-p", "example", "--authenticationDatabase", "admin", "--eval", "db.runCommand({ ping: 1 })"]
+      test: ["CMD", "mongosh", "--eval", "db.runCommand({ ping: 1 })"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -41,7 +37,7 @@ services:
       - "5000:5000"
     environment:
       PORT: 5000
-      MONGODB_URI: "mongodb://root:example@mongodb:27017/ntuarena?authSource=admin"
+      MONGODB_URI: "mongodb://mongodb:27017/ntuarena"
       REDIS_URL: "redis://redis:6379"
       NODE_ENV: development
     depends_on:
