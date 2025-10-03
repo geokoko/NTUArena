@@ -32,7 +32,55 @@ async function connectMongo() {
 async function pickUsers(count) {
 	// grab more than needed and sample
 	const users = await User.aggregate([{ $sample: { size: Math.max(count * 2, count + 5) } }]);
+	console.log(`[SIM] Picked ${users.length} users from database.`);
+	// shuffle and return only 'count' users
+	users.sort(() => Math.random() - 0.5);
 	return users.slice(0, count);
+}
+
+/**
+ * Inserts simulated users into the database.
+ * Creates unique username/email pairs using a timestamp-based prefix
+ * to avoid violating unique constraints.
+ *
+ * @param {number} count - Number of users to insert
+ * @returns {Promise<Array>} Inserted user documents
+ */
+async function addUsersToDatabase(count) {
+	const prefix = `sim_${Date.now()}`;
+	const docs = Array.from({ length: count }, (_, i) => {
+		const rating = Math.max(800, Math.round(1200 + (Math.random() - 0.5) * 600));
+		return {
+			username: `${prefix}_${i}`,
+			email: `${prefix}_${i}@example.com`,
+			role: 'player',
+			globalElo: rating,
+			isActive: true,
+			profile: {
+				firstName: 'Sim',
+				lastName: `User${i}`,
+				country: 'GR',
+				city: 'Athens',
+			},
+			statistics: {
+				totalGames: 0,
+				totalWins: 0,
+				totalLosses: 0,
+				totalDraws: 0,
+				tournamentParticipations: 0,
+				tournamentWins: 0,
+			},
+		};
+	});
+
+	try {
+		const inserted = await User.insertMany(docs, { ordered: false });
+		console.log(`[SIM] Inserted ${inserted.length} new simulated user(s).`);
+		return inserted;
+	} catch (err) {
+		console.error('[SIM] Error inserting simulated users:', err.message);
+		throw err;
+	}
 }
 
 async function registerPlayers(tournamentId, users) {
@@ -89,8 +137,16 @@ async function simulate() {
 	const TID = String(t._id);
 	console.log('[SIM] Created tournament:', TID, '-', t.name);
 
-	// 2) Admin registers users as players
+
+	// 2) Ensure enough users exist; seed if needed, then register
 	const PLAYER_COUNT = parseInt(process.env.SIM_PLAYERS || '24', 10);
+	const existingUsers = await User.countDocuments();
+	if (existingUsers < PLAYER_COUNT) {
+		const toAdd = PLAYER_COUNT - existingUsers;
+		console.log(`[SIM] Not enough users (${existingUsers}) for ${PLAYER_COUNT} players. Seeding ${toAdd} user(s)...`);
+		await addUsersToDatabase(toAdd);
+	}
+
 	const users = await pickUsers(PLAYER_COUNT);
 	if (users.length < 2) throw new Error('Not enough users to register as players.');
 
