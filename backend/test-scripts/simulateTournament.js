@@ -171,6 +171,8 @@ async function simulate() {
 			.limit(perCycleToFinish)
 			.lean();
 
+		console.log(`[SIM] Cycyle ${c}: Ongoing game(s): ${ongoing}`)
+
 		if (ongoing.length) {
 			console.log(`[SIM] Cycle ${c}: finishing ${ongoing.length} game(s)...`);
 		} else {
@@ -182,6 +184,7 @@ async function simulate() {
 			const result = randChoice(['1-0', '0-1', '1/2-1/2']);
 			try {
 				await gameService.submitGameResult(g._id, result);
+
 			} catch (e) {
 				// If a race happens (e.g., worker already finished/modified), ignore and continue
 				console.warn('[SIM] submitGameResult warning:', e.message);

@@ -10,9 +10,7 @@ const tournamentSchema = new mongoose.Schema({
 	scoreboard: [{
 		player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player' },
 		score: { type: Number, default: 0 }
-	}],
-	games: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Game' }]
+	}]
 });
 
 module.exports = mongoose.model('Tournament', tournamentSchema);
-

@@ -1,7 +1,6 @@
 const Tournament = require('../models/Tournament');
 const Player = require('../models/Player');
 const Game = require('../models/Game');
-const User = require('../models/User');
 const pairingService = require('./pairingService');
 
 class TournamentService {
@@ -63,10 +62,11 @@ class TournamentService {
 
 	async getTournamentById(id) {
 		const t = await Tournament.findById(id)
-			.populate('participants')
-			.populate('games');
+			.populate('participants');
 		if (!t) throw new Error('Tournament not found');
-		return t;
+
+		const games = await Game.find({ tournament: id }).lean();
+		return { ...t.toObject(), games };
 	}
 
 	async joinTournament(userId, tournamentId) {
@@ -109,25 +109,6 @@ class TournamentService {
 		return { message: 'Player left tournament successfully' };
 	}
 
-	async addGameToTournament({ gameId, tournamentId, whitePlayerId, blackPlayerId }) {
-		await Game.findByIdAndUpdate(
-			gameId,
-			{
-				$setOnInsert: {
-					playerWhite: whitePlayerId,
-					playerBlack: blackPlayerId,
-					tournament: tournamentId,
-					isFinished: false
-				}
-			},
-			{ upsert: true }
-		);
-
-		await Tournament.findByIdAndUpdate(tournamentId, {
-			$addToSet: { games: gameId }
-		});
-	}
-
 	async adminAddPlayerToTournament(userId, tournamentId) {
 		return this.joinTournament(userId, tournamentId);
 	}
@@ -138,4 +119,3 @@ class TournamentService {
 }
 
 module.exports = new TournamentService();
-

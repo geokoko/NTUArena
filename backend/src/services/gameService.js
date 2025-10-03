@@ -2,7 +2,6 @@
 const mongoose = require('mongoose');
 const Game = require('../models/Game');
 const Player = require('../models/Player');
-const tournamentService = require('./tournamentService'); // your existing service
 const { enqueue } = require('./queue/redisQueue');
 
 class GameService {
@@ -19,72 +18,55 @@ class GameService {
 		* so "just played together" is immediately visible to the next cycle.
 		*/
 		const session = await mongoose.startSession();
-		session.startTransaction();
+		let createdGame;
 		try {
-			const [white, black] = await Promise.all([
-				Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session),
-				Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session),
-			]);
+			await session.withTransaction(async () => {
+				const [white, black] = await Promise.all([
+					Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session).exec(),
+					Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session).exec(),
+				]);
 
-			if (!white || !black || white.isPlaying || black.isPlaying) {
-				await session.abortTransaction();
-				session.endSession();
-				throw new Error('Players busy or not found');
-			}
+				if (!white || !black || white.isPlaying || black.isPlaying) {
+					throw new Error('Players busy or not found');
+				}
 
-			// Create the new game
-			const game = new Game({
-				playerWhite: whitePlayerId,
-				playerBlack: blackPlayerId,
-				tournament: tournamentId,
-				isFinished: false,
+				const game = new Game({
+					playerWhite: whitePlayerId,
+					playerBlack: blackPlayerId,
+					tournament: tournamentId,
+					isFinished: false,
+				});
+
+				white.isPlaying = true;
+				black.isPlaying = true;
+
+				white.colorHistory = [...(white.colorHistory || []), 'white'].slice(-10);
+				black.colorHistory = [...(black.colorHistory || []), 'black'].slice(-10);
+
+				white.recentOpponents = [...(white.recentOpponents || []), black._id].slice(-10);
+				black.recentOpponents = [...(black.recentOpponents || []), white._id].slice(-10);
+
+				white.waitingSince = null;
+				black.waitingSince = null;
+
+				await Promise.all([
+					white.save({ session }),
+					black.save({ session }),
+					game.save({ session }),
+				]);
+
+				createdGame = game;
+			}, {
+				readConcern: { level: 'snapshot' },
+				writeConcern: { w: 'majority' },
 			});
 
-			// Update both players atomically
-			white.isPlaying = true;
-			black.isPlaying = true;
-
-			// COLOR HISTORY: Append and cap to last 10
-			white.colorHistory = [...(white.colorHistory || []), 'white'].slice(-10);
-			black.colorHistory = [...(black.colorHistory || []), 'black'].slice(-10);
-
-			// RECENT OPPONENTS: Append and cap to last 10
-			white.recentOpponents = [...(white.recentOpponents || []), black._id].slice(-10);
-			black.recentOpponents = [...(black.recentOpponents || []), white._id].slice(-10);
-
-			// Waiting-since cleared while playing
-			white.waitingSince = null;
-			black.waitingSince = null;
-
-			await Promise.all([
-				white.save({ session }),
-				black.save({ session }),
-				game.save({ session }),
-			]);
-
-			await session.commitTransaction();
-			session.endSession();
-
-			// After commit, attach to tournament
-			try {
-				await tournamentService.addGameToTournament({
-					gameId: game._id,
-					tournamentId,
-					whitePlayerId,
-					blackPlayerId,
-				});
-			} catch (e) {
-				// Non-fatal: game exists and players are marked as playing; log for ops
-				console.warn('[GameService] addGameToTournament failed:', e.message);
-			}
-
-			return game;
+			return createdGame;
 		} catch (err) {
-			try { await session.abortTransaction(); } catch {}
-			session.endSession();
-
 			console.error('[GameService] createGameFromPairing error:', err);
 			throw err;
+		} finally {
+			await session.endSession();
 		}
 	}
 
@@ -113,14 +95,7 @@ class GameService {
 		game.isFinished = true;
 		game.finishedAt = new Date();
 		await game.save();
-
-		await tournamentService.applyGameResult({
-			gameId: game._id,
-			tournamentId: game.tournament,
-			whitePlayerId: game.playerWhite,
-			blackPlayerId: game.playerBlack,
-			result,
-		});
+		console.log(`[GameService] Game ended with result: ${resultColor}`);
 
 		// Free both players and set waitingSince
 		const now = new Date();
@@ -147,6 +122,7 @@ class GameService {
 			Player.findById(game.playerBlack).select('_id user score liveRating recentOpponents colorHistory waitingSince'),
 		]);
 
+		console.log(`[GameService] Re-enqueueing players ${white} and ${black}`);
 		for (const p of [wSnap, bSnap]) {
 			if (!p) continue;
 			await enqueue(String(game.tournament), {
