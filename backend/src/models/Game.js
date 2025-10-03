@@ -6,9 +6,8 @@ const GameSchema = new mongoose.Schema({
 	tournament: { type: mongoose.Schema.Types.ObjectId, required: true },
 	isFinished: { type: Boolean, default: false },
 	finishedAt: { type: Date },
-	resultColor: { type: String, enum: ['white', 'draw', 'black'], default: null },
+	resultColor: { type: String, enum: ['white', 'draw', 'black'] },
 	createdAt: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('Game', GameSchema);
-

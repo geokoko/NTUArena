@@ -96,8 +96,22 @@ class GameService {
 		if (!game) throw new Error('Game not found');
 		if (game.isFinished) throw new Error('Game already finished');
 
-		game.result = result;
+		// Normalize incoming result to one of: 'white' | 'black' | 'draw'
+		const normalize = (r) => {
+			if (!r) return null;
+			const v = String(r).toLowerCase().trim();
+			if (v === '1-0' || v === 'white' || v === 'w') return 'white';
+			if (v === '0-1' || v === 'black' || v === 'b') return 'black';
+			if (v === '1/2-1/2' || v === '0.5-0.5' || v === 'draw' || v === '½-½') return 'draw';
+			return null;
+		};
+
+		const resultColor = normalize(result);
+		if (!resultColor) throw new Error('Invalid result value');
+
+		game.resultColor = resultColor;
 		game.isFinished = true;
+		game.finishedAt = new Date();
 		await game.save();
 
 		await tournamentService.applyGameResult({
@@ -152,4 +166,3 @@ class GameService {
 }
 
 module.exports = new GameService();
-
