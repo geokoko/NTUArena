@@ -76,7 +76,7 @@ class GameService {
 	async submitGameResult(gameId, result) {
 		const game = await Game.findById(gameId);
 		if (!game) throw new Error('Game not found');
-		if (game.isFinished) throw new Error('Game already finished');
+		if (game.isFinished) throw new Error(`Game with ID: ${gameId} already finished with result ${game.resultColor}`);
 
 		// Normalize incoming result to one of: 'white' | 'black' | 'draw'
 		const normalize = (r) => {
@@ -97,7 +97,7 @@ class GameService {
 		await game.save();
 		console.log(`[GameService] Game ended with result: ${resultColor}`);
 
-		// Free both players and set waitingSince
+		// Free both players, update their scores, game History, performance rating and set waitingSince
 		const now = new Date();
 		const [white, black] = await Promise.all([
 			Player.findById(game.playerWhite),
@@ -107,11 +107,27 @@ class GameService {
 		if (white) {
 			white.isPlaying = false;
 			white.waitingSince = now;
+			if (resultColor === 'white') {
+				white.score = (white.score || 0) + 1;
+			}
+			else if (resultColor === 'draw') {
+				white.score = (white.score || 0) + 0.5;
+			}
+			white.gameHistory = [...(white.gameHistory || []), game._id].slice(-50);
+			console.log(`[GameService] Player ${white.user} new score: ${white.score}`);
 			await white.save();
 		}
 		if (black) {
 			black.isPlaying = false;
 			black.waitingSince = now;
+			if (resultColor === 'black') {
+				black.score = (black.score || 0) + 1;
+			}
+			else if (resultColor === 'draw') {
+				black.score = (black.score || 0) + 0.5;
+			}
+			black.gameHistory = [...(black.gameHistory || []), game._id].slice(-50);
+			console.log(`[GameService] Player ${black.user} new score: ${black.score}`);
 			await black.save();
 		}
 
@@ -122,7 +138,7 @@ class GameService {
 			Player.findById(game.playerBlack).select('_id user score liveRating recentOpponents colorHistory waitingSince'),
 		]);
 
-		console.log(`[GameService] Re-enqueueing players ${white} and ${black}`);
+		console.log(`[GameService] Re-enqueueing players ${white.user} and ${black.user} after game completion.`);
 		for (const p of [wSnap, bSnap]) {
 			if (!p) continue;
 			await enqueue(String(game.tournament), {
