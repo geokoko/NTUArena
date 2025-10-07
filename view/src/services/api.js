@@ -42,15 +42,19 @@ export const tournamentAPI = {
 	getTournamentStandings:(id)  => api.get(`/api/tournaments/${id}/standings`),
 
 	// CRUD / lifecycle
-	createTournament: (data)     => api.post('/api/admin/tournaments', data),
-	updateTournament: (id, data) => api.patch(`/api/admin/tournaments/${id}`, data),
-	deleteTournament: (id)       => api.delete(`/api/admin/tournaments/${id}`),
+	createTournament: (data)     => api.post('/api/admin/tournaments/create', data),
+	updateTournament: (id, data) => api.patch(`/api/admin/tournaments/${id}/update`, data),
+	deleteTournament: (id)       => api.delete(`/api/admin/tournaments/${id}/delete`),
 	startTournament:  (id)       => api.post(`/api/admin/tournaments/${id}/start`),
 	endTournament:    (id)       => api.post(`/api/admin/tournaments/${id}/end`),
 
 	// Membership (explicit userId body)
 	joinTournament:  (id, userId) => api.post(`/api/tournaments/${id}/join`,  { userId }),
 	leaveTournament: (id, userId) => api.post(`/api/tournaments/${id}/leave`, { userId }),
+
+	// Admin membership management
+	adminAddPlayer:    (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/add`,    { userId }),
+	adminRemovePlayer: (id, userId) => api.delete(`/api/admin/tournaments/${id}/participants/remove`, { data: { userId } }),
 };
 
 /** ---------------- Games ---------------- **/
