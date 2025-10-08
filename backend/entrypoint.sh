@@ -25,6 +25,11 @@ until curl -fsS "$HEALTH_URL" >/dev/null 2>&1; do
   sleep "$SLEEP_INTERVAL"
 done
 
-echo "Backend is healthy. Starting tournament simulation."
+echo "Backend is healthy. Server is running with PID ${SERVER_PID}."
+#echo "Backend is healthy. Starting tournament simulation."
 
-npm run simulate:tournament
+# npm run simulate:tournament
+
+# Do not kill the server on exit; let it run
+trap 'kill "$SERVER_PID" 2>/dev/null || true' INT TERM
+wait "$SERVER_PID"
