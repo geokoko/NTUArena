@@ -57,7 +57,6 @@ services:
     ports:
       - "3000:3000"
     environment:
-      REACT_APP_API_URL: http://backend:5000
       CHOKIDAR_USEPOLLING: true
       FAST_REFRESH: true
     volumes:
@@ -70,4 +69,3 @@ services:
 
 volumes:
   mongo-data:
-
