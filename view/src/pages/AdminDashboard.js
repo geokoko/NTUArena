@@ -22,7 +22,6 @@ const AdminDashboard = () => {
 	// users
 	const [users, setUsers] = useState([]);
 	const [uError, setUError] = useState('');
-	const [newUser, setNewUser] = useState({ username: '', email: '', globalElo: 1200, role: 'player' });
 
 	// system
 	const [systemHealth, setSystemHealth] = useState(null);
@@ -45,7 +44,7 @@ const AdminDashboard = () => {
 		setLoading(true); setTError('');
 		try {
 			const { data } = await tournamentAPI.getAllTournaments();
-			setTournaments(data || []);
+			setTournaments(Array.isArray(data) ? data : []);
 		} catch (e) {
 			setTError(e.message);
 		} finally { setLoading(false); }
@@ -55,7 +54,8 @@ const AdminDashboard = () => {
 		setUError('');
 		try {
 			const res = await userAPI.getAll();
-			setUsers(res.data?.users || res.data || []);
+			const list = res.data?.users || res.data || [];
+			setUsers(Array.isArray(list) ? list : []);
 		} catch (e) {
 			setUError(e.message);
 		}
@@ -140,13 +140,6 @@ const AdminDashboard = () => {
 		setTournaments(prev => prev.filter(t => t._id !== tid));
 	};
 
-	const handleSubmitUser = async (e) => {
-		e.preventDefault();
-		await userAPI.addUser(newUser);
-		setNewUser({ username: '', email: '', globalElo: 1200, role: 'player' });
-		await loadUsers();
-	};
-
 	const submitResult = async (gameId, result) => {
 		await gameAPI.submitGameResult(gameId, result);
 		// drop from active list locally
@@ -180,9 +173,12 @@ const AdminDashboard = () => {
 						{tError && <div className="alert alert-danger">{tError}</div>}
 						{loading ? <Spinner/> : (
 							<>
-								<div className="d-flex justify-content-between align-items-center mb-3">
-									<Link to="/tournaments" className="btn btn-sm btn-outline-secondary">View Tournaments</Link>
-									<button className="btn btn-sm btn-outline-secondary" onClick={loadTournaments}>Refresh</button>
+								<div className="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+									<div className="d-flex gap-2">
+										<Link to="/tournaments" className="btn btn-sm btn-outline-secondary">View Tournaments</Link>
+										<button className="btn btn-sm btn-outline-secondary" onClick={loadTournaments}>Refresh</button>
+									</div>
+									<Link to="/admin/tournaments/new" className="btn btn-sm btn-primary">Create Tournament</Link>
 								</div>
 
 								<div className="table-responsive">
@@ -300,30 +296,13 @@ const AdminDashboard = () => {
 					<div className="card-header"><h4 className="m-0">User Management</h4></div>
 					<div className="card-body">
 						{uError && <div className="alert alert-danger">{uError}</div>}
-
-						<form className="row g-2 mb-3" onSubmit={handleSubmitUser}>
-							<div className="col-auto">
-								<input className="form-control" placeholder="Username" value={newUser.username}
-									onChange={(e) => setNewUser(s => ({ ...s, username: e.target.value }))} required />
+						<div className="d-flex justify-content-between flex-wrap gap-2 mb-3">
+							<p className="text-muted m-0">Manage accounts or onboard new players using the dedicated form.</p>
+							<div className="d-flex gap-2">
+								<button className="btn btn-outline-secondary btn-sm" onClick={loadUsers}>Refresh</button>
+								<Link to="/admin/users/new" className="btn btn-primary btn-sm">Register User</Link>
 							</div>
-							<div className="col-auto">
-								<input className="form-control" type="email" placeholder="Email" value={newUser.email}
-									onChange={(e) => setNewUser(s => ({ ...s, email: e.target.value }))} required />
-							</div>
-							<div className="col-auto">
-								<input className="form-control" type="number" placeholder="Global ELO" value={newUser.globalElo}
-									onChange={(e) => setNewUser(s => ({ ...s, globalElo: parseInt(e.target.value || '0', 10) }))} />
-							</div>
-							<div className="col-auto">
-								<select className="form-select" value={newUser.role} onChange={(e) => setNewUser(s => ({ ...s, role: e.target.value }))}>
-									<option value="player">player</option>
-									<option value="admin">admin</option>
-								</select>
-							</div>
-							<div className="col-auto">
-								<button className="btn btn-primary" type="submit">Create</button>
-							</div>
-						</form>
+						</div>
 
 						<div className="table-responsive">
 							<table className="table align-middle">
@@ -371,4 +350,3 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
-

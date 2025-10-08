@@ -7,8 +7,11 @@ import Dashboard from './pages/Dashboard';
 import TournamentList from './pages/TournamentList';
 import TournamentDetail from './pages/TournamentDetail';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminCreateUser from './pages/AdminCreateUser';
+import AdminCreateTournament from './pages/AdminCreateTournament';
 import ChessboardPage from './pages/ChessboardPage';
 import AdminOngoingGames from './pages/AdminOngoingGames';
+import UserDatabasePage from './pages/UserDatabasePage';
 import './App.css';
 
 function App() {
@@ -24,8 +27,12 @@ function App() {
 							<Route path="/tournaments" element={<TournamentList />} />
 							<Route path="/tournament/:id" element={<TournamentDetail />} />
 							<Route path="/admin" element={<AdminDashboard />} />
+							<Route path="/admin/users/new" element={<AdminCreateUser />} />
+							<Route path="/admin/tournaments/new" element={<AdminCreateTournament />} />
 							<Route path="/admin/games" element={<AdminOngoingGames />} />
 							<Route path="/chessboard" element={<ChessboardPage />} />
+							<Route path="/users" element={<UserDatabasePage />} />
+							<Route path="*" element={<h2>404: Page Not Found</h2>} />
 						</Routes>
 					</main>
 				</div>

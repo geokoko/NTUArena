@@ -14,13 +14,12 @@ const Home = () => {
 						margin: '50px auto'
 					}}>
 						<Card.Header>
-							<Card.Title as="h1">Welcome to ArenaManager</Card.Title>
+							<Card.Title as="h1">Welcome to NTUArena</Card.Title>
 							<p className="text-muted">Powered by Skaki NTUA - Le Roi</p>
 						</Card.Header>
 						<div>
 							<p className="mb-4">
-								ArenaManager is a comprehensive chess tournament management system designed
-								for organizing and managing Over-The-Board (OTB) chess tournaments of Arena type.
+								Organize and manage real-time, Arena-style chess tournaments with ease.
 							</p>
 							<div className="mb-4">
 								<h3>Features:</h3>
@@ -30,18 +29,6 @@ const Home = () => {
 									<li>Live standings and statistics</li>
 									<li>Player profiles and game history with Elo tracking</li>
 								</ul>
-							</div>
-							<div className="d-flex justify-content-center gap-3">
-								<DynamicEffects effectType="chess-pieces">
-									<Button to="/dashboard" variant="primary">
-										Get Started
-									</Button>
-								</DynamicEffects>
-								<DynamicEffects effectType="chess-pieces">
-									<Button to="/tournaments" variant="secondary">
-										View Tournaments
-									</Button>
-								</DynamicEffects>
 							</div>
 						</div>
 					</Card>
@@ -62,11 +49,15 @@ const Home = () => {
 							</div>
 							<div style={{ flex: '1', minWidth: '200px' }}>
 								<h4>3. Play & Compete</h4>
-								<p className="text-muted">Get paired with opponents and compete in real-time</p>
+								<p className="text-muted">Get paired with opponents automatically and compete in real-time, OTB games</p>
 							</div>
 							<div style={{ flex: '1', minWidth: '200px' }}>
 								<h4>4. Track Progress</h4>
 								<p className="text-muted">Monitor your performance and view live standings</p>
+							</div>
+							<div style={{ flex: '1', minWidth: '200px' }}>
+								<h4>5. Review Games</h4>
+								<p className="text-muted">Analyze your games and improve your skills</p>
 							</div>
 						</div>
 					</Card>
