@@ -1,4 +1,3 @@
-// controllers/tournamentController.js
 const asyncHandler = require('../middleware/asyncHandler');
 const tournamentService = require('../services/tournamentService');
 

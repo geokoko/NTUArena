@@ -29,6 +29,7 @@ app.get('/health', (req, res) => {
 });
 
 
+// API routes with /api prefix
 app.use('/api', require('./routes/users'));
 app.use('/api', require('./routes/tournaments'));
 app.use('/api', require('./routes/games'));
@@ -38,12 +39,14 @@ app.use('*', (req, res) => res.status(404).json({ error: 'Route not found' }));
 
 // Global error handler 
 app.use((err, req, res, next) => {
-	console.error(err); // swap with your logger in prod
+	console.error(err);
 	res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
 });
 
+// backend port
 const PORT = process.env.PORT || 5000;
 
+// Start server after DB connection
 connectDB()
 	.then(() => {
 		app.listen(PORT, () => {
