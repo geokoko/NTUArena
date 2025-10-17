@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { userAPI } from '../services/api';
+import './AdminCreateUser.css';
 
 const initialState = {
 	username: '',
@@ -52,18 +53,18 @@ const AdminCreateUser = () => {
 	};
 
 	return (
-		<div className="container my-4">
-			<div className="mb-4 d-flex justify-content-between align-items-center">
+		<div className="admin-create-user container my-4">
+			<div className="admin-create-user__header mb-4 d-flex justify-content-between align-items-center">
 				<h1 className="m-0">Register User</h1>
-				<Link to="/admin" className="btn btn-outline-secondary">Back to Admin</Link>
+				<Link to="/admin" className="btn btn-outline-secondary admin-create-user__back">Back to Admin</Link>
 			</div>
 
-			<div className="card">
-				<div className="card-body">
+			<div className="card admin-create-user__card">
+				<div className="card-body admin-create-user__card-body">
 					<p className="text-muted">Admins can create users manually for testing or onboarding.</p>
 					{error && <div className="alert alert-danger">{error}</div>}
 					{success && <div className="alert alert-success">{success}</div>}
-					<form onSubmit={handleSubmit} className="row g-3">
+					<form onSubmit={handleSubmit} className="row g-3 admin-create-user__form">
 						<div className="col-md-6">
 							<label className="form-label">Username</label>
 							<input
@@ -119,10 +120,10 @@ const AdminCreateUser = () => {
 							</select>
 						</div>
 						<div className="col-12">
-							<button type="submit" className="btn btn-primary" disabled={submitting}>
+							<button type="submit" className="btn btn-primary admin-create-user__submit" disabled={submitting}>
 								{submitting ? 'Creating…' : 'Create User'}
 							</button>
-							<Link to="/users" className="btn btn-link">View Users</Link>
+							<Link to="/users" className="btn btn-link admin-create-user__link">View Users</Link>
 						</div>
 					</form>
 				</div>
