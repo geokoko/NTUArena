@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { tournamentAPI } from '../services/api';
+import './AdminCreateTournament.css';
 
 const initialState = {
 	name: '',
@@ -9,8 +10,8 @@ const initialState = {
 	endDate: '',
 	timeControl: '',
 	description: '',
-	type: 'swiss',
-	maxPlayers: '32',
+	type: 'arena',
+	maxPlayers: '100'
 };
 
 const AdminCreateTournament = () => {
@@ -50,7 +51,7 @@ const AdminCreateTournament = () => {
 				endDate: toIso(form.endDate),
 				timeControl: form.timeControl,
 				description: form.description,
-				type: form.type || undefined,
+				type: form.type,
 				maxPlayers: maxPlayersValue,
 			};
 			await tournamentAPI.createTournament(payload);
@@ -64,18 +65,20 @@ const AdminCreateTournament = () => {
 	};
 
 	return (
-		<div className="container my-4">
-			<div className="mb-4 d-flex justify-content-between align-items-center">
-				<h1 className="m-0">Create Tournament</h1>
-				<Link to="/admin" className="btn btn-outline-secondary">Back to Admin</Link>
+		<div className="admin-create-tournament container my-4">
+			<div className="admin-create-tournament__header mb-4 d-flex justify-content-between align-items-center">
+				<Link to="/admin" className="btn btn-outline-secondary admin-create-tournament__back">Back to Dashboard</Link>
 			</div>
 
-			<div className="card">
-				<div className="card-body">
+			<div className="card admin-create-tournament__card">
+				<div className="card-header admin-create-tournament__card-header h1">
+					<h3> Create New Tournament </h3>
+				</div>
+				<div className="card-body admin-create-tournament__card-body">
 					<p className="text-muted">Provide the core details below. Required fields are marked with *.</p>
 					{error && <div className="alert alert-danger">{error}</div>}
 					{success && <div className="alert alert-success">{success}</div>}
-					<form onSubmit={handleSubmit} className="row g-3">
+					<form onSubmit={handleSubmit} className="row g-3 admin-create-tournament__form">
 						<div className="col-md-6">
 							<label className="form-label">Name *</label>
 							<input
@@ -125,7 +128,7 @@ const AdminCreateTournament = () => {
 								placeholder="15+10 Rapid"
 								value={form.timeControl}
 								onChange={handleChange('timeControl')}
-						/>
+							/>
 						</div>
 						<div className="col-md-4">
 							<label className="form-label">Format</label>
@@ -134,9 +137,9 @@ const AdminCreateTournament = () => {
 								value={form.type}
 								onChange={handleChange('type')}
 							>
-								<option value="swiss">Swiss</option>
-								<option value="round-robin">Round Robin</option>
-								<option value="knockout">Knockout</option>
+								<option value="arena">Arena</option>
+								<option value="swiss">Swiss (Coming soon!)</option>
+								<option value="knockout">Knockout (Coming soon!)</option>
 							</select>
 						</div>
 						<div className="col-md-4">
@@ -147,7 +150,7 @@ const AdminCreateTournament = () => {
 								className="form-control"
 								value={form.maxPlayers}
 								onChange={handleChange('maxPlayers')}
-						/>
+							/>
 						</div>
 						<div className="col-12">
 							<label className="form-label">Description</label>
@@ -160,10 +163,10 @@ const AdminCreateTournament = () => {
 							/>
 						</div>
 						<div className="col-12">
-							<button type="submit" className="btn btn-primary" disabled={submitting}>
+							<button type="submit" className="btn btn-primary admin-create-tournament__submit" disabled={submitting}>
 								{submitting ? 'Creating…' : 'Create Tournament'}
 							</button>
-							<Link to="/tournaments" className="btn btn-link">View Tournaments</Link>
+							<Link to="/tournaments" className="btn btn-link admin-create-tournament__link">View Tournaments</Link>
 						</div>
 					</form>
 				</div>
