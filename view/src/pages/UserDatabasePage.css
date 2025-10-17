@@ -1,0 +1,295 @@
+.user-database-page {
+	max-width: 1100px;
+	margin: 0 auto;
+	padding: 0 1rem 3rem;
+}
+
+.user-database-page__header {
+	gap: 1rem;
+	flex-wrap: wrap;
+	align-items: flex-start;
+}
+
+.user-database-page__header h1 {
+	color: #f8fafc;
+	font-size: 2.1rem;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+
+.user-database-page__create {
+	border-radius: 999px;
+	padding-inline: 1.6rem;
+	font-weight: 600;
+	box-shadow: 0 22px 48px -32px rgba(37, 99, 235, 0.88);
+	transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.user-database-page__create:hover,
+.user-database-page__create:focus-visible {
+	transform: translateY(-2px);
+	box-shadow: 0 28px 60px -36px rgba(59, 130, 246, 0.95);
+	opacity: 0.92;
+}
+
+.user-database-page__card {
+	border-radius: 28px;
+	border: 1px solid rgba(148, 163, 184, 0.28);
+	background: rgba(15, 23, 42, 0.45);
+	backdrop-filter: blur(28px);
+	box-shadow: 0 48px 120px -64px rgba(15, 23, 42, 0.85);
+	padding: 2.5rem;
+	display: flex;
+	flex-direction: column;
+	gap: 2rem;
+}
+
+.user-database-page__summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.5rem;
+}
+
+.user-database-page__summary-item {
+	flex: 1 1 160px;
+	min-width: 160px;
+	padding: 1.1rem 1.5rem;
+	border-radius: 18px;
+	border: 1px solid rgba(148, 163, 184, 0.3);
+	background: rgba(15, 23, 42, 0.35);
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+
+.user-database-page__summary-value {
+	font-size: 1.75rem;
+	font-weight: 700;
+	color: #f8fafc;
+}
+
+.user-database-page__summary-label {
+	font-size: 0.75rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: rgba(226, 232, 240, 0.65);
+}
+
+.user-database-page__list {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+	gap: 1.75rem;
+}
+
+.user-card {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+	padding: 1.8rem;
+	border-radius: 22px;
+	border: 1px solid rgba(148, 163, 184, 0.35);
+	background: rgba(15, 23, 42, 0.38);
+	transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.user-card:hover {
+	transform: translateY(-3px);
+	box-shadow: 0 28px 64px -48px rgba(15, 23, 42, 0.85);
+	border-color: rgba(59, 130, 246, 0.4);
+}
+
+.user-card__header {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.user-card__avatar {
+	flex-shrink: 0;
+	width: 52px;
+	height: 52px;
+	border-radius: 50%;
+	background: linear-gradient(145deg, rgba(59, 130, 246, 0.4), rgba(37, 99, 235, 0.8));
+	color: #e2e8f0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 700;
+	font-size: 1rem;
+	letter-spacing: 0.04em;
+}
+
+.user-card__identity {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+}
+
+.user-card__name {
+	color: #f8fafc;
+	font-weight: 600;
+	font-size: 1.05rem;
+	letter-spacing: 0.01em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.user-card__email {
+	color: rgba(226, 232, 240, 0.78);
+	font-size: 0.85rem;
+	text-decoration: none;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.user-card__email:hover,
+.user-card__email:focus-visible {
+	color: #93c5fd;
+	text-decoration: underline;
+}
+
+.user-card__email--muted {
+	color: rgba(226, 232, 240, 0.5);
+}
+
+.user-card__role {
+	align-self: flex-start;
+	padding: 0.35rem 0.9rem;
+	border-radius: 999px;
+	font-size: 0.7rem;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	font-weight: 700;
+	border: 1px solid rgba(148, 163, 184, 0.35);
+	color: #e2e8f0;
+	background: rgba(15, 23, 42, 0.38);
+}
+
+.user-card__role--admin {
+	background: rgba(248, 113, 113, 0.16);
+	border-color: rgba(248, 113, 113, 0.45);
+	color: #fca5a5;
+}
+
+.user-card__role--player {
+	background: rgba(56, 189, 248, 0.16);
+	border-color: rgba(56, 189, 248, 0.45);
+	color: #7dd3fc;
+}
+
+.user-card__meta {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 1.25rem;
+}
+
+.user-card__stat {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	padding: 0.9rem 1.1rem;
+	border-radius: 16px;
+	border: 1px solid rgba(148, 163, 184, 0.35);
+	background: rgba(15, 23, 42, 0.3);
+}
+
+.user-card__stat-label {
+	font-size: 0.72rem;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: rgba(226, 232, 240, 0.58);
+}
+
+.user-card__stat-value {
+	font-size: 1.05rem;
+	font-weight: 600;
+	color: #f8fafc;
+	letter-spacing: 0.01em;
+}
+
+.user-database-page__empty {
+	text-align: center;
+	padding: 3.5rem 1rem;
+	border-radius: 20px;
+	border: 1px dashed rgba(148, 163, 184, 0.4);
+	background: rgba(15, 23, 42, 0.28);
+	color: rgba(226, 232, 240, 0.7);
+	font-weight: 500;
+	letter-spacing: 0.04em;
+}
+
+.user-database-page__loading {
+	border-radius: 18px;
+	background: rgba(15, 23, 42, 0.35);
+	color: rgba(226, 232, 240, 0.7);
+}
+
+.user-database-page__footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 1rem;
+	margin-top: 2rem;
+	padding-top: 1.5rem;
+	border-top: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.user-database-page__back {
+	border-radius: 999px;
+	padding-inline: 1.5rem;
+	font-weight: 600;
+	transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.user-database-page__back:hover,
+.user-database-page__back:focus-visible {
+	transform: translateY(-2px);
+	box-shadow: 0 20px 48px -30px rgba(148, 163, 184, 0.45);
+	opacity: 0.92;
+}
+
+@media (max-width: 992px) {
+	.user-database-page__card {
+		padding: 2rem;
+	}
+
+	.user-database-page__list {
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	}
+}
+
+@media (max-width: 768px) {
+	.user-database-page {
+		padding-inline: 0.5rem;
+	}
+
+	.user-database-page__summary-item {
+		flex: 1 1 130px;
+		min-width: 130px;
+	}
+
+	.user-database-page__footer {
+		justify-content: center;
+	}
+}
+
+@media (max-width: 600px) {
+	.user-database-page__card {
+		padding: 1.75rem;
+	}
+
+	.user-database-page__summary {
+		flex-direction: column;
+	}
+
+	.user-database-page__summary-item {
+		width: 100%;
+	}
+
+	.user-database-page__list {
+		grid-template-columns: 1fr;
+	}
+}
