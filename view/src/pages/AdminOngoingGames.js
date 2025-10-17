@@ -1,9 +1,10 @@
 // src/pages/AdminOngoingGames.jsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { tournamentAPI, gameAPI } from '../services/api';
+import './AdminOngoingGames.css';
 
 const ResultButtons = ({ onResult, disabled }) => (
-	<div className="d-flex gap-2">
+	<div className="admin-ongoing-games__result-buttons d-flex gap-2">
 		<button className="btn btn-sm btn-success" disabled={disabled} onClick={() => onResult('white')}>
 			White wins
 		</button>
@@ -17,7 +18,7 @@ const ResultButtons = ({ onResult, disabled }) => (
 );
 
 const Badge = ({ children, kind = 'secondary' }) => (
-	<span className={`badge badge-${kind}`}>{children}</span>
+	<span className={`badge badge-${kind} admin-ongoing-games__badge`}>{children}</span>
 );
 
 const AdminOngoingGames = () => {
@@ -78,7 +79,7 @@ const AdminOngoingGames = () => {
 		try {
 			setSubmitting(gameId);
 			await gameAPI.submitGameResult(gameId, result);
-			// Optimistic: remove it from ongoing
+
 			setGamesByTid((prev) => {
 				const next = { ...prev };
 				for (const tid of Object.keys(next)) {
@@ -94,11 +95,11 @@ const AdminOngoingGames = () => {
 	};
 
 	return (
-		<div>
-			<div className="d-flex justify-content-between align-items-center mb-4">
+		<div className="admin-ongoing-games">
+			<div className="admin-ongoing-games__toolbar d-flex justify-content-between align-items-center mb-4">
 				<h1>Admin · Ongoing Games</h1>
-				<div className="d-flex align-items-center gap-3">
-					<div className="form-check form-switch">
+				<div className="admin-ongoing-games__toolbar-controls d-flex align-items-center gap-3">
+					<div className="form-check form-switch admin-ongoing-games__autorefresh">
 						<input
 							id="autorefresh"
 							type="checkbox"
@@ -108,7 +109,7 @@ const AdminOngoingGames = () => {
 						/>
 						<label className="form-check-label" htmlFor="autorefresh">Auto refresh (10s)</label>
 					</div>
-					<button className="btn btn-outline-secondary" onClick={load} disabled={loading}>
+					<button className="btn btn-outline-secondary admin-ongoing-games__refresh" onClick={load} disabled={loading}>
 						Refresh now
 					</button>
 				</div>
@@ -117,19 +118,19 @@ const AdminOngoingGames = () => {
 			{error && <div className="alert alert-danger">{error}</div>}
 
 			{loading ? (
-				<div className="text-center">
+				<div className="admin-ongoing-games__loading text-center">
 					<div className="loading-spinner"></div>
 					<p>Loading ongoing games…</p>
 				</div>
 			) : ongoing.length === 0 ? (
 					<div className="alert alert-info">No ongoing games right now.</div>
 				) : (
-						<div className="card">
-							<div className="card-header">
-								<h3 className="card-title">All ongoing games</h3>
+						<div className="card admin-ongoing-games__card">
+							<div className="card-header admin-ongoing-games__card-header">
+								<h3 className="card-title admin-ongoing-games__card-title">All ongoing games</h3>
 							</div>
-							<div>
-								<table className="table">
+							<div className="admin-ongoing-games__table-wrapper">
+								<table className="table admin-ongoing-games__table">
 									<thead>
 										<tr>
 											<th>Game</th>
@@ -168,4 +169,3 @@ const AdminOngoingGames = () => {
 };
 
 export default AdminOngoingGames;
-

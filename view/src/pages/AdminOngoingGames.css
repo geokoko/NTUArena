@@ -1,0 +1,146 @@
+.admin-ongoing-games {
+	padding: 0.5rem 0 2rem;
+}
+
+.admin-ongoing-games__toolbar {
+	gap: 1rem;
+	flex-wrap: wrap;
+}
+
+.admin-ongoing-games__toolbar h1 {
+	color: #0f172a;
+	font-size: 2rem;
+	font-weight: 700;
+}
+
+.admin-ongoing-games__toolbar-controls {
+	gap: 1rem;
+	flex-wrap: wrap;
+}
+
+.admin-ongoing-games__autorefresh {
+	padding: 0.25rem 0.75rem;
+	border-radius: 12px;
+	background: rgba(15, 23, 42, 0.04);
+}
+
+.admin-ongoing-games__refresh {
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+	border-radius: 999px;
+	padding-inline: 1.5rem;
+}
+
+.admin-ongoing-games__refresh:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.35);
+}
+
+.admin-ongoing-games__loading p {
+	margin-top: 1rem;
+	color: #475569;
+}
+
+.admin-ongoing-games__card {
+	border-radius: 18px;
+	border: 1px solid rgba(15, 23, 42, 0.08);
+	box-shadow: 0 24px 52px -32px rgba(15, 23, 42, 0.45);
+	overflow: hidden;
+}
+
+.admin-ongoing-games__card-header {
+	background: linear-gradient(135deg, #eef2ff, #e0f2fe);
+	border-bottom: 1px solid rgba(99, 102, 241, 0.18);
+	padding: 1.25rem 1.75rem;
+}
+
+.admin-ongoing-games__card-title {
+	margin: 0;
+	color: #1e3a8a;
+	font-weight: 700;
+}
+
+.admin-ongoing-games__table-wrapper {
+	overflow-x: auto;
+}
+
+.admin-ongoing-games__table {
+	margin-bottom: 0;
+}
+
+.admin-ongoing-games__table thead th {
+	background: #f8fafc;
+	color: #0f172a;
+	font-weight: 600;
+	text-transform: uppercase;
+	font-size: 0.75rem;
+	letter-spacing: 0.06em;
+	border-bottom: 2px solid rgba(148, 163, 184, 0.4);
+}
+
+.admin-ongoing-games__table tbody tr {
+	transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.admin-ongoing-games__table tbody tr:hover {
+	background: rgba(59, 130, 246, 0.06);
+	transform: translateY(-1px);
+}
+
+.admin-ongoing-games__table td {
+	vertical-align: middle;
+	color: #1e293b;
+}
+
+.admin-ongoing-games__table code {
+	padding: 0.15rem 0.4rem;
+	border-radius: 6px;
+	background: rgba(15, 23, 42, 0.08);
+	color: #0f172a;
+	font-weight: 600;
+}
+
+.admin-ongoing-games__badge {
+	border-radius: 999px;
+	padding: 0.4rem 0.8rem;
+	font-weight: 600;
+	letter-spacing: 0.03em;
+}
+
+.admin-ongoing-games__result-buttons .btn {
+	min-width: 120px;
+	border-radius: 10px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-ongoing-games__result-buttons .btn:hover:not(:disabled) {
+	transform: translateY(-1px);
+	box-shadow: 0 12px 24px -20px rgba(15, 23, 42, 0.45);
+}
+
+@media (max-width: 992px) {
+	.admin-ongoing-games__table th,
+	.admin-ongoing-games__table td {
+		white-space: nowrap;
+	}
+}
+
+@media (max-width: 768px) {
+	.admin-ongoing-games__toolbar h1 {
+		font-size: 1.6rem;
+	}
+
+	.admin-ongoing-games__toolbar-controls {
+		width: 100%;
+		justify-content: space-between;
+	}
+
+	.admin-ongoing-games__result-buttons {
+		flex-direction: column;
+	}
+
+	.admin-ongoing-games__result-buttons .btn {
+		width: 100%;
+	}
+}
