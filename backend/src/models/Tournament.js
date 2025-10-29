@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
+const { createPublicId } = require('../utils/publicId');
 
 const tournamentSchema = new mongoose.Schema({
+	publicId: { type: String, unique: true, default: () => createPublicId() },
 	name: { type: String, required: true },
 	tournLocation: { type: String, default: '' },
 	startDate: { type: Date, required: true },
