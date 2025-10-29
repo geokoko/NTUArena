@@ -3,18 +3,29 @@ import { Link } from 'react-router-dom';
 import { userAPI } from '../services/api';
 import './UserDatabasePage.css';
 
-const getInitials = (username, email) => {
-	const base = (username || email || '').trim();
-	if (!base) return '??';
-	const cleaned = base.replace(/[^a-zA-Z0-9 ]+/g, ' ');
-	const parts = cleaned.split(/\s+/).filter(Boolean);
-	if (parts.length === 0) return '??';
-	const firstWord = parts[0];
-	const lastWord = parts[parts.length - 1];
-	const first = firstWord.charAt(0).toUpperCase();
-	const second = (parts.length > 1 ? lastWord.charAt(0) : firstWord.charAt(1)).toUpperCase() || '';
-	const initials = `${first}${second}`.trim();
-	return initials || first || '??';
+const getInitials = (user) => {
+	const first = user?.profile?.firstName?.trim?.();
+	const last = user?.profile?.lastName?.trim?.();
+	const parts = [first, last].filter(Boolean);
+	if (parts.length) {
+		const [firstPart, secondPart] = parts;
+		const primary = firstPart?.charAt(0)?.toUpperCase?.() || '';
+		const secondary = (secondPart ?? firstPart)?.charAt?.(0)?.toUpperCase?.() || '';
+		const combined = `${primary}${secondary}`.trim();
+		if (combined) return combined;
+	}
+
+	const fallback = (user?.username || user?.email || '').trim();
+	if (!fallback) return '??';
+	const cleaned = fallback.replace(/[^a-zA-Z0-9 ]+/g, ' ');
+	const segments = cleaned.split(/\s+/).filter(Boolean);
+	if (segments.length === 0) return '??';
+	const firstWord = segments[0];
+	const lastWord = segments[segments.length - 1];
+	const primary = firstWord.charAt(0).toUpperCase();
+	const secondary = (segments.length > 1 ? lastWord.charAt(0) : firstWord.charAt(1)).toUpperCase() || '';
+	const initials = `${primary}${secondary}`.trim();
+	return initials || primary || '??';
 };
 
 const formatRoleLabel = (role) => {
@@ -46,8 +57,8 @@ const getSecondaryMeta = (createdAt, id) => {
 		}
 	}
 	return {
-		label: 'User ID',
-		value: id ? `…${id}` : '—',
+		label: 'User Ref',
+		value: id ? `…${String(id).slice(-6)}` : '—',
 	};
 };
 
@@ -76,11 +87,14 @@ const UserDatabasePage = () => {
 	}, []);
 
 	const sortedUsers = useMemo(() => {
-		return [...users].sort((a, b) => {
-			const nameA = (a?.username || a?.email || '').toLowerCase();
-			const nameB = (b?.username || b?.email || '').toLowerCase();
-			return nameA.localeCompare(nameB);
-		});
+		const extractName = (user) => {
+			const first = user?.profile?.firstName?.trim?.();
+			const last = user?.profile?.lastName?.trim?.();
+			const parts = [first, last].filter(Boolean);
+			if (parts.length) return parts.join(' ').toLowerCase();
+			return (user?.username || user?.email || '').toLowerCase();
+		};
+		return [...users].sort((a, b) => extractName(a).localeCompare(extractName(b)));
 	}, [users]);
 
 	const summary = useMemo(() => {
@@ -144,14 +158,15 @@ const UserDatabasePage = () => {
 						) : (
 								<div className="user-database-page__list">
 									{sortedUsers.map((user) => {
-										const displayName = user.username || user.email || 'Unknown player';
-										const initials = getInitials(user.username, user.email);
+										const displayName = [user?.profile?.firstName, user?.profile?.lastName]
+											.filter(Boolean)
+											.join(' ') || user.username || user.email || 'Unknown player';
+										const initials = getInitials(user);
 										const roleLabel = formatRoleLabel(user.role);
 										const roleSlug = getRoleSlug(user.role);
-										const shortId = user._id ? String(user._id).slice(-6) : '';
-										const secondaryMeta = getSecondaryMeta(user.createdAt, shortId);
+										const secondaryMeta = getSecondaryMeta(user.createdAt, user.id);
 										return (
-											<article key={user._id || user.email || displayName} className="user-card">
+											<article key={user.id || user.email || displayName} className="user-card">
 												<div className="user-card__header">
 													<div className="user-card__avatar" aria-hidden="true">{initials}</div>
 													<div className="user-card__identity">

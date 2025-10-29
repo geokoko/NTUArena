@@ -7,8 +7,10 @@ const initialState = {
 	username: '',
 	email: '',
 	password: '',
-	globalElo: '1200',
-	role: 'player'
+	globalElo: '0',
+	role: 'player',
+	firstName: '',
+	lastName: ''
 };
 
 const AdminCreateUser = () => {
@@ -41,6 +43,8 @@ const AdminCreateUser = () => {
 				password: form.password || undefined,
 				globalElo: globalEloValue,
 				role: form.role,
+				firstName: form.firstName,
+				lastName: form.lastName,
 			};
 			await userAPI.addUser(payload);
 			setSuccess('User created successfully.');
@@ -65,6 +69,28 @@ const AdminCreateUser = () => {
 					{error && <div className="alert alert-danger">{error}</div>}
 					{success && <div className="alert alert-success">{success}</div>}
 					<form onSubmit={handleSubmit} className="row g-3 admin-create-user__form">
+						<div className="col-md-6">
+							<label className="form-label">First Name</label>
+							<input
+								type="text"
+								className="form-control"
+								placeholder="e.g. Alex"
+								value={form.firstName}
+								onChange={handleChange('firstName')}
+								required
+							/>
+						</div>
+						<div className="col-md-6">
+							<label className="form-label">Last Name</label>
+							<input
+								type="text"
+								className="form-control"
+								placeholder="e.g. Papadopoulos"
+								value={form.lastName}
+								onChange={handleChange('lastName')}
+								required
+							/>
+						</div>
 						<div className="col-md-6">
 							<label className="form-label">Username</label>
 							<input

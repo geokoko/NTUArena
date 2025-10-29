@@ -58,6 +58,11 @@ const TournamentDetail = ({ user }) => {
 		}
 	};
 
+	const formatPlayerStatus = (status) => {
+		if (!status) return 'Active';
+		return status.replace(/\b\w/g, (char) => char.toUpperCase());
+	};
+
 	const getGameResultDisplay = (game) => {
 		if (!game.isFinished) {
 			return <span className="badge badge-warning">Ongoing</span>;
@@ -164,18 +169,28 @@ const TournamentDetail = ({ user }) => {
 					<div className="card-header">
 						<h3 className="card-title">Tournament Overview</h3>
 					</div>
-					<div>
-						<p>{tournament.description}</p>
-						<div className="mt-3">
-							<h4>Quick Stats:</h4>
-							<ul>
-								<li>Total Games: {games.length}</li>
-								<li>Completed Games: {games.filter(g => g.isFinished).length}</li>
-								<li>Ongoing Games: {games.filter(g => !g.isFinished).length}</li>
-								<li>Players: {players.length}</li>
-							</ul>
+						<div>
+							<p>{tournament.description}</p>
+							<div className="mt-3">
+								<h4>Quick Stats:</h4>
+								{(() => {
+									const activePlayers = players.filter(p => (p.status || 'active') === 'active').length;
+									const pausedPlayers = players.filter(p => p.status === 'paused').length;
+									const withdrawnPlayers = players.filter(p => p.status === 'withdrawn').length;
+									return (
+									<ul>
+										<li>Total Games: {games.length}</li>
+										<li>Completed Games: {games.filter(g => g.isFinished).length}</li>
+										<li>Ongoing Games: {games.filter(g => !g.isFinished).length}</li>
+										<li>Players Registered: {players.length}</li>
+										<li>Active Players: {activePlayers}</li>
+										<li>Paused Players: {pausedPlayers}</li>
+										<li>Withdrawn Players: {withdrawnPlayers}</li>
+									</ul>
+									);
+								})()}
+							</div>
 						</div>
-					</div>
 				</div>
 			)}
 
@@ -190,17 +205,27 @@ const TournamentDetail = ({ user }) => {
 								<tr>
 									<th>Rank</th>
 									<th>Player</th>
+									<th>Status</th>
 									<th>Score</th>
 									<th>Games</th>
+									<th>Live Rating</th>
+									<th className="text-center">W</th>
+									<th className="text-center">D</th>
+									<th className="text-center">L</th>
 								</tr>
 							</thead>
 							<tbody>
 								{standings.map((standing) => (
 									<tr key={standing.player.id}>
 										<td>{standing.rank}</td>
-										<td>{standing.player.username}</td>
+										<td>{standing.player.name || standing.player.username}</td>
+										<td>{formatPlayerStatus(standing.player.status)}</td>
 										<td>{standing.score}</td>
 										<td>{standing.games}</td>
+										<td>{standing.liveRating}</td>
+										<td className="text-center">{standing.wins ?? 0}</td>
+										<td className="text-center">{standing.draws ?? 0}</td>
+										<td className="text-center">{standing.losses ?? 0}</td>
 									</tr>
 								))}
 							</tbody>
@@ -216,11 +241,13 @@ const TournamentDetail = ({ user }) => {
 					</div>
 					<div className="row">
 						{games.map((game) => (
-							<div key={game._id} className="col-md-6 mb-4">
+							<div key={game.id} className="col-md-6 mb-4">
 								<GameBoard
-									gameId={game._id}
-									player1={game.playerWhite.username}
-									player2={game.playerBlack.username}
+									gameId={game.id}
+									player1={game.playerWhite?.name || game.playerWhite?.username}
+									player2={game.playerBlack?.name || game.playerBlack?.username}
+									player1Rating={game.playerWhite?.liveRating}
+									player2Rating={game.playerBlack?.liveRating}
 									result={getGameResultDisplay(game)}
 									isLive={!game.isFinished}
 									gameState={null} // This would come from the actual game state
@@ -241,16 +268,26 @@ const TournamentDetail = ({ user }) => {
 							<thead>
 								<tr>
 									<th>Player</th>
+									<th>Status</th>
 									<th>Score</th>
+									<th>Games</th>
 									<th>Live Rating</th>
+									<th className="text-center">W</th>
+									<th className="text-center">D</th>
+									<th className="text-center">L</th>
 								</tr>
 							</thead>
 							<tbody>
 								{players.map((player) => (
 									<tr key={player.id}>
-										<td>{player.username}</td>
+										<td>{player.name || player.username}</td>
+										<td>{formatPlayerStatus(player.status)}</td>
 										<td>{player.score}</td>
+										<td>{player.gamesPlayed ?? player.games ?? 0}</td>
 										<td>{player.liveRating}</td>
+										<td className="text-center">{player.wins ?? 0}</td>
+										<td className="text-center">{player.draws ?? 0}</td>
+										<td className="text-center">{player.losses ?? 0}</td>
 									</tr>
 								))}
 							</tbody>

@@ -18,7 +18,7 @@ const ResultButtons = ({ onResult, disabled }) => (
 );
 
 const Badge = ({ children, kind = 'secondary' }) => (
-	<span className={`badge badge-${kind} admin-ongoing-games__badge`}>{children}</span>
+	<span className={`badge bg-${kind} admin-ongoing-games__badge`}>{children}</span>
 );
 
 const AdminOngoingGames = () => {
@@ -39,8 +39,8 @@ const AdminOngoingGames = () => {
 			// fetch games per tournament in parallel
 			const pairs = await Promise.all(
 				active.map(async (t) => {
-					const { data: games } = await tournamentAPI.getTournamentGames(t._id);
-					return [t._id, (games || []).filter(g => !g.isFinished)];
+					const { data: games } = await tournamentAPI.getTournamentGames(t.id);
+					return [t.id, (games || []).filter(g => !g.isFinished)];
 				})
 			);
 
@@ -67,11 +67,11 @@ const AdminOngoingGames = () => {
 	const ongoing = useMemo(() => {
 		const rows = [];
 		for (const t of tournaments) {
-			const gs = gamesByTid[t._id] || [];
+			const gs = gamesByTid[t.id] || [];
 			for (const g of gs) rows.push({ t, g });
 		}
-		// sort by start time or id fallback
-		rows.sort((a, b) => (new Date(a.g.createdAt || 0)) - (new Date(b.g.createdAt || 0)));
+		// sort by start time or fallback to name
+		rows.sort((a, b) => (new Date(a.g.startedAt || 0)) - (new Date(b.g.startedAt || 0)));
 		return rows;
 	}, [tournaments, gamesByTid]);
 
@@ -79,14 +79,7 @@ const AdminOngoingGames = () => {
 		try {
 			setSubmitting(gameId);
 			await gameAPI.submitGameResult(gameId, result);
-
-			setGamesByTid((prev) => {
-				const next = { ...prev };
-				for (const tid of Object.keys(next)) {
-					next[tid] = next[tid].filter(g => g._id !== gameId);
-				}
-				return next;
-			});
+			await load();
 		} catch (e) {
 			alert(e.message || 'Failed to submit result');
 		} finally {
@@ -133,7 +126,6 @@ const AdminOngoingGames = () => {
 								<table className="table admin-ongoing-games__table">
 									<thead>
 										<tr>
-											<th>Game</th>
 											<th>Tournament</th>
 											<th>White</th>
 											<th>Black</th>
@@ -142,20 +134,17 @@ const AdminOngoingGames = () => {
 										</tr>
 									</thead>
 									<tbody>
-										{ongoing.map(({ t, g }) => (
-											<tr key={g._id}>
-												<td>
-													<code>{g._id.slice(-8)}</code>
-												</td>
-												<td>{t.name}</td>
-												<td>{g.playerWhite?.username || g.playerWhite}</td>
-												<td>{g.playerBlack?.username || g.playerBlack}</td>
+									{ongoing.map(({ t, g }) => (
+										<tr key={g.id}>
+											<td>{t.name}</td>
+											<td>{g.playerWhite?.name || g.playerWhite?.username || g.playerWhite}</td>
+											<td>{g.playerBlack?.name || g.playerBlack?.username || g.playerBlack}</td>
 												<td><Badge kind="warning">Ongoing</Badge></td>
 												<td className="text-end">
-													<ResultButtons
-														disabled={!!submitting}
-														onResult={(r) => finishGame(g._id, r)}
-													/>
+												<ResultButtons
+													disabled={!!submitting}
+													onResult={(r) => finishGame(g.id, r)}
+												/>
 												</td>
 											</tr>
 										))}

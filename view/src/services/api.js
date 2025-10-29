@@ -55,6 +55,8 @@ export const tournamentAPI = {
 	// Admin membership management
 	adminAddPlayer:    (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/add`,    { userId }),
 	adminRemovePlayer: (id, userId) => api.delete(`/api/admin/tournaments/${id}/participants/remove`, { data: { userId } }),
+	pausePlayer:       (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/pause`,   { userId }),
+	resumePlayer:      (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/resume`,  { userId }),
 };
 
 /** ---------------- Games ---------------- **/

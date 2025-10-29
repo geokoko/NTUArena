@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { tournamentAPI, userAPI, healthAPI, gameAPI } from '../services/api';
 import { Link } from 'react-router-dom';
+import { userAPI, healthAPI } from '../services/api';
 
-const Badge = ({ kind = 'secondary', children }) =>
-	<span className={`badge bg-${kind}`}>{children}</span>;
+const Badge = ({ kind = 'secondary', children }) => (
+	<span className={`badge bg-${kind}`}>{children}</span>
+);
 
 const Spinner = () => (
 	<div className="text-center my-4">
@@ -11,342 +12,161 @@ const Spinner = () => (
 	</div>
 );
 
+const getDisplayName = (user = {}) => {
+	const first = user?.profile?.firstName?.trim?.();
+	const last = user?.profile?.lastName?.trim?.();
+	const parts = [first, last].filter(Boolean);
+	if (parts.length) return parts.join(' ');
+	return user?.username || user?.email || 'Unknown';
+};
+
 const AdminDashboard = () => {
-	const [activeTab, setActiveTab] = useState('tournaments');
-
-	// tournaments
-	const [tournaments, setTournaments] = useState([]);
-	const [loading, setLoading] = useState(false);
-	const [tError, setTError] = useState('');
-
-	// users
+	const [activeTab, setActiveTab] = useState('users');
 	const [users, setUsers] = useState([]);
-	const [uError, setUError] = useState('');
-
-	// system
+	const [usersLoading, setUsersLoading] = useState(false);
+	const [usersError, setUsersError] = useState('');
 	const [systemHealth, setSystemHealth] = useState(null);
-	const [sError, setSError] = useState('');
-
-	// per-tournament select to add/remove player (by userId)
-	const [selectedAddUserByTid, setSelectedAddUserByTid] = useState({});
-	const [selectedRemoveUserByTid, setSelectedRemoveUserByTid] = useState({});
-
-	// Active games (per tournament section)
-	const [activeGamesByTid, setActiveGamesByTid] = useState({});
-	const [gamesLoading, setGamesLoading] = useState(false);
-
-	const statusBadge = (st) => {
-		const map = { 'upcoming': 'warning', 'in progress': 'success', 'completed': 'secondary' };
-		return <Badge kind={map[st] || 'light'}>{st}</Badge>;
-	};
-
-	const loadTournaments = useCallback(async () => {
-		setLoading(true); setTError('');
-		try {
-			const { data } = await tournamentAPI.getAllTournaments();
-			setTournaments(Array.isArray(data) ? data : []);
-		} catch (e) {
-			setTError(e.message);
-		} finally { setLoading(false); }
-	}, []);
+	const [systemError, setSystemError] = useState('');
 
 	const loadUsers = useCallback(async () => {
-		setUError('');
+		setUsersLoading(true);
+		setUsersError('');
 		try {
 			const res = await userAPI.getAll();
 			const list = res.data?.users || res.data || [];
 			setUsers(Array.isArray(list) ? list : []);
-		} catch (e) {
-			setUError(e.message);
+		} catch (err) {
+			setUsersError(err.message || 'Failed to load users');
+		} finally {
+			setUsersLoading(false);
 		}
 	}, []);
 
 	const loadSystem = useCallback(async () => {
-		setSError('');
+		setSystemError('');
 		try {
-			const { data } = await healthAPI.checkHealth(); // <- correct: /health
+			const { data } = await healthAPI.checkHealth();
 			setSystemHealth(data);
-		} catch (e) {
-			setSError(e.message);
-		}
-	}, []);
-
-	const loadActiveGames = useCallback(async (tidList) => {
-		setGamesLoading(true);
-		try {
-			const pairs = await Promise.all(tidList.map(async (tid) => {
-				const { data } = await tournamentAPI.getTournamentGames(tid);
-				const ongoing = (data || []).filter(g => !g.isFinished);
-				return [tid, ongoing];
-			}));
-			const next = {};
-			for (const [tid, og] of pairs) next[tid] = og;
-			setActiveGamesByTid(next);
-		} finally {
-			setGamesLoading(false);
+		} catch (err) {
+			setSystemError(err.message || 'Failed to load system status');
 		}
 	}, []);
 
 	useEffect(() => {
-		const boot = async () => {
-			if (activeTab === 'tournaments') {
-				await Promise.all([loadTournaments(), loadUsers()]);
-			} else if (activeTab === 'users') {
-				await loadUsers();
-			} else if (activeTab === 'system') {
-				await loadSystem();
-			}
-		};
-		boot();
-	}, [activeTab, loadSystem, loadTournaments, loadUsers]);
+		if (activeTab === 'users') loadUsers();
+		if (activeTab === 'system') loadSystem();
+	}, [activeTab, loadUsers, loadSystem]);
 
-	useEffect(() => {
-		if (tournaments.length)
-			loadActiveGames(tournaments.map(t => t._id));
-	}, [tournaments, loadActiveGames]);
-
-	const addPlayerToTournament = async (tid) => {
-		const userId = selectedAddUserByTid[tid];
-		if (!userId) return alert('Pick a user to add');
-		await tournamentAPI.joinTournament(tid, userId);
-		const { data } = await tournamentAPI.getTournament(tid);
-		setTournaments(prev => prev.map(t => t._id === tid ? data : t));
-		await loadActiveGames([tid]);
-	};
-
-	const removePlayerFromTournament = async (tid) => {
-		const userId = selectedRemoveUserByTid[tid];
-		if (!userId) return alert('Pick a user to remove');
-		await tournamentAPI.leaveTournament(tid, userId);
-		const { data } = await tournamentAPI.getTournament(tid);
-		setTournaments(prev => prev.map(t => t._id === tid ? data : t));
-		await loadActiveGames([tid]);
-	};
-
-	const startTournament = async (tid) => {
-		await tournamentAPI.startTournament(tid);
-		setTournaments(prev => prev.map(t => t._id === tid ? { ...t, tournStatus: 'in progress' } : t));
-	};
-
-	const endTournament = async (tid) => {
-		await tournamentAPI.endTournament(tid);
-		setTournaments(prev => prev.map(t => t._id === tid ? { ...t, tournStatus: 'completed' } : t));
-		await loadActiveGames([tid]);
-	};
-
-	const deleteTournament = async (tid) => {
-		if (!window.confirm('Delete tournament?')) return;
-		await tournamentAPI.deleteTournament(tid);
-		setTournaments(prev => prev.filter(t => t._id !== tid));
-	};
-
-	const submitResult = async (gameId, result) => {
-		await gameAPI.submitGameResult(gameId, result);
-		// drop from active list locally
-		setActiveGamesByTid(prev => {
-			const next = { ...prev };
-			for (const tid of Object.keys(next)) next[tid] = next[tid].filter(g => g._id !== gameId);
-			return next;
-		});
+	const deleteUser = async (userId) => {
+		if (!window.confirm('Remove this user?')) return;
+		await userAPI.deleteUser(userId);
+		await loadUsers();
 	};
 
 	return (
 		<div className="container my-4">
 			<div className="d-flex justify-content-between align-items-center mb-4">
 				<h1 className="m-0">Admin Dashboard</h1>
-				<Link to="/admin/games" className="btn btn-outline-primary">Ongoing Games</Link>
+				<Link to="/tournaments" className="btn btn-outline-primary">Go to Tournaments</Link>
+			</div>
+
+			<div className="alert alert-info">
+				Tournament management now lives exclusively on the Tournaments page via the Manage controls for each event.
 			</div>
 
 			<div className="mb-3 d-flex gap-2">
-				<button className={`btn ${activeTab === 'tournaments' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setActiveTab('tournaments')}>Tournaments</button>
-				<button className={`btn ${activeTab === 'users' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setActiveTab('users')}>Users</button>
-				<button className={`btn ${activeTab === 'system' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setActiveTab('system')}>System</button>
+				<button
+					className={`btn ${activeTab === 'users' ? 'btn-primary' : 'btn-outline-primary'}`}
+					onClick={() => setActiveTab('users')}
+				>
+					Users
+				</button>
+				<button
+					className={`btn ${activeTab === 'system' ? 'btn-primary' : 'btn-outline-primary'}`}
+					onClick={() => setActiveTab('system')}
+				>
+					System
+				</button>
 			</div>
 
-			{/* Tournaments */}
-			{activeTab === 'tournaments' && (
+			{activeTab === 'users' && (
 				<div className="card">
-					<div className="card-header">
-						<h4 className="m-0">Tournament Management</h4>
+					<div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+						<h4 className="m-0">User Management</h4>
+						<div className="d-flex gap-2">
+							<button className="btn btn-sm btn-outline-secondary" onClick={loadUsers}>Refresh</button>
+							<Link to="/admin/users/new" className="btn btn-sm btn-primary">Register User</Link>
+						</div>
 					</div>
 					<div className="card-body">
-						{tError && <div className="alert alert-danger">{tError}</div>}
-						{loading ? <Spinner/> : (
-							<>
-								<div className="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-									<div className="d-flex gap-2">
-										<Link to="/tournaments" className="btn btn-sm btn-outline-secondary">View Tournaments</Link>
-										<button className="btn btn-sm btn-outline-secondary" onClick={loadTournaments}>Refresh</button>
-									</div>
-									<Link to="/admin/tournaments/new" className="btn btn-sm btn-primary">Create Tournament</Link>
-								</div>
-
-								<div className="table-responsive">
-									<table className="table align-middle">
-										<thead>
-											<tr>
-												<th>Name</th>
-												<th>Status</th>
-												<th>Players</th>
-												<th>Start</th>
-												<th>Controls</th>
-												<th style={{minWidth: 340}}>Add/Remove Player</th>
+						{usersError && <div className="alert alert-danger">{usersError}</div>}
+						{usersLoading ? (
+							<Spinner />
+						) : (
+							<div className="table-responsive">
+								<table className="table align-middle">
+									<thead>
+										<tr>
+											<th>Name</th>
+											<th>Email</th>
+											<th>Role</th>
+											<th>ELO</th>
+											<th className="text-end">Actions</th>
+										</tr>
+									</thead>
+									<tbody>
+										{users.map((user) => (
+											<tr key={user.id || user.email}>
+												<td>{getDisplayName(user)}</td>
+												<td>{user.email || '—'}</td>
+												<td><Badge>{user.role || 'player'}</Badge></td>
+												<td>{Number.isFinite(user.globalElo) ? Math.round(user.globalElo) : '—'}</td>
+												<td className="text-end">
+													<button
+														className="btn btn-sm btn-outline-danger"
+														onClick={() => deleteUser(user.id)}
+													>
+														Delete
+													</button>
+												</td>
 											</tr>
-										</thead>
-										<tbody>
-											{tournaments.map(t => (
-												<tr key={t._id}>
-													<td><Link to={`/tournament/${t._id}`}>{t.name || t.title || 'Tournament'}</Link></td>
-													<td>{statusBadge(t.tournStatus)}</td>
-													<td>{t.participants?.length ?? 0}</td>
-													<td>{t.startDate ? new Date(t.startDate).toLocaleString() : '-'}</td>
-													<td className="d-flex gap-2">
-														{t.tournStatus === 'upcoming' && <button className="btn btn-sm btn-success" onClick={() => startTournament(t._id)}>Start</button>}
-														{t.tournStatus === 'in progress' && <button className="btn btn-sm btn-warning" onClick={() => endTournament(t._id)}>End</button>}
-														<button className="btn btn-sm btn-outline-danger" onClick={() => deleteTournament(t._id)}>Delete</button>
-													</td>
-													<td>
-														<div className="d-flex flex-wrap gap-2">
-															{/* Add */}
-															<div className="d-flex gap-2">
-																<select
-																	className="form-select form-select-sm"
-																	style={{ maxWidth: 220 }}
-																	value={selectedAddUserByTid[t._id] || ''}
-																	onChange={(e) => setSelectedAddUserByTid(s => ({ ...s, [t._id]: e.target.value }))}
-																>
-																	<option value="">Add: select user</option>
-																	{users.map(u => <option key={u._id} value={u._id}>{u.username || u.email}</option>)}
-																</select>
-																<button className="btn btn-sm btn-primary" onClick={() => addPlayerToTournament(t._id)}>Add</button>
-															</div>
-															{/* Remove */}
-															<div className="d-flex gap-2">
-																<select
-																	className="form-select form-select-sm"
-																	style={{ maxWidth: 220 }}
-																	value={selectedRemoveUserByTid[t._id] || ''}
-																	onChange={(e) => setSelectedRemoveUserByTid(s => ({ ...s, [t._id]: e.target.value }))}
-																>
-																	<option value="">Remove: select user</option>
-																	{users.map(u => <option key={u._id} value={u._id}>{u.username || u.email}</option>)}
-																</select>
-																<button className="btn btn-sm btn-outline-danger" onClick={() => removePlayerFromTournament(t._id)}>Remove</button>
-															</div>
-														</div>
-													</td>
-												</tr>
-											))}
-											{tournaments.length === 0 && (
-												<tr><td colSpan="6" className="text-center text-muted">No tournaments</td></tr>
-											)}
-										</tbody>
-									</table>
-								</div>
-
-								{/* Active games per tournament (with set result) */}
-								<div className="mt-4">
-									<h5>Active Games by Tournament</h5>
-									{gamesLoading ? <Spinner/> : (
-										tournaments.map(t => (
-											<div className="card mb-3" key={`g-${t._id}`}>
-												<div className="card-header d-flex justify-content-between">
-													<span>{t.name || t.title}</span>
-													<button className="btn btn-sm btn-outline-secondary" onClick={() => loadActiveGames([t._id])}>Refresh</button>
-												</div>
-												<div className="card-body p-0">
-													<div className="table-responsive">
-														<table className="table table-sm m-0">
-															<thead><tr><th>Game</th><th>White</th><th>Black</th><th>Status</th><th className="text-end">Set Result</th></tr></thead>
-															<tbody>
-																{(activeGamesByTid[t._id] || []).length === 0 ? (
-																	<tr><td colSpan="5" className="text-muted text-center py-3">No ongoing games</td></tr>
-																) : (activeGamesByTid[t._id] || []).map(g => (
-																		<tr key={g._id}>
-																			<td><code>{String(g._id).slice(-8)}</code></td>
-																			<td>{g.playerWhite?.username || g.playerWhite}</td>
-																			<td>{g.playerBlack?.username || g.playerBlack}</td>
-																			<td><Badge kind="warning">Ongoing</Badge></td>
-																			<td className="text-end">
-																				<div className="btn-group btn-group-sm">
-																					<button className="btn btn-success" onClick={() => submitResult(g._id, 'white')}>White</button>
-																					<button className="btn btn-dark" onClick={() => submitResult(g._id, 'black')}>Black</button>
-																					<button className="btn btn-secondary" onClick={() => submitResult(g._id, 'draw')}>Draw</button>
-																				</div>
-																			</td>
-																		</tr>
-																	))}
-															</tbody>
-														</table>
-													</div>
-												</div>
-											</div>
-										))
-									)}
-								</div>
-							</>
+										))}
+										{users.length === 0 && (
+											<tr>
+												<td colSpan="5" className="text-center text-muted">
+													No users found
+												</td>
+											</tr>
+										)}
+									</tbody>
+								</table>
+							</div>
 						)}
 					</div>
 				</div>
 			)}
 
-			{/* Users */}
-			{activeTab === 'users' && (
-				<div className="card">
-					<div className="card-header"><h4 className="m-0">User Management</h4></div>
-					<div className="card-body">
-						{uError && <div className="alert alert-danger">{uError}</div>}
-						<div className="d-flex justify-content-between flex-wrap gap-2 mb-3">
-							<p className="text-muted m-0">Manage accounts or onboard new players using the dedicated form.</p>
-							<div className="d-flex gap-2">
-								<button className="btn btn-outline-secondary btn-sm" onClick={loadUsers}>Refresh</button>
-								<Link to="/admin/users/new" className="btn btn-primary btn-sm">Register User</Link>
-							</div>
-						</div>
-
-						<div className="table-responsive">
-							<table className="table align-middle">
-								<thead><tr><th>User</th><th>Email</th><th>ELO</th><th>Role</th><th className="text-end">Actions</th></tr></thead>
-								<tbody>
-									{users.map(u => (
-										<tr key={u._id}>
-											<td>{u.username || '-'}</td>
-											<td>{u.email || '-'}</td>
-											<td>{u.globalElo ?? '-'}</td>
-											<td><Badge>{u.role || 'player'}</Badge></td>
-											<td className="text-end">
-												<button className="btn btn-sm btn-outline-danger" onClick={async () => { await userAPI.deleteUser(u._id); await loadUsers(); }}>Delete</button>
-											</td>
-										</tr>
-									))}
-									{users.length === 0 && (
-										<tr><td colSpan="5" className="text-center text-muted">No users</td></tr>
-									)}
-								</tbody>
-							</table>
-						</div>
-
-					</div>
-				</div>
-			)}
-
-			{/* System */}
 			{activeTab === 'system' && (
 				<div className="card">
-					<div className="card-header"><h4 className="m-0">System Health</h4></div>
+					<div className="card-header d-flex justify-content-between align-items-center">
+						<h4 className="m-0">System Health</h4>
+						<button className="btn btn-sm btn-outline-secondary" onClick={loadSystem}>Refresh</button>
+					</div>
 					<div className="card-body">
-						{sError && <div className="alert alert-danger">{sError}</div>}
-						{!systemHealth ? <p className="text-muted">No data</p> :
-							<pre className="bg-light p-3 rounded" style={{ maxHeight: 350, overflow: 'auto' }}>
+						{systemError && <div className="alert alert-danger">{systemError}</div>}
+						{!systemHealth ? (
+							<p className="text-muted m-0">No data</p>
+						) : (
+							<pre className="bg-light p-3 rounded" style={{ maxHeight: 320, overflow: 'auto' }}>
 								{JSON.stringify(systemHealth, null, 2)}
 							</pre>
-						}
+						)}
 					</div>
 				</div>
 			)}
-
 		</div>
 	);
 };
 
 export default AdminDashboard;
+

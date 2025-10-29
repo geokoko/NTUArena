@@ -2,7 +2,13 @@ import React from 'react';
 import ChessboardComponent from './Chessboard';
 import './GameBoard.css';
 
-const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false }) => {
+const formatRating = (value) => {
+	if (value === null || value === undefined) return '—';
+	const numeric = Number(value);
+	return Number.isFinite(numeric) ? Math.round(numeric) : '—';
+};
+
+const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false, player1Rating, player2Rating }) => {
 	return (
 		<div className="game-board-container">
 			<div className="card">
@@ -23,7 +29,7 @@ const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false
 							<div className="col-md-4">
 								<div className="player-info">
 									<strong>{player1}</strong>
-									<div className="player-rating">Rating: 1500</div>
+									<div className="player-rating">Rating: {formatRating(player1Rating)}</div>
 								</div>
 							</div>
 							<div className="col-md-4">
@@ -35,7 +41,7 @@ const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false
 							<div className="col-md-4">
 								<div className="player-info">
 									<strong>{player2}</strong>
-									<div className="player-rating">Rating: 1480</div>
+									<div className="player-rating">Rating: {formatRating(player2Rating)}</div>
 								</div>
 							</div>
 						</div>
