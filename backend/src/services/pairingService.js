@@ -10,10 +10,14 @@ class PairingService {
 	async seedQueueOnStart(tournamentId) {
 		// Put all non-playing players into the queue (and set waitingSince)
 		const now = new Date();
-		const players = await Player.find({ tournament: tournamentId, isPlaying: false })
-			.select('_id user score liveRating recentOpponents colorHistory waitingSince');
+		const players = await Player.find({
+			tournament: tournamentId,
+			isPlaying: false,
+			status: { $nin: ['paused', 'withdrawn'] },
+		})
+			.select('_id user score liveRating entryRating recentOpponents colorHistory waitingSince status');
 		await Player.updateMany(
-			{ tournament: tournamentId, isPlaying: false },
+			{ tournament: tournamentId, isPlaying: false, status: { $nin: ['paused', 'withdrawn'] } },
 			{ $set: { waitingSince: now } }
 		);
 
@@ -22,10 +26,12 @@ class PairingService {
 				_id: String(p._id),
 				user: p.user,
 				score: p.score ?? 0,
-				liveRating: p.liveRating ?? 1200,
+				liveRating: p.liveRating ?? p.entryRating ?? 0,
+				entryRating: p.entryRating ?? 0,
 				// store as strings for fast compare in scorer
 				recentOpponents: (p.recentOpponents ?? []).map(String),
 				colorHistory: p.colorHistory ?? [],
+				status: p.status,
 				waitingSince: p.waitingSince ?? now,
 				enqueuedAt: Date.now(),
 			});

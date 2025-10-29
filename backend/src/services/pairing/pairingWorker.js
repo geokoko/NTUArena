@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending } = require('../queue/redisQueue');
+const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending, removeSnapshotsFromPending } = require('../queue/redisQueue');
 const { evaluatePair } = require('./pairingScorer');
 
 const gameService = require('../gameService');
@@ -46,8 +46,30 @@ class PairingWorker {
 			return;
 		}
 
+		const ids = batch.map((item) => item?._id).filter(Boolean);
+		const statusDocs = ids.length
+			? await Player.find({ _id: { $in: ids } }).select('_id status').lean()
+			: [];
+		const statusMap = new Map(statusDocs.map((doc) => [String(doc._id), doc.status]));
+
+		const inactiveSnapshots = batch.filter((snap) => {
+			const status = statusMap.get(String(snap._id));
+			return status && status !== 'active';
+		});
+		if (inactiveSnapshots.length) {
+			await removeSnapshotsFromPending(tournamentId, this.workerId, inactiveSnapshots);
+		}
+
+		const remaining = batch.filter((snap) => {
+			const status = statusMap.get(String(snap._id));
+			return !status || status === 'active';
+		});
+		if (remaining.length === 0) {
+			await this.#sleep(this.idleMs);
+			return;
+		}
+
 		// 2. Try to pair them off
-		const remaining = [...batch];
 		const pairedCount = { count: 0 };
 
 		while (remaining.length >= 2) {
