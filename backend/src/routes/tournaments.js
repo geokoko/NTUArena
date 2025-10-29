@@ -25,5 +25,7 @@ router.post('/admin/tournaments/:id/end', tCtrl.endTournament);
 // Will require admin authentication
 router.post('/admin/tournaments/:id/participants/add', tCtrl.adminAddPlayer);         // body: { userId }
 router.delete('/admin/tournaments/:id/participants/remove', tCtrl.adminRemovePlayer);    // body: { userId }
+router.post('/admin/tournaments/:id/participants/pause', tCtrl.pausePlayer);             // body: { userId }
+router.post('/admin/tournaments/:id/participants/resume', tCtrl.resumePlayer);           // body: { userId }
 
 module.exports = router;
