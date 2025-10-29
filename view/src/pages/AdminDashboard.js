@@ -65,15 +65,6 @@ const AdminDashboard = () => {
 
 	return (
 		<div className="container my-4">
-			<div className="d-flex justify-content-between align-items-center mb-4">
-				<h1 className="m-0">Admin Dashboard</h1>
-				<Link to="/tournaments" className="btn btn-outline-primary">Go to Tournaments</Link>
-			</div>
-
-			<div className="alert alert-info">
-				Tournament management now lives exclusively on the Tournaments page via the Manage controls for each event.
-			</div>
-
 			<div className="mb-3 d-flex gap-2">
 				<button
 					className={`btn ${activeTab === 'users' ? 'btn-primary' : 'btn-outline-primary'}`}
@@ -85,7 +76,7 @@ const AdminDashboard = () => {
 					className={`btn ${activeTab === 'system' ? 'btn-primary' : 'btn-outline-primary'}`}
 					onClick={() => setActiveTab('system')}
 				>
-					System
+					System Health
 				</button>
 			</div>
 

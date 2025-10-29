@@ -120,9 +120,8 @@ const UserDatabasePage = () => {
 	return (
 		<div className="user-database-page container my-4">
 			<div className="user-database-page__header d-flex justify-content-between align-items-center mb-4">
-				<h1 className="m-0">Registered Users</h1>
 				<Link to="/admin/users/new" className="btn btn-primary user-database-page__create">Register User</Link>
-			</div>
+			</div>				
 
 			{error && (
 				<div className="alert alert-danger" role="alert">

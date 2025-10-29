@@ -465,17 +465,26 @@ const TournamentList = () => {
 						</div>
 						<div className="card-footer bg-transparent">
 							<div className="row g-2">
-								<div className="col-6">
+								<div className="col-12 col-sm-6 col-md-4">
 									<Link to={`/tournament/${tournament.id}`} className="btn btn-outline-primary w-100">
 										View Details
 									</Link>
 								</div>
-								<div className="col-6">
+								<div className="col-12 col-sm-6 col-md-4">
 									<button
 										onClick={() => toggleManage(tournament.id)}
 										className="btn btn-primary w-100"
 									>
 										{expandedId === tournament.id ? 'Hide Management' : 'Manage Tournament'}
+									</button>
+								</div>
+								<div className="col-12 col-sm-6 col-md-4">
+									<button
+										onClick={() => handleDelete(tournament.id)}
+										className="btn btn-danger w-100"
+										disabled={panelLoading[tournament.id]}
+									>
+										Delete Tournament
 									</button>
 								</div>
 							</div>
