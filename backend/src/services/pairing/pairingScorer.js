@@ -135,4 +135,3 @@ module.exports = {
 };
 
 module.exports.MAX_COLOR_STREAK = MAX_COLOR_STREAK;
-};
