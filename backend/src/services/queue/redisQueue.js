@@ -86,6 +86,53 @@ async function requeueLeftovers(tournamentId, workerId, leftovers) {
 	await pipe.exec();
 }
 
+async function removeFromListByPlayerId(listKey, playerId) {
+	const entries = await redis.lrange(listKey, 0, -1);
+	if (!entries.length) return 0;
+	const id = String(playerId);
+	let removed = 0;
+	const pipe = redis.pipeline();
+	for (const entry of entries) {
+		let parsed;
+		try {
+			parsed = JSON.parse(entry);
+		} catch (err) {
+			continue;
+		}
+		if (String(parsed._id) === id) {
+			pipe.lrem(listKey, 0, entry);
+			removed += 1;
+		}
+	}
+	if (removed > 0) await pipe.exec();
+	return removed;
+}
+
+async function removePlayerEverywhere(tournamentId, playerId) {
+	await removeFromListByPlayerId(qKey(tournamentId), playerId);
+
+	const pattern = `${qKey(tournamentId)}:pending:*`;
+	let cursor = '0';
+	do {
+		const [nextCursor, keys] = await redis.scan(cursor, 'match', pattern, 'count', 50);
+		cursor = nextCursor;
+		for (const key of keys) {
+			await removeFromListByPlayerId(key, playerId);
+		}
+	} while (cursor !== '0');
+}
+
+async function removeSnapshotsFromPending(tournamentId, workerId, snapshots) {
+	if (!snapshots.length) return;
+	const key = pendingKey(tournamentId, workerId);
+	const pipe = redis.pipeline();
+	for (const snap of snapshots) {
+		const payload = JSON.stringify(snap);
+		pipe.lrem(key, 0, payload);
+	}
+	await pipe.exec();
+}
+
 /**
  * On worker (re)start, return any stranded pending items back to main queue.
  */
@@ -114,4 +161,6 @@ module.exports = {
 	ackFromPending,
 	requeueLeftovers,
 	reclaimPending,
+	removePlayerEverywhere,
+	removeSnapshotsFromPending,
 };

@@ -76,6 +76,9 @@ async function registerPlayers(tournamentId, users) {
 		liveRating: Number.isFinite(u.liveRating)
 			? u.liveRating
 			: Math.max(800, Math.round(1200 + (Math.random() - 0.5) * 600)),
+		entryRating: Number.isFinite(u.liveRating)
+			? u.liveRating
+			: Math.max(800, Math.round(1200 + (Math.random() - 0.5) * 600)),
 		isPlaying: false,
 		waitingSince: now,
 		gameHistory: [],
