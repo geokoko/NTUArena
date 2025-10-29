@@ -96,3 +96,25 @@ exports.adminRemovePlayer = asyncHandler(async (req, res) => {
 	const result = await tournamentService.adminRemovePlayerFromTournament(userId, req.params.id);
 	res.json(result);
 });
+
+exports.pausePlayer = asyncHandler(async (req, res) => {
+	const { userId } = req.body;
+	if (!userId) {
+		const err = new Error('userId is required');
+		err.status = 400;
+		throw err;
+	}
+	const player = await tournamentService.pausePlayer(userId, req.params.id);
+	res.json(player);
+});
+
+exports.resumePlayer = asyncHandler(async (req, res) => {
+	const { userId } = req.body;
+	if (!userId) {
+		const err = new Error('userId is required');
+		err.status = 400;
+		throw err;
+	}
+	const player = await tournamentService.resumePlayer(userId, req.params.id);
+	res.json(player);
+});

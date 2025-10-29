@@ -1,9 +1,104 @@
 const mongoose = require('mongoose');
 const Game = require('../models/Game');
 const Player = require('../models/Player');
+const Tournament = require('../models/Tournament');
 const { enqueue } = require('./queue/redisQueue');
+const {
+	findByIdOrPublicId,
+	ensureDocumentPublicId,
+} = require('../utils/identifiers');
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+function asNumber(value, fallback = 0) {
+	const n = Number(value);
+	return Number.isFinite(n) ? n : fallback;
+}
+
+function resolveOpponentRating(opponent) {
+	if (!opponent) return 0;
+	const rating = asNumber(opponent.liveRating);
+	if (rating !== 0) return rating;
+	return asNumber(opponent.entryRating, 0);
+}
+
+// new function to calculate performance rating
+function calculatePerformanceRating({ sumOpponentRatings = 0, gamesPlayed = 0, score = 0 }) {
+	const games = asNumber(gamesPlayed, 0);
+	if (!games) return 0;
+	const points = asNumber(score, 0);
+	const avgOpp = sumOpponentRatings / games;
+	if (!Number.isFinite(avgOpp)) return 0;
+
+	const fraction = points / games;
+	if (fraction <= 0) return Math.round(avgOpp - 400);
+	if (fraction >= 1) return Math.round(avgOpp + 400);
+
+	const diff = clamp(400 * Math.log10(fraction / (1 - fraction)), -400, 400);
+	const performance = avgOpp + diff;
+	if (!Number.isFinite(performance)) return Math.round(avgOpp);
+	return Math.round(performance);
+}
+
+function applyResultToPlayer({ player, opponentRating, resultColor, perspective, gameId }) {
+	if (!player) return;
+	const now = new Date();
+	const isWhite = perspective === 'white';
+	const resultMap = {
+		white: isWhite ? 1 : 0,
+		black: isWhite ? 0 : 1,
+		draw: 0.5,
+	};
+
+	const points = resultMap[resultColor] ?? 0;
+
+	player.isPlaying = false;
+	player.gamesPlayed = asNumber(player.gamesPlayed) + 1;
+	player.score = asNumber(player.score) + points;
+	player.gameHistory = [...(player.gameHistory || []), gameId].slice(-50);
+	player.sumOpponentRatings = asNumber(player.sumOpponentRatings) + opponentRating;
+	player.lastResultAt = now;
+
+	if (resultColor === 'draw') {
+		player.draws = asNumber(player.draws) + 1;
+	} else if ((resultColor === 'white' && isWhite) || (resultColor === 'black' && !isWhite)) {
+		player.wins = asNumber(player.wins) + 1;
+	} else {
+		player.losses = asNumber(player.losses) + 1;
+	}
+
+	player.liveRating = calculatePerformanceRating({
+		sumOpponentRatings: player.sumOpponentRatings,
+		gamesPlayed: player.gamesPlayed,
+		score: player.score,
+	});
+}
 
 class GameService {
+	async getGameById(id) {
+		const game = await findByIdOrPublicId(Game, id);
+		if (!game) throw new Error('Game not found');
+		await ensureDocumentPublicId(game, Game);
+		await game.populate([
+			{
+				path: 'playerWhite',
+				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
+			},
+			{
+				path: 'playerBlack',
+				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
+			},
+		]);
+		if (game.playerWhite) {
+			await ensureDocumentPublicId(game.playerWhite, Player);
+			if (game.playerWhite.user) await ensureDocumentPublicId(game.playerWhite.user, User);
+		}
+		if (game.playerBlack) {
+			await ensureDocumentPublicId(game.playerBlack, Player);
+			if (game.playerBlack.user) await ensureDocumentPublicId(game.playerBlack.user, User);
+		}
+		return serializeGame(game);
+	}
 	/**
 	 * Includes two functions:
 	 * a. createGameFromPairing -> the function that creates the game when the pairing algorithm has decided a pairing
@@ -56,9 +151,9 @@ class GameService {
 
 				createdGame = game;
 			}, {
-				readConcern: { level: 'snapshot' },
-				writeConcern: { w: 'majority' },
-			});
+					readConcern: { level: 'snapshot' },
+					writeConcern: { w: 'majority' },
+				});
 
 			return createdGame;
 		} catch (err) {
@@ -73,7 +168,7 @@ class GameService {
    * Marks game finished, applies result, frees both players, and re-enqueues them.
    */
 	async submitGameResult(gameId, result) {
-		const game = await Game.findById(gameId);
+		const game = await findByIdOrPublicId(Game, gameId);
 		if (!game) throw new Error('Game not found');
 		if (game.isFinished) throw new Error(`Game with ID: ${gameId} already finished with result ${game.resultColor}`);
 
@@ -94,66 +189,128 @@ class GameService {
 		game.isFinished = true;
 		game.finishedAt = new Date();
 		await game.save();
+		await ensureDocumentPublicId(game, Game);
 		console.log(`[GameService] Game ended with result: ${resultColor}`);
 
-		// Free both players, update their scores, game History, performance rating and set waitingSince
-		const now = new Date();
-		const [white, black] = await Promise.all([
+		const [tournament, white, black] = await Promise.all([
+			Tournament.findById(game.tournament).select('tournStatus'),
 			Player.findById(game.playerWhite),
 			Player.findById(game.playerBlack),
 		]);
 
+		const tournamentActive = tournament?.tournStatus === 'in progress';
+		const opponentRatings = {
+			white: resolveOpponentRating(black),
+			black: resolveOpponentRating(white),
+		};
+
 		if (white) {
-			white.isPlaying = false;
-			white.waitingSince = now;
-			if (resultColor === 'white') {
-				white.score = (white.score || 0) + 1;
-			}
-			else if (resultColor === 'draw') {
-				white.score = (white.score || 0) + 0.5;
-			}
-			white.gameHistory = [...(white.gameHistory || []), game._id].slice(-50);
-			console.log(`[GameService] Player ${white.user} new score: ${white.score}`);
+			applyResultToPlayer({
+				player: white,
+				opponentRating: opponentRatings.white,
+				resultColor,
+				perspective: 'white',
+				gameId: game._id,
+			});
+			const shouldWait = tournamentActive && (!white.status || white.status === 'active');
+			white.waitingSince = shouldWait ? new Date() : null;
 			await white.save();
 		}
 		if (black) {
-			black.isPlaying = false;
-			black.waitingSince = now;
-			if (resultColor === 'black') {
-				black.score = (black.score || 0) + 1;
-			}
-			else if (resultColor === 'draw') {
-				black.score = (black.score || 0) + 0.5;
-			}
-			black.gameHistory = [...(black.gameHistory || []), game._id].slice(-50);
-			console.log(`[GameService] Player ${black.user} new score: ${black.score}`);
+			applyResultToPlayer({
+				player: black,
+				opponentRating: opponentRatings.black,
+				resultColor,
+				perspective: 'black',
+				gameId: game._id,
+			});
+			const shouldWait = tournamentActive && (!black.status || black.status === 'active');
+			black.waitingSince = shouldWait ? new Date() : null;
 			await black.save();
 		}
 
-		// Re-enqueue both with fresh snapshots so pairing worker can match them
-		// (We keep queue payload minimal and fast.)
-		const [wSnap, bSnap] = await Promise.all([
-			Player.findById(game.playerWhite).select('_id user score liveRating recentOpponents colorHistory waitingSince'),
-			Player.findById(game.playerBlack).select('_id user score liveRating recentOpponents colorHistory waitingSince'),
-		]);
-
-		console.log(`[GameService] Re-enqueueing players ${white.user} and ${black.user} after game completion.`);
-		for (const p of [wSnap, bSnap]) {
-			if (!p) continue;
-			await enqueue(String(game.tournament), {
-				_id: String(p._id),
-				user: p.user,
-				score: p.score ?? 0,
-				liveRating: p.liveRating ?? 1200,
-				recentOpponents: (p.recentOpponents ?? []).map(String),
-				colorHistory: p.colorHistory ?? [],
-				waitingSince: p.waitingSince ?? now,
-				enqueuedAt: Date.now(),
-			});
+		if (!tournamentActive) {
+			return game;
 		}
 
-		return game;
+		const buildSnapshot = (player) => ({
+			_id: String(player._id),
+			user: player.user,
+			score: player.score ?? 0,
+			liveRating: player.liveRating ?? 0,
+			entryRating: player.entryRating ?? 0,
+			recentOpponents: (player.recentOpponents ?? []).map(String),
+			colorHistory: player.colorHistory ?? [],
+			status: player.status,
+			waitingSince: player.waitingSince ?? null,
+			enqueuedAt: Date.now(),
+		});
+
+		for (const player of [white, black]) {
+			if (!player || (player.status && player.status !== 'active')) continue;
+			await enqueue(String(game.tournament), buildSnapshot(player));
+		}
+
+		await game.populate([
+			{
+				path: 'playerWhite',
+				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
+			},
+			{
+				path: 'playerBlack',
+				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
+			},
+		]);
+
+		if (game.playerWhite) {
+			await ensureDocumentPublicId(game.playerWhite, Player);
+			if (game.playerWhite.user) await ensureDocumentPublicId(game.playerWhite.user, User);
+		}
+		if (game.playerBlack) {
+			await ensureDocumentPublicId(game.playerBlack, Player);
+			if (game.playerBlack.user) await ensureDocumentPublicId(game.playerBlack.user, User);
+		}
+
+		return serializeGame(game);
 	}
 }
 
 module.exports = new GameService();
+const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});
+
+const buildDisplayName = (user) => {
+	if (!user) return 'Unknown Player';
+	const first = user?.profile?.firstName?.trim?.() || '';
+	const last = user?.profile?.lastName?.trim?.() || '';
+	const parts = [first, last].filter(Boolean);
+	if (parts.length) return parts.join(' ');
+	return user?.username || user?.email || 'Unknown Player';
+};
+
+const summarizeGamePlayer = (player) => {
+	if (!player) return null;
+	const base = toPlain(player);
+	const user = toPlain(base.user);
+	return {
+		id: base.publicId || null,
+		userId: user.publicId || null,
+		name: buildDisplayName(user),
+		username: user.username || null,
+		score: base.score ?? 0,
+		liveRating: base.liveRating ?? base.entryRating ?? user.globalElo ?? 0,
+		status: base.status || 'active',
+	};
+};
+
+const serializeGame = (game) => {
+	const base = toPlain(game);
+	return {
+		id: base.publicId || null,
+		resultColor: base.resultColor || null,
+		finishedAt: base.finishedAt || null,
+		isFinished: !!base.isFinished,
+		startedAt: base.createdAt || null,
+		playerWhite: summarizeGamePlayer(base.playerWhite),
+		playerBlack: summarizeGamePlayer(base.playerBlack),
+	};
+};
