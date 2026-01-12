@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { userAPI } from '../services/api';
 import Card from '../components/Card';
 import Spinner from '../components/Spinner';
+import CSVImport from '../components/CSVImport';
 import './UserDatabasePage.css';
+
+const USER_CSV_TEMPLATE = `username,email,role,globalElo,firstName,lastName
+player1,player1@example.com,player,1200,John,Doe
+player2,player2@example.com,player,1100,Jane,Smith`;
 
 const getInitials = (user) => {
 	const first = user?.profile?.firstName?.trim?.();
@@ -68,25 +73,34 @@ const UserDatabasePage = () => {
 	const [users, setUsers] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
+	const [showImport, setShowImport] = useState(false);
+
+	const fetchUsers = useCallback(async () => {
+		setLoading(true);
+		setError('');
+		try {
+			const res = await userAPI.getAll();
+			const list = res.data?.users || res.data || [];
+			setUsers(Array.isArray(list) ? list : []);
+		} catch (err) {
+			setError(err.message || 'Failed to load users');
+		} finally {
+			setLoading(false);
+		}
+	}, []);
 
 	useEffect(() => {
-		let ignore = false;
-		const fetchUsers = async () => {
-			setLoading(true);
-			setError('');
-			try {
-				const res = await userAPI.getAll();
-				const list = res.data?.users || res.data || [];
-				if (!ignore) setUsers(Array.isArray(list) ? list : []);
-			} catch (err) {
-				if (!ignore) setError(err.message || 'Failed to load users');
-			} finally {
-				if (!ignore) setLoading(false);
-			}
-		};
 		fetchUsers();
-		return () => { ignore = true; };
-	}, []);
+	}, [fetchUsers]);
+
+	const handleImport = useCallback(async (csvText) => {
+		const res = await userAPI.importCSV(csvText);
+		// Refresh user list after import
+		if (res.data?.created > 0) {
+			fetchUsers();
+		}
+		return res.data;
+	}, [fetchUsers]);
 
 	const sortedUsers = useMemo(() => {
 		const extractName = (user) => {
@@ -122,8 +136,29 @@ const UserDatabasePage = () => {
 	return (
 		<div className="user-database-page container my-4">
 			<div className="user-database-page__header d-flex justify-content-between align-items-center mb-4">
-				<Link to="/admin/users/new" className="btn btn-primary user-database-page__create">Register User</Link>
-			</div>				
+				<div className="d-flex gap-2">
+					<Link to="/admin/users/new" className="btn btn-primary user-database-page__create">Register User</Link>
+					<button
+						type="button"
+						className={`btn ${showImport ? 'btn-secondary' : 'btn-outline-secondary'}`}
+						onClick={() => setShowImport(!showImport)}
+					>
+						{showImport ? 'Hide Import' : 'Import from CSV'}
+					</button>
+				</div>
+			</div>
+
+			{showImport && (
+				<Card className="mb-4">
+					<h5 className="mb-3">Import Users from CSV</h5>
+					<CSVImport
+						type="users"
+						onImport={handleImport}
+						templateContent={USER_CSV_TEMPLATE}
+						templateFilename="users_template.csv"
+					/>
+				</Card>
+			)}
 
 			{error && (
 				<div className="alert alert-danger" role="alert">

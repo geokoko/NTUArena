@@ -2,8 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { tournamentAPI, userAPI, gameAPI } from '../services/api';
 import { statusBadge, formatDate, getDisplayName } from '../utils/tournamentDisplay';
+import CSVImport from '../components/CSVImport';
 import './TournamentList.css';
 import './TournamentManage.css';
+
+const PLAYERS_CSV_TEMPLATE = `identifier
+player1@example.com
+player2_username
+john.doe@example.com`;
 
 const TournamentManage = () => {
 	const { id } = useParams();
@@ -19,6 +25,7 @@ const TournamentManage = () => {
 	const [actionLoading, setActionLoading] = useState(false);
 	const [actionError, setActionError] = useState('');
 	const [addSelection, setAddSelection] = useState('');
+	const [showCSVImport, setShowCSVImport] = useState(false);
 
 	const tournamentId = id;
 
@@ -143,6 +150,15 @@ const TournamentManage = () => {
 		}
 	}, [navigate, tournamentId]);
 
+	const handleCSVImport = useCallback(async (csvText) => {
+		const res = await tournamentAPI.importPlayersCSV(tournamentId, csvText);
+		// Refresh player list after import
+		if (res.data?.added > 0) {
+			await loadTournamentData();
+		}
+		return res.data;
+	}, [tournamentId, loadTournamentData]);
+
 	const derived = useMemo(() => {
 		const activePlayers = players.filter((p) => (p.status || 'active') === 'active');
 		const pausedPlayers = players.filter((p) => p.status === 'paused');
@@ -260,15 +276,34 @@ const TournamentManage = () => {
 											))}
 									</select>
 									<button
-										onClick={handleAddPlayer}
-										className="btn btn-sm btn-primary"
-										disabled={!addSelection || actionLoading}
-									>
-										Add
-									</button>
-								</div>
+									onClick={handleAddPlayer}
+									className="btn btn-sm btn-primary"
+									disabled={!addSelection || actionLoading}
+								>
+									Add
+								</button>
 							</div>
-						</div>{/* /.manage-section */}
+							<div className="mt-3">
+								<button
+									type="button"
+									className={`btn btn-sm ${showCSVImport ? 'btn-secondary' : 'btn-outline-secondary'}`}
+									onClick={() => setShowCSVImport(!showCSVImport)}
+								>
+									{showCSVImport ? 'Hide CSV Import' : 'Import Players from CSV'}
+								</button>
+							</div>
+							{showCSVImport && (
+								<div className="mt-3">
+									<CSVImport
+										type="players"
+										onImport={handleCSVImport}
+										templateContent={PLAYERS_CSV_TEMPLATE}
+										templateFilename="players_template.csv"
+									/>
+								</div>
+							)}
+						</div>
+					</div>{/* /.manage-section */}
 					</div>{/* /.col-lg-8 */}
 				</div>{/* /.row */}
 

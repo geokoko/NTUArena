@@ -30,6 +30,7 @@ export const userAPI = {
 	addUser:       (data)     => api.post('/api/admin/users', data),
 	updateUser:    (id, data) => api.patch(`/api/admin/users/${id}`, data),
 	deleteUser:    (id)       => api.delete(`/api/admin/users/${id}`),
+	importCSV:     (csv)      => api.post('/api/admin/users/import-csv', { csv }),
 };
 
 /** -------------- Tournaments -------------- **/
@@ -57,6 +58,7 @@ export const tournamentAPI = {
 	adminRemovePlayer: (id, userId) => api.delete(`/api/admin/tournaments/${id}/participants/remove`, { data: { userId } }),
 	pausePlayer:       (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/pause`,   { userId }),
 	resumePlayer:      (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/resume`,  { userId }),
+	importPlayersCSV:  (id, csv)    => api.post(`/api/admin/tournaments/${id}/participants/import-csv`, { csv }),
 };
 
 /** ---------------- Games ---------------- **/
