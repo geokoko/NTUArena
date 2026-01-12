@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import TournamentList from './pages/TournamentList';
 import TournamentDetail from './pages/TournamentDetail';
+import TournamentManage from './pages/TournamentManage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminCreateUser from './pages/AdminCreateUser';
 import AdminCreateTournament from './pages/AdminCreateTournament';
@@ -26,6 +27,7 @@ function App() {
 							<Route path="/dashboard" element={<Dashboard />} />
 							<Route path="/tournaments" element={<TournamentList />} />
 							<Route path="/tournament/:id" element={<TournamentDetail />} />
+							<Route path="/admin/tournaments/:id/manage" element={<TournamentManage />} />
 							<Route path="/admin" element={<AdminDashboard />} />
 							<Route path="/admin/users/new" element={<AdminCreateUser />} />
 							<Route path="/admin/tournaments/new" element={<AdminCreateTournament />} />
