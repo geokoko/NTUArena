@@ -34,8 +34,9 @@ const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false
 							</div>
 							<div className="col-md-4">
 								<div className="game-time">
-									<div className="time-display">15:30</div>
-									<div className="move-count">Move 12</div>
+									{/* Time and Move count to be implemented */}
+									{/* <div className="time-display">15:30</div> */}
+									{/* <div className="move-count">Move 12</div> */}
 								</div>
 							</div>
 							<div className="col-md-4">
@@ -52,6 +53,7 @@ const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false
 						isInteractive={false}
 					/>
 
+					{/* Actions to be implemented
 					<div className="game-actions mt-3">
 						<button className="btn btn-sm btn-outline-primary me-2">
 							<i className="fas fa-play"></i> Watch Live
@@ -63,6 +65,7 @@ const GameBoard = ({ gameId, gameState, player1, player2, result, isLive = false
 							<i className="fas fa-chart-line"></i> Analysis
 						</button>
 					</div>
+					*/}
 				</div>
 			</div>
 		</div>
