@@ -37,7 +37,8 @@ const ChessboardComponent = forwardRef(({
 		// Make a move
 		const makeAMove = useCallback((move) => {
 			try {
-				const gameCopy = new Chess(game.fen());
+				const gameCopy = new Chess();
+				gameCopy.loadPgn(game.pgn());
 				const result = gameCopy.move(move);
 
 				if (!result) return false; // Invalid move
@@ -103,7 +104,8 @@ const ChessboardComponent = forwardRef(({
 		// Undo move
 		const undoMove = useCallback(() => {
 			try {
-				const gameCopy = new Chess(game.fen());
+				const gameCopy = new Chess();
+				gameCopy.loadPgn(game.pgn());
 				const undoResult = gameCopy.undo();
 
 				if (undoResult) {
