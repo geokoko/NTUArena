@@ -1,6 +1,10 @@
 // src/pages/AdminOngoingGames.jsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { tournamentAPI, gameAPI } from '../services/api';
+import Card from '../components/Card';
+import Spinner from '../components/Spinner';
+import Table from '../components/Table';
+import Badge from '../components/Badge';
 import './AdminOngoingGames.css';
 
 const ResultButtons = ({ onResult, disabled }) => (
@@ -15,10 +19,6 @@ const ResultButtons = ({ onResult, disabled }) => (
 			Draw
 		</button>
 	</div>
-);
-
-const Badge = ({ children, kind = 'secondary' }) => (
-	<span className={`badge bg-${kind} admin-ongoing-games__badge`}>{children}</span>
 );
 
 const AdminOngoingGames = () => {
@@ -111,47 +111,44 @@ const AdminOngoingGames = () => {
 			{error && <div className="alert alert-danger">{error}</div>}
 
 			{loading ? (
-				<div className="admin-ongoing-games__loading text-center">
-					<div className="loading-spinner"></div>
-					<p>Loading ongoing games…</p>
-				</div>
+				<Spinner text="Loading ongoing games…" className="admin-ongoing-games__loading" />
 			) : ongoing.length === 0 ? (
 					<div className="alert alert-info">No ongoing games right now.</div>
 				) : (
-						<div className="card admin-ongoing-games__card">
-							<div className="card-header admin-ongoing-games__card-header">
-								<h3 className="card-title admin-ongoing-games__card-title">All ongoing games</h3>
-							</div>
+						<Card className="admin-ongoing-games__card">
+							<Card.Header className="admin-ongoing-games__card-header">
+								<Card.Title className="admin-ongoing-games__card-title">All ongoing games</Card.Title>
+							</Card.Header>
 							<div className="admin-ongoing-games__table-wrapper">
-								<table className="table admin-ongoing-games__table">
-									<thead>
-										<tr>
-											<th>Tournament</th>
-											<th>White</th>
-											<th>Black</th>
-											<th>Status</th>
-											<th className="text-end">Set Result</th>
-										</tr>
-									</thead>
-									<tbody>
+								<Table className="admin-ongoing-games__table">
+									<Table.Head>
+										<Table.Row>
+											<Table.Header>Tournament</Table.Header>
+											<Table.Header>White</Table.Header>
+											<Table.Header>Black</Table.Header>
+											<Table.Header>Status</Table.Header>
+											<Table.Header className="text-end">Set Result</Table.Header>
+										</Table.Row>
+									</Table.Head>
+									<Table.Body>
 									{ongoing.map(({ t, g }) => (
-										<tr key={g.id}>
-											<td>{t.name}</td>
-											<td>{g.playerWhite?.name || g.playerWhite?.username || g.playerWhite}</td>
-											<td>{g.playerBlack?.name || g.playerBlack?.username || g.playerBlack}</td>
-												<td><Badge kind="warning">Ongoing</Badge></td>
-												<td className="text-end">
+										<Table.Row key={g.id}>
+											<Table.Cell>{t.name}</Table.Cell>
+											<Table.Cell>{g.playerWhite?.name || g.playerWhite?.username || g.playerWhite}</Table.Cell>
+											<Table.Cell>{g.playerBlack?.name || g.playerBlack?.username || g.playerBlack}</Table.Cell>
+												<Table.Cell><Badge type="warning">Ongoing</Badge></Table.Cell>
+												<Table.Cell className="text-end">
 												<ResultButtons
 													disabled={!!submitting}
 													onResult={(r) => finishGame(g.id, r)}
 												/>
-												</td>
-											</tr>
+												</Table.Cell>
+											</Table.Row>
 										))}
-									</tbody>
-								</table>
+									</Table.Body>
+								</Table>
 							</div>
-						</div>
+						</Card>
 					)}
 		</div>
 	);
