@@ -8,7 +8,7 @@ const DynamicBackground = ({ children, variant = 'default' }) => {
 	useEffect(() => {
 		const timer = setInterval(() => {
 			setCurrentTime(new Date());
-		}, 1000);
+		}, 60000); // Check every minute instead of every second
 		return () => clearInterval(timer);
 	}, []);
 
