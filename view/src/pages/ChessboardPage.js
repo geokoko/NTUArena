@@ -58,7 +58,7 @@ const ChessboardPage = () => {
 			</div>
 
 			{/* Chessboard Section */}
-			<div>
+			<div className="d-flex justify-content-center my-4">
 				<ChessboardComponent
 					ref={chessboardRef}
 					onGameUpdate={handleGameUpdate}
