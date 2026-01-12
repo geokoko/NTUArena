@@ -14,6 +14,7 @@ router.post('/admin/users', userCtrl.createUser);
 router.patch('/admin/users/:id', userCtrl.updateUser);
 router.delete('/admin/users/:id', userCtrl.deleteUser);
 router.patch('/admin/users/:id/update_elo', userCtrl.updateUserElo);
+router.post('/admin/users/import-csv', userCtrl.importUsersFromCSV);
 
 module.exports = router;
 

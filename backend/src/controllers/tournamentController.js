@@ -1,5 +1,6 @@
 const asyncHandler = require('../middleware/asyncHandler');
 const tournamentService = require('../services/tournamentService');
+const { parseIdentifierCSV } = require('../utils/csvParser');
 
 exports.createTournament = asyncHandler(async (req, res) => {
 	const t = await tournamentService.createTournament(req.body);
@@ -117,4 +118,39 @@ exports.resumePlayer = asyncHandler(async (req, res) => {
 	}
 	const player = await tournamentService.resumePlayer(userId, req.params.id);
 	res.json(player);
+});
+
+exports.importPlayersFromCSV = asyncHandler(async (req, res) => {
+	const { csv } = req.body;
+	const tournamentId = req.params.id;
+
+	if (!csv || typeof csv !== 'string') {
+		return res.status(400).json({ error: 'CSV content is required' });
+	}
+
+	// Parse CSV to get list of identifiers
+	const parsed = parseIdentifierCSV(csv, 'identifier');
+
+	if (parsed.errors.length > 0 && parsed.identifiers.length === 0) {
+		return res.status(400).json({
+			error: 'Failed to parse CSV',
+			parseErrors: parsed.errors,
+		});
+	}
+
+	// Bulk add players
+	const results = await tournamentService.bulkAddPlayersByIdentifier(tournamentId, parsed.identifiers);
+
+	res.json({
+		success: true,
+		parseErrors: parsed.errors,
+		added: results.added.length,
+		skipped: results.skipped.length,
+		failed: results.errors.length,
+		details: {
+			added: results.added,
+			skipped: results.skipped,
+			errors: results.errors,
+		},
+	});
 });

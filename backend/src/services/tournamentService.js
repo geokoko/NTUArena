@@ -546,6 +546,101 @@ class TournamentService {
 
 		return summarizePlayer(player);
 	}
+
+	/**
+	 * Bulk add players to a tournament by username or email identifier.
+	 * @param {string} tournamentId - Tournament ID or publicId
+	 * @param {string[]} identifiers - Array of usernames or emails
+	 * @returns {{ added: Object[], skipped: Object[], errors: Object[] }}
+	 */
+	async bulkAddPlayersByIdentifier(tournamentId, identifiers) {
+		const results = {
+			added: [],
+			skipped: [],
+			errors: [],
+		};
+
+		if (!Array.isArray(identifiers) || identifiers.length === 0) {
+			return results;
+		}
+
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
+		if (!tournament) {
+			throw makeError('Tournament not found', 404);
+		}
+
+		// Pre-fetch all users that match any identifier
+		const normalizedIdentifiers = identifiers.map((id) => id.trim().toLowerCase());
+		const matchingUsers = await User.find({
+			isDeleted: { $ne: true },
+			$or: [
+				{ username: { $in: identifiers.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) } },
+				{ email: { $in: identifiers.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) } },
+			],
+		});
+
+		// Build lookup maps
+		const userByUsername = new Map();
+		const userByEmail = new Map();
+		for (const user of matchingUsers) {
+			if (user.username) userByUsername.set(user.username.toLowerCase(), user);
+			if (user.email) userByEmail.set(user.email.toLowerCase(), user);
+		}
+
+		// Get existing players in this tournament
+		const existingPlayers = await Player.find({ tournament: tournament._id }).select('user');
+		const existingUserIds = new Set(existingPlayers.map((p) => p.user.toString()));
+
+		for (let i = 0; i < identifiers.length; i++) {
+			const identifier = identifiers[i].trim();
+			const lowerIdentifier = identifier.toLowerCase();
+			const rowNum = i + 1;
+
+			try {
+				// Look up user by username or email
+				const user = userByUsername.get(lowerIdentifier) || userByEmail.get(lowerIdentifier);
+				
+				if (!user) {
+					results.errors.push({
+						row: rowNum,
+						identifier,
+						error: 'User not found',
+					});
+					continue;
+				}
+
+				// Check if already in tournament
+				if (existingUserIds.has(user._id.toString())) {
+					results.skipped.push({
+						row: rowNum,
+						identifier,
+						reason: 'User already in tournament',
+						userId: user.publicId || user._id.toString(),
+					});
+					continue;
+				}
+
+				// Add player to tournament
+				const player = await this.joinTournament(user.publicId || user._id.toString(), tournamentId);
+				results.added.push({
+					row: rowNum,
+					identifier,
+					player,
+				});
+
+				// Track for in-batch duplicate detection
+				existingUserIds.add(user._id.toString());
+			} catch (err) {
+				results.errors.push({
+					row: rowNum,
+					identifier,
+					error: err.message || 'Unknown error',
+				});
+			}
+		}
+
+		return results;
+	}
 }
 
 module.exports = new TournamentService();

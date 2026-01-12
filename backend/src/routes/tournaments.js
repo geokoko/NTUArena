@@ -27,5 +27,6 @@ router.post('/admin/tournaments/:id/participants/add', tCtrl.adminAddPlayer);   
 router.delete('/admin/tournaments/:id/participants/remove', tCtrl.adminRemovePlayer);    // body: { userId }
 router.post('/admin/tournaments/:id/participants/pause', tCtrl.pausePlayer);             // body: { userId }
 router.post('/admin/tournaments/:id/participants/resume', tCtrl.resumePlayer);           // body: { userId }
+router.post('/admin/tournaments/:id/participants/import-csv', tCtrl.importPlayersFromCSV); // body: { csv }
 
 module.exports = router;

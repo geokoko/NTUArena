@@ -1,6 +1,7 @@
 // controllers/userController.js
 const asyncHandler = require('../middleware/asyncHandler');
 const userService = require('../services/userService');
+const { parseCSV } = require('../utils/csvParser');
 
 exports.register = asyncHandler(async (req, res) => {
 	const user = await userService.registerUser(req.body);
@@ -38,3 +39,39 @@ exports.updateUserElo = asyncHandler(async (req, res) => {
 	res.json(user);
 });
 
+exports.importUsersFromCSV = asyncHandler(async (req, res) => {
+	const { csv } = req.body;
+
+	if (!csv || typeof csv !== 'string') {
+		return res.status(400).json({ error: 'CSV content is required' });
+	}
+
+	// Parse CSV with required and allowed columns
+	const parsed = parseCSV(csv, {
+		requiredColumns: ['username', 'email'],
+		allowedColumns: ['username', 'email', 'role', 'globalelo', 'firstname', 'lastname'],
+	});
+
+	if (parsed.errors.length > 0 && parsed.data.length === 0) {
+		return res.status(400).json({
+			error: 'Failed to parse CSV',
+			parseErrors: parsed.errors,
+		});
+	}
+
+	// Bulk add users
+	const results = await userService.bulkAddUsers(parsed.data);
+
+	res.json({
+		success: true,
+		parseErrors: parsed.errors,
+		created: results.created.length,
+		skipped: results.skipped.length,
+		failed: results.errors.length,
+		details: {
+			created: results.created,
+			skipped: results.skipped,
+			errors: results.errors,
+		},
+	});
+});

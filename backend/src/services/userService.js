@@ -125,6 +125,91 @@ class UserService {
 		await ensureDocumentPublicId(user, User);
 		return sanitizeUser(user);
 	}
+
+	/**
+	 * Bulk add users from parsed CSV data.
+	 * @param {Object[]} usersData - Array of user objects with username, email, etc.
+	 * @returns {{ created: Object[], skipped: Object[], errors: Object[] }}
+	 */
+	async bulkAddUsers(usersData) {
+		const results = {
+			created: [],
+			skipped: [],
+			errors: [],
+		};
+
+		if (!Array.isArray(usersData) || usersData.length === 0) {
+			return results;
+		}
+
+		// Pre-fetch existing usernames and emails for duplicate detection
+		const existingUsers = await User.find({ isDeleted: { $ne: true } }).select('username email');
+		const existingUsernames = new Set(existingUsers.map((u) => u.username?.toLowerCase()));
+		const existingEmails = new Set(existingUsers.map((u) => u.email?.toLowerCase()));
+
+		for (const userData of usersData) {
+			const rowNum = userData._rowNumber || '?';
+
+			try {
+				// Check for duplicates
+				const username = userData.username?.toLowerCase();
+				const email = userData.email?.toLowerCase();
+
+				if (existingUsernames.has(username)) {
+					results.skipped.push({
+						row: rowNum,
+						reason: `Username '${userData.username}' already exists`,
+						data: userData,
+					});
+					continue;
+				}
+
+				if (existingEmails.has(email)) {
+					results.skipped.push({
+						row: rowNum,
+						reason: `Email '${userData.email}' already exists`,
+						data: userData,
+					});
+					continue;
+				}
+
+				// Prepare user data
+				const userToAdd = {
+					username: userData.username,
+					email: userData.email,
+					role: userData.role || 'player',
+				};
+
+				// Add optional fields
+				if (userData.globalelo) {
+					userToAdd.globalElo = Number(userData.globalelo);
+				}
+				if (userData.firstname || userData.lastname) {
+					userToAdd.profile = {};
+					if (userData.firstname) userToAdd.profile.firstName = userData.firstname;
+					if (userData.lastname) userToAdd.profile.lastName = userData.lastname;
+				}
+
+				const created = await this.addUser(userToAdd);
+				results.created.push({
+					row: rowNum,
+					user: created,
+				});
+
+				// Track newly created for in-batch duplicate detection
+				existingUsernames.add(username);
+				existingEmails.add(email);
+			} catch (err) {
+				results.errors.push({
+					row: rowNum,
+					error: err.message || 'Unknown error',
+					data: userData,
+				});
+			}
+		}
+
+		return results;
+	}
 }
 
 module.exports = new UserService();
