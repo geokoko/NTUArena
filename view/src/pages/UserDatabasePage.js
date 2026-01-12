@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { userAPI } from '../services/api';
+import Card from '../components/Card';
+import Spinner from '../components/Spinner';
 import './UserDatabasePage.css';
 
 const getInitials = (user) => {
@@ -130,9 +132,9 @@ const UserDatabasePage = () => {
 			)}
 
 			{loading ? (
-				<div className="user-database-page__loading text-center text-muted py-5">Loading users...</div>
+				<Spinner text="Loading users..." className="user-database-page__loading" />
 			) : (
-					<div className="card user-database-page__card">
+					<Card className="user-database-page__card">
 						<div className="user-database-page__summary">
 							<div className="user-database-page__summary-item">
 								<span className="user-database-page__summary-value">{summary.total}</span>
@@ -193,7 +195,7 @@ const UserDatabasePage = () => {
 									})}
 								</div>
 							)}
-					</div>
+					</Card>
 				)}
 
 			<div className="mt-4 user-database-page__footer">
