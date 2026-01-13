@@ -22,13 +22,15 @@ const normalizeUser = (user) => {
 	return user;
 };
 
-const buildDisplayName = (user) => {
-	if (!user) return 'Unknown Player';
+const buildDisplayName = (user, tempName = null) => {
+	if (!user) {
+		return tempName || 'Unknown Player';
+	}
 	const first = user?.profile?.firstName?.trim?.() || '';
 	const last = user?.profile?.lastName?.trim?.() || '';
 	const parts = [first, last].filter(Boolean);
 	if (parts.length) return parts.join(' ');
-	return user?.username || user?.email || 'Unknown Player';
+	return user?.username || user?.email || tempName || 'Unknown Player';
 };
 
 const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});
@@ -36,7 +38,7 @@ const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObje
 const summarizePlayer = (player) => {
 	if (!player) return null;
 	const base = toPlain(player);
-	const user = normalizeUser(base.user);
+	const user = base.user ? normalizeUser(base.user) : null;
 	const gamesPlayed = Number.isFinite(base.gamesPlayed)
 		? base.gamesPlayed
 		: Array.isArray(base.gameHistory) ? base.gameHistory.length : 0;
@@ -45,7 +47,8 @@ const summarizePlayer = (player) => {
 		id: base.publicId || null,
 		userId: user?.publicId || null,
 		username: user?.username || null,
-		name: buildDisplayName(user),
+		isTemp: !base.user, // Flag indicating this is a temp player with no linked account
+		name: buildDisplayName(user, base.tempName),
 		score: base.score ?? 0,
 		liveRating: base.liveRating ?? base.entryRating ?? user?.globalElo ?? 0,
 		isPlaying: !!base.isPlaying,
@@ -634,6 +637,182 @@ class TournamentService {
 				results.errors.push({
 					row: rowNum,
 					identifier,
+					error: err.message || 'Unknown error',
+				});
+			}
+		}
+
+		return results;
+	}
+
+	/**
+	 * Bulk add players to a tournament from CSV data.
+	 * Creates temp players if no user account found, or links to existing user if identifier matches.
+	 * @param {string} tournamentId - Tournament ID or publicId
+	 * @param {Object[]} rows - Array of parsed CSV row objects with name, rating, identifier (optional)
+	 * @returns {{ added: Object[], skipped: Object[], errors: Object[] }}
+	 */
+	async bulkAddPlayersFromCSV(tournamentId, rows) {
+		const results = {
+			added: [],
+			skipped: [],
+			errors: [],
+		};
+
+		if (!Array.isArray(rows) || rows.length === 0) {
+			return results;
+		}
+
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
+		if (!tournament) {
+			throw makeError('Tournament not found', 404);
+		}
+
+		// Check tournament capacity
+		const isActiveTournament = tournament.tournStatus === 'in progress';
+
+		// Collect all identifiers to pre-fetch matching users
+		const identifiersToLookup = rows
+			.filter((row) => row.identifier && row.identifier.trim())
+			.map((row) => row.identifier.trim());
+
+		// Pre-fetch users that match identifiers
+		let userByUsername = new Map();
+		let userByEmail = new Map();
+		if (identifiersToLookup.length > 0) {
+			const matchingUsers = await User.find({
+				isDeleted: { $ne: true },
+				$or: [
+					{ username: { $in: identifiersToLookup.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i')) } },
+					{ email: { $in: identifiersToLookup.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i')) } },
+				],
+			});
+			for (const user of matchingUsers) {
+				if (user.username) userByUsername.set(user.username.toLowerCase(), user);
+				if (user.email) userByEmail.set(user.email.toLowerCase(), user);
+			}
+		}
+
+		// Get existing players in this tournament (both user-linked and temp)
+		const existingPlayers = await Player.find({ tournament: tournament._id }).select('user tempName');
+		const existingUserIds = new Set(
+			existingPlayers.filter((p) => p.user).map((p) => p.user.toString())
+		);
+		const existingTempNames = new Set(
+			existingPlayers.filter((p) => p.tempName).map((p) => p.tempName.toLowerCase())
+		);
+
+		for (let i = 0; i < rows.length; i++) {
+			const row = rows[i];
+			const rowNum = row._rowNumber || (i + 2); // CSV row number (header is row 1)
+			const name = (row.name || '').trim();
+			const ratingStr = (row.rating || '').toString().trim();
+			const identifier = (row.identifier || '').trim();
+
+			try {
+				// Validate required fields
+				if (!name) {
+					results.errors.push({ row: rowNum, name, error: 'Name is required' });
+					continue;
+				}
+				const rating = parseInt(ratingStr, 10);
+				if (!Number.isFinite(rating) || rating < 0) {
+					results.errors.push({ row: rowNum, name, error: 'Valid rating is required' });
+					continue;
+				}
+
+				// Check if identifier links to an existing user
+				let linkedUser = null;
+				if (identifier) {
+					const lowerIdentifier = identifier.toLowerCase();
+					linkedUser = userByUsername.get(lowerIdentifier) || userByEmail.get(lowerIdentifier);
+				}
+
+				if (linkedUser) {
+					// Check if user already in tournament
+					if (existingUserIds.has(linkedUser._id.toString())) {
+						results.skipped.push({
+							row: rowNum,
+							name,
+							reason: 'User already in tournament',
+							userId: linkedUser.publicId || linkedUser._id.toString(),
+						});
+						continue;
+					}
+
+					// Add linked player via existing joinTournament method
+					const player = await this.joinTournament(
+						linkedUser.publicId || linkedUser._id.toString(),
+						tournamentId
+					);
+					results.added.push({ row: rowNum, name, player, linked: true });
+					existingUserIds.add(linkedUser._id.toString());
+				} else {
+					// Create temp player (no linked user)
+					// Check for duplicate temp names
+					if (existingTempNames.has(name.toLowerCase())) {
+						results.skipped.push({
+							row: rowNum,
+							name,
+							reason: 'Temp player with this name already exists',
+						});
+						continue;
+					}
+
+					const now = new Date();
+					const player = new Player({
+						user: null,
+						tempName: name,
+						tournament: tournament._id,
+						isPlaying: false,
+						waitingSince: isActiveTournament ? now : null,
+						liveRating: rating,
+						entryRating: rating,
+						score: 0,
+						gamesPlayed: 0,
+						wins: 0,
+						draws: 0,
+						losses: 0,
+						sumOpponentRatings: 0,
+						status: 'active',
+						enteredAt: now,
+					});
+					await player.save();
+
+					tournament.participants = Array.isArray(tournament.participants)
+						? [...tournament.participants, player._id]
+						: [player._id];
+					await tournament.save();
+
+					if (isActiveTournament) {
+						await enqueue(String(tournament._id), {
+							_id: String(player._id),
+							user: null,
+							tempName: name,
+							score: 0,
+							liveRating: rating,
+							entryRating: rating,
+							recentOpponents: [],
+							colorHistory: [],
+							status: player.status,
+							waitingSince: player.waitingSince,
+							enqueuedAt: Date.now(),
+						});
+					}
+
+					await ensureDocumentPublicId(player, Player);
+					results.added.push({
+						row: rowNum,
+						name,
+						player: summarizePlayer(player),
+						linked: false,
+					});
+					existingTempNames.add(name.toLowerCase());
+				}
+			} catch (err) {
+				results.errors.push({
+					row: rowNum,
+					name,
 					error: err.message || 'Unknown error',
 				});
 			}

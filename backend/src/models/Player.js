@@ -3,7 +3,8 @@ const { createPublicId } = require('../utils/publicId');
 
 const PlayerSchema = new mongoose.Schema({
 	publicId: { type: String, unique: true, default: () => createPublicId() },
-	user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+	user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false, default: null },
+	tempName: { type: String, default: null }, // Display name for temp players without user accounts
 	tournament: { type: mongoose.Schema.Types.ObjectId, ref: 'Tournament', required: true },
 	score: { type: Number, required: true, default: 0 },
 	liveRating: { type: Number, required: true, default: 0 },
