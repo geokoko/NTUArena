@@ -1,6 +1,6 @@
 const asyncHandler = require('../middleware/asyncHandler');
 const tournamentService = require('../services/tournamentService');
-const { parseIdentifierCSV } = require('../utils/csvParser');
+const { parseCSV } = require('../utils/csvParser');
 
 exports.createTournament = asyncHandler(async (req, res) => {
 	const t = await tournamentService.createTournament(req.body);
@@ -128,18 +128,24 @@ exports.importPlayersFromCSV = asyncHandler(async (req, res) => {
 		return res.status(400).json({ error: 'CSV content is required' });
 	}
 
-	// Parse CSV to get list of identifiers
-	const parsed = parseIdentifierCSV(csv, 'identifier');
+	// Parse CSV with required columns for player import
+	// name: player display name (required)
+	// rating: player rating (required)
+	// identifier: username or email to link to existing user (optional)
+	const parsed = parseCSV(csv, {
+		requiredColumns: ['name', 'rating'],
+		allowedColumns: ['name', 'rating', 'identifier'],
+	});
 
-	if (parsed.errors.length > 0 && parsed.identifiers.length === 0) {
+	if (parsed.errors.length > 0 && parsed.data.length === 0) {
 		return res.status(400).json({
 			error: 'Failed to parse CSV',
 			parseErrors: parsed.errors,
 		});
 	}
 
-	// Bulk add players
-	const results = await tournamentService.bulkAddPlayersByIdentifier(tournamentId, parsed.identifiers);
+	// Bulk add players (creates temp players or links to existing users)
+	const results = await tournamentService.bulkAddPlayersFromCSV(tournamentId, parsed.data);
 
 	res.json({
 		success: true,

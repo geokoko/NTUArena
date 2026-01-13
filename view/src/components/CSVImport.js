@@ -199,7 +199,7 @@ const CSVImport = ({
 					<div className="csv-import__subtitle">
 						{type === 'users'
 							? 'CSV with username, email, role, globalElo, firstName, lastName columns'
-							: 'CSV with identifier column (username or email)'}
+							: 'CSV with name, rating columns (optional: identifier to link account)'}
 					</div>
 				</div>
 			) : (
