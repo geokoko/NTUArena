@@ -258,10 +258,15 @@ class GameService {
 			enqueuedAt: Date.now(),
 		});
 
-		for (const player of [white, black]) {
-			if (!player || (player.status && player.status !== 'active')) continue;
-			await enqueue(String(game.tournament), buildSnapshot(player));
-		}
+		// Small delay before re-enqueueing to prevent instant re-pairing
+		// when admin terminates multiple games quickly
+		const REQUEUE_DELAY_MS = 5000;
+		setTimeout(async () => {
+			for (const player of [white, black]) {
+				if (!player || (player.status && player.status !== 'active')) continue;
+				await enqueue(String(game.tournament), buildSnapshot(player));
+			}
+		}, REQUEUE_DELAY_MS);
 
 		await game.populate([
 			{
