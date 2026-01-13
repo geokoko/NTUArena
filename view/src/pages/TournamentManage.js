@@ -6,10 +6,10 @@ import CSVImport from '../components/CSVImport';
 import './TournamentList.css';
 import './TournamentManage.css';
 
-const PLAYERS_CSV_TEMPLATE = `identifier
-player1@example.com
-player2_username
-john.doe@example.com`;
+const PLAYERS_CSV_TEMPLATE = `name,rating,identifier
+John Doe,1500,john@example.com
+Jane Smith,1600,
+Guest Player,1400,`;
 
 const TournamentManage = () => {
 	const { id } = useParams();
