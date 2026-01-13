@@ -74,6 +74,7 @@ const UserDatabasePage = () => {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
 	const [showImport, setShowImport] = useState(false);
+	const [actionLoading, setActionLoading] = useState(null); // Track which user is being deleted
 
 	const fetchUsers = useCallback(async () => {
 		setLoading(true);
@@ -100,6 +101,21 @@ const UserDatabasePage = () => {
 			fetchUsers();
 		}
 		return res.data;
+	}, [fetchUsers]);
+
+	const handleDeleteUser = useCallback(async (userId, displayName) => {
+		if (!window.confirm(`Are you sure you want to delete "${displayName}"? This action cannot be undone.`)) {
+			return;
+		}
+		setActionLoading(userId);
+		try {
+			await userAPI.deleteUser(userId);
+			await fetchUsers();
+		} catch (err) {
+			alert(err.message || 'Failed to delete user');
+		} finally {
+			setActionLoading(null);
+		}
 	}, [fetchUsers]);
 
 	const sortedUsers = useMemo(() => {
@@ -224,6 +240,14 @@ const UserDatabasePage = () => {
 														<span className="user-card__stat-label">{secondaryMeta.label}</span>
 														<span className="user-card__stat-value">{secondaryMeta.value}</span>
 													</div>
+													<button
+														type="button"
+														className="btn btn-sm btn-outline-danger user-card__delete"
+														onClick={() => handleDeleteUser(user.id, displayName)}
+														disabled={actionLoading === user.id}
+													>
+														{actionLoading === user.id ? 'Deleting...' : 'Delete'}
+													</button>
 												</div>
 											</article>
 										);
