@@ -262,9 +262,13 @@ class GameService {
 		// when admin terminates multiple games quickly
 		const REQUEUE_DELAY_MS = 5000;
 		setTimeout(async () => {
-			for (const player of [white, black]) {
-				if (!player || (player.status && player.status !== 'active')) continue;
-				await enqueue(String(game.tournament), buildSnapshot(player));
+			try {
+				for (const player of [white, black]) {
+					if (!player || (player.status && player.status !== 'active')) continue;
+					await enqueue(String(game.tournament), buildSnapshot(player));
+				}
+			} catch (err) {
+				console.error('Failed to re-enqueue players after game termination:', err);
 			}
 		}, REQUEUE_DELAY_MS);
 
