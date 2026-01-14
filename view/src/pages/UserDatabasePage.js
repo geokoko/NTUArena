@@ -112,11 +112,11 @@ const UserDatabasePage = () => {
 			await userAPI.deleteUser(userId);
 			await fetchUsers();
 		} catch (err) {
-			alert(err.message || 'Failed to delete user');
+			setError(err?.message || 'Failed to delete user');
 		} finally {
 			setActionLoading(null);
 		}
-	}, [fetchUsers]);
+	}, [fetchUsers, setError]);
 
 	const sortedUsers = useMemo(() => {
 		const extractName = (user) => {
