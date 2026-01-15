@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { tournamentAPI } from '../services/api';
 import GameBoard from '../components/GameBoard';
 import './TournamentDetail.css';
+
+const PLAYERS_PER_PAGE = 15;
 
 const TournamentDetail = ({ user }) => {
 	const { id } = useParams();
@@ -13,6 +15,7 @@ const TournamentDetail = ({ user }) => {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
 	const [activeTab, setActiveTab] = useState('overview');
+	const [currentPage, setCurrentPage] = useState(1);
 
 	useEffect(() => {
 		const fetchTournamentDetails = async () => {
@@ -45,6 +48,19 @@ const TournamentDetail = ({ user }) => {
 		fetchTournamentDetails();
 	}, [id]);
 
+	// Reset page when switching tabs
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [activeTab]);
+
+	// Pagination logic for standings
+	const paginatedStandings = useMemo(() => {
+		const startIndex = (currentPage - 1) * PLAYERS_PER_PAGE;
+		return standings.slice(startIndex, startIndex + PLAYERS_PER_PAGE);
+	}, [standings, currentPage]);
+
+	const totalPages = Math.ceil(standings.length / PLAYERS_PER_PAGE);
+
 	const getStatusBadge = (status) => {
 		switch (status) {
 			case 'upcoming':
@@ -56,11 +72,6 @@ const TournamentDetail = ({ user }) => {
 			default:
 				return <span className="badge badge-primary">{status}</span>;
 		}
-	};
-
-	const formatPlayerStatus = (status) => {
-		if (!status) return 'Active';
-		return status.replace(/\b\w/g, (char) => char.toUpperCase());
 	};
 
 	const getGameResultDisplay = (game) => {
@@ -75,6 +86,29 @@ const TournamentDetail = ({ user }) => {
 		} else {
 			return <span className="badge badge-secondary">½-½</span>;
 		}
+	};
+
+	const getRankClass = (rank) => {
+		if (rank === 1) return 'rank-gold';
+		if (rank === 2) return 'rank-silver';
+		if (rank === 3) return 'rank-bronze';
+		return '';
+	};
+
+	const getRankIcon = (rank) => {
+		if (rank === 1) return '🥇';
+		if (rank === 2) return '🥈';
+		if (rank === 3) return '🥉';
+		return rank;
+	};
+
+	const getStreakIndicator = (standing) => {
+		// Check for winning streaks based on recent performance
+		const winRate = standing.games > 0 ? standing.wins / standing.games : 0;
+		if (standing.wins >= 3 && winRate >= 0.7) {
+			return <span className="streak-fire" title="On fire!">🔥</span>;
+		}
+		return null;
 	};
 
 	if (loading) {
@@ -103,7 +137,8 @@ const TournamentDetail = ({ user }) => {
 	}
 
 	return (
-		<div>
+		<div className="tournament-detail">
+			{/* Header */}
 			<div className="d-flex justify-content-between align-items-center mb-4">
 				<div>
 					<h1>{tournament.name}</h1>
@@ -114,27 +149,8 @@ const TournamentDetail = ({ user }) => {
 				</Link>
 			</div>
 
-			{/* Tournament Overview */}
-			<div className="card mb-4">
-				<div className="card-header">
-					<h3 className="card-title">Tournament Information</h3>
-				</div>
-				<div className="row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-					<div>
-						<p><strong>Location:</strong> {tournament.tournLocation}</p>
-						<p><strong>Time Control:</strong> {tournament.timeControl}</p>
-						<p><strong>Max Players:</strong> {tournament.maxPlayers}</p>
-					</div>
-					<div>
-						<p><strong>Start Date:</strong> {new Date(tournament.startDate).toLocaleString()}</p>
-						<p><strong>End Date:</strong> {new Date(tournament.endDate).toLocaleString()}</p>
-						<p><strong>Current Players:</strong> {tournament.participants.length}</p>
-					</div>
-				</div>
-			</div>
-
 			{/* Navigation Tabs */}
-			<div className="mb-4">
+			<div className="tournament-tabs mb-4">
 				<div className="d-flex gap-2">
 					<button 
 						onClick={() => setActiveTab('overview')}
@@ -154,144 +170,223 @@ const TournamentDetail = ({ user }) => {
 					>
 						Games
 					</button>
-					<button 
-						onClick={() => setActiveTab('players')}
-						className={`btn ${activeTab === 'players' ? 'btn-primary' : 'btn-secondary'}`}
-					>
-						Players
-					</button>
 				</div>
 			</div>
 
 			{/* Tab Content */}
 			{activeTab === 'overview' && (
-				<div className="card">
-					<div className="card-header">
-						<h3 className="card-title">Tournament Overview</h3>
-					</div>
-						<div>
-							<p>{tournament.description}</p>
-							<div className="mt-3">
-								<h4>Quick Stats:</h4>
-								{(() => {
-									const activePlayers = players.filter(p => (p.status || 'active') === 'active').length;
-									const pausedPlayers = players.filter(p => p.status === 'paused').length;
-									const withdrawnPlayers = players.filter(p => p.status === 'withdrawn').length;
-									return (
-									<ul>
-										<li>Total Games: {games.length}</li>
-										<li>Completed Games: {games.filter(g => g.isFinished).length}</li>
-										<li>Ongoing Games: {games.filter(g => !g.isFinished).length}</li>
-										<li>Players Registered: {players.length}</li>
-										<li>Active Players: {activePlayers}</li>
-										<li>Paused Players: {pausedPlayers}</li>
-										<li>Withdrawn Players: {withdrawnPlayers}</li>
-									</ul>
-									);
-								})()}
+				<div className="overview-content">
+					{/* Tournament Information Card - Only visible in Overview */}
+					<div className="card mb-4 tournament-info-card">
+						<div className="card-header">
+							<h3 className="card-title">Tournament Information</h3>
+						</div>
+						<div className="tournament-info-grid">
+							<div className="info-item">
+								<span className="info-label">Location</span>
+								<span className="info-value">{tournament.tournLocation || '—'}</span>
+							</div>
+							<div className="info-item">
+								<span className="info-label">Time Control</span>
+								<span className="info-value">{tournament.timeControl || '—'}</span>
+							</div>
+							<div className="info-item">
+								<span className="info-label">Max Players</span>
+								<span className="info-value">{tournament.maxPlayers || '∞'}</span>
+							</div>
+							<div className="info-item">
+								<span className="info-label">Start Date</span>
+								<span className="info-value">{new Date(tournament.startDate).toLocaleString()}</span>
+							</div>
+							<div className="info-item">
+								<span className="info-label">End Date</span>
+								<span className="info-value">{new Date(tournament.endDate).toLocaleString()}</span>
+							</div>
+							<div className="info-item">
+								<span className="info-label">Current Players</span>
+								<span className="info-value">{tournament.participants?.length || players.length}</span>
 							</div>
 						</div>
+					</div>
+
+					{/* Quick Stats Card */}
+					<div className="card">
+						<div className="card-header">
+							<h3 className="card-title">Tournament Overview</h3>
+						</div>
+						<div className="overview-body">
+							{tournament.description && (
+								<p className="tournament-description">{tournament.description}</p>
+							)}
+							<div className="quick-stats">
+								<h4>Quick Stats</h4>
+								<div className="stats-grid">
+									<div className="stat-item">
+										<span className="stat-value">{games.length}</span>
+										<span className="stat-label">Total Games</span>
+									</div>
+									<div className="stat-item">
+										<span className="stat-value">{games.filter(g => g.isFinished).length}</span>
+										<span className="stat-label">Completed</span>
+									</div>
+									<div className="stat-item">
+										<span className="stat-value">{games.filter(g => !g.isFinished).length}</span>
+										<span className="stat-label">Ongoing</span>
+									</div>
+									<div className="stat-item">
+										<span className="stat-value">{players.filter(p => (p.status || 'active') === 'active').length}</span>
+										<span className="stat-label">Active Players</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
 				</div>
 			)}
 
 			{activeTab === 'standings' && (
-				<div className="card">
-					<div className="card-header">
-						<h3 className="card-title">Tournament Standings</h3>
-					</div>
-					<div>
-						<table className="table">
-							<thead>
-								<tr>
-									<th>Rank</th>
-									<th>Player</th>
-									<th>Status</th>
-									<th>Score</th>
-									<th>Games</th>
-									<th>Live Rating</th>
-									<th className="text-center">W</th>
-									<th className="text-center">D</th>
-									<th className="text-center">L</th>
-								</tr>
-							</thead>
-							<tbody>
-								{standings.map((standing) => (
-									<tr key={standing.player.id}>
-										<td>{standing.rank}</td>
-										<td>{standing.player.name || standing.player.username}</td>
-										<td>{formatPlayerStatus(standing.player.status)}</td>
-										<td>{standing.score}</td>
-										<td>{standing.games}</td>
-										<td>{standing.liveRating}</td>
-										<td className="text-center">{standing.wins ?? 0}</td>
-										<td className="text-center">{standing.draws ?? 0}</td>
-										<td className="text-center">{standing.losses ?? 0}</td>
-									</tr>
-								))}
-							</tbody>
-						</table>
+				<div className="standings-content">
+					<div className="lichess-standings">
+						<div className="standings-header">
+							<h3>Leaderboard</h3>
+							<span className="standings-count">{standings.length} players</span>
+						</div>
+						
+						{standings.length === 0 ? (
+							<div className="standings-empty">
+								<p>No standings available yet.</p>
+							</div>
+						) : (
+							<>
+								<div className="standings-table-wrapper">
+									<table className="standings-table">
+										<thead>
+											<tr>
+												<th className="col-rank">#</th>
+												<th className="col-player">Player</th>
+												<th className="col-score">Score</th>
+												<th className="col-games">Games</th>
+												<th className="col-rating">Rating</th>
+												<th className="col-performance">Perf</th>
+												<th className="col-wdl">W/D/L</th>
+											</tr>
+										</thead>
+										<tbody>
+											{paginatedStandings.map((standing) => (
+												<tr key={standing.player.id} className={`standing-row ${getRankClass(standing.rank)}`}>
+													<td className="col-rank">
+														<span className="rank-badge">{getRankIcon(standing.rank)}</span>
+													</td>
+													<td className="col-player">
+														<div className="player-info">
+															<span className="player-name">
+																{standing.player.name || standing.player.username}
+																{getStreakIndicator(standing)}
+															</span>
+														</div>
+													</td>
+													<td className="col-score">
+														<span className="score-badge">{standing.score}</span>
+													</td>
+													<td className="col-games">{standing.games}</td>
+													<td className="col-rating">
+														<span className="rating-value">{standing.liveRating}</span>
+													</td>
+													<td className="col-performance">
+														{standing.performanceRating || '—'}
+													</td>
+													<td className="col-wdl">
+														<span className="wdl-display">
+															<span className="win">{standing.wins ?? 0}</span>
+															<span className="draw">{standing.draws ?? 0}</span>
+															<span className="loss">{standing.losses ?? 0}</span>
+														</span>
+													</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+
+								{/* Pagination */}
+								{totalPages > 1 && (
+									<div className="standings-pagination">
+										<button 
+											className="pagination-btn"
+											onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+											disabled={currentPage === 1}
+										>
+											← Previous
+										</button>
+										
+										<div className="pagination-pages">
+											{Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+												// Show first, last, current, and adjacent pages
+												const showPage = page === 1 || 
+													page === totalPages || 
+													Math.abs(page - currentPage) <= 1;
+												const showEllipsis = (page === 2 && currentPage > 3) ||
+													(page === totalPages - 1 && currentPage < totalPages - 2);
+												
+												if (showEllipsis && !showPage) {
+													return <span key={page} className="pagination-ellipsis">…</span>;
+												}
+												
+												if (!showPage && !showEllipsis) return null;
+												
+												return (
+													<button
+														key={page}
+														className={`pagination-page ${currentPage === page ? 'active' : ''}`}
+														onClick={() => setCurrentPage(page)}
+													>
+														{page}
+													</button>
+												);
+											})}
+										</div>
+
+										<button 
+											className="pagination-btn"
+											onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+											disabled={currentPage === totalPages}
+										>
+											Next →
+										</button>
+									</div>
+								)}
+							</>
+						)}
 					</div>
 				</div>
 			)}
 
 			{activeTab === 'games' && (
-				<div className="card">
+				<div className="card games-content">
 					<div className="card-header">
 						<h3 className="card-title">Tournament Games</h3>
 					</div>
 					<div className="row">
-						{games.map((game) => (
-							<div key={game.id} className="col-md-6 mb-4">
-								<GameBoard
-									gameId={game.id}
-									player1={game.playerWhite?.name || game.playerWhite?.username}
-									player2={game.playerBlack?.name || game.playerBlack?.username}
-									player1Rating={game.playerWhite?.liveRating}
-									player2Rating={game.playerBlack?.liveRating}
-									result={getGameResultDisplay(game)}
-									isLive={!game.isFinished}
-									gameState={null} // This would come from the actual game state
-								/>
+						{games.length === 0 ? (
+							<div className="col-12">
+								<p className="text-muted text-center">No games yet.</p>
 							</div>
-						))}
-					</div>
-				</div>
-			)}
-
-			{activeTab === 'players' && (
-				<div className="card">
-					<div className="card-header">
-						<h3 className="card-title">Tournament Players</h3>
-					</div>
-					<div>
-						<table className="table">
-							<thead>
-								<tr>
-									<th>Player</th>
-									<th>Status</th>
-									<th>Score</th>
-									<th>Games</th>
-									<th>Live Rating</th>
-									<th className="text-center">W</th>
-									<th className="text-center">D</th>
-									<th className="text-center">L</th>
-								</tr>
-							</thead>
-							<tbody>
-								{players.map((player) => (
-									<tr key={player.id}>
-										<td>{player.name || player.username}</td>
-										<td>{formatPlayerStatus(player.status)}</td>
-										<td>{player.score}</td>
-										<td>{player.gamesPlayed ?? player.games ?? 0}</td>
-										<td>{player.liveRating}</td>
-										<td className="text-center">{player.wins ?? 0}</td>
-										<td className="text-center">{player.draws ?? 0}</td>
-										<td className="text-center">{player.losses ?? 0}</td>
-									</tr>
-								))}
-							</tbody>
-						</table>
+						) : (
+							games.map((game) => (
+								<div key={game.id} className="col-md-6 mb-4">
+									<GameBoard
+										gameId={game.id}
+										player1={game.playerWhite?.name || game.playerWhite?.username}
+										player2={game.playerBlack?.name || game.playerBlack?.username}
+										player1Rating={game.playerWhite?.liveRating}
+										player2Rating={game.playerBlack?.liveRating}
+										result={getGameResultDisplay(game)}
+										isLive={!game.isFinished}
+										gameState={null}
+									/>
+								</div>
+							))
+						)}
 					</div>
 				</div>
 			)}
