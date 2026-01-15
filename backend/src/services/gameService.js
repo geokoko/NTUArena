@@ -22,22 +22,34 @@ function resolveOpponentRating(opponent) {
 	return asNumber(opponent.entryRating, 0);
 }
 
-// new function to calculate performance rating
+// FIDE-style performance rating calculation
+// Handles unrated players (0 rating) by using a minimum baseline of 1400
+// per FIDE 2024 rating regulations for initial rating calculations
 function calculatePerformanceRating({ sumOpponentRatings = 0, gamesPlayed = 0, score = 0 }) {
 	const games = asNumber(gamesPlayed, 0);
 	if (!games) return 0;
 	const points = asNumber(score, 0);
-	const avgOpp = sumOpponentRatings / games;
-	if (!Number.isFinite(avgOpp)) return 0;
+	
+	// Calculate average opponent rating
+	let avgOpp = sumOpponentRatings / games;
+	if (!Number.isFinite(avgOpp)) avgOpp = 0;
+	
+	// FIDE uses a minimum baseline of 1400 for unrated player calculations
+	// If average opponent rating is below this, use the baseline
+	const RATING_FLOOR = 1400;
+	const effectiveAvgOpp = Math.max(avgOpp, RATING_FLOOR);
 
 	const fraction = points / games;
-	if (fraction <= 0) return Math.round(avgOpp - 400);
-	if (fraction >= 1) return Math.round(avgOpp + 400);
+	// Perfect score: performance = avgOpp + 400
+	if (fraction >= 1) return Math.round(effectiveAvgOpp + 400);
+	// Zero score: performance = avgOpp - 400
+	if (fraction <= 0) return Math.round(Math.max(effectiveAvgOpp - 400, 0));
 
+	// FIDE formula: Rp = Ra + 400 * log10(W/L) where W = wins, L = losses (as fractions)
 	const diff = clamp(400 * Math.log10(fraction / (1 - fraction)), -400, 400);
-	const performance = avgOpp + diff;
-	if (!Number.isFinite(performance)) return Math.round(avgOpp);
-	return Math.round(performance);
+	const performance = effectiveAvgOpp + diff;
+	if (!Number.isFinite(performance)) return Math.round(effectiveAvgOpp);
+	return Math.round(Math.max(performance, 0)); // Ensure non-negative
 }
 
 function applyResultToPlayer({ player, opponentRating, resultColor, perspective, gameId }) {
@@ -246,10 +258,19 @@ class GameService {
 			enqueuedAt: Date.now(),
 		});
 
-		for (const player of [white, black]) {
-			if (!player || (player.status && player.status !== 'active')) continue;
-			await enqueue(String(game.tournament), buildSnapshot(player));
-		}
+		// Small delay before re-enqueueing to prevent instant re-pairing
+		// when admin terminates multiple games quickly
+		const REQUEUE_DELAY_MS = 5000;
+		setTimeout(async () => {
+			try {
+				for (const player of [white, black]) {
+					if (!player || (player.status && player.status !== 'active')) continue;
+					await enqueue(String(game.tournament), buildSnapshot(player));
+				}
+			} catch (err) {
+				console.error('Failed to re-enqueue players after game termination:', err);
+			}
+		}, REQUEUE_DELAY_MS);
 
 		await game.populate([
 			{

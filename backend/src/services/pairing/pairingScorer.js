@@ -83,6 +83,17 @@ function proximityScore(a, b, weights = { score: 0.6, elo: 0.4, standing: 0 }) {
 	);
 }
 
+function waitTimeBonus(a, b, maxBonus = 0.15, saturationMs = 180000) {
+	// Give priority to players who have been waiting longer
+	// maxBonus reached after saturationMs (default 3 minutes)
+	const now = Date.now();
+	const waitA = a.waitingSince ? now - new Date(a.waitingSince).getTime() : 0;
+	const waitB = b.waitingSince ? now - new Date(b.waitingSince).getTime() : 0;
+	const avgWait = (waitA + waitB) / 2;
+	// Smooth curve: approaches maxBonus as wait time increases
+	return maxBonus * Math.tanh(avgWait / saturationMs);
+}
+
 function evaluatePair(a, b, opts = {}) {
 	const {
 		maxHeadToHead = 2,
@@ -106,14 +117,15 @@ function evaluatePair(a, b, opts = {}) {
 	const whiteB_pen = colorPenalty(a, 'black') + colorPenalty(b, 'white');
 
 	const prox = proximityScore(a, b, proximityWeights);
+	const waitBonus = waitTimeBonus(a, b);
 
 	const options = [];
 	if (!whiteAssignmentInvalid) {
-		const scoreAwhite = prox - colorWeights.colorBias * whiteA_pen;
+		const scoreAwhite = prox + waitBonus - colorWeights.colorBias * whiteA_pen;
 		options.push({ score: scoreAwhite, colors: { white: a, black: b } });
 	}
 	if (!blackAssignmentInvalid) {
-		const scoreBwhite = prox - colorWeights.colorBias * whiteB_pen;
+		const scoreBwhite = prox + waitBonus - colorWeights.colorBias * whiteB_pen;
 		options.push({ score: scoreBwhite, colors: { white: b, black: a } });
 	}
 
