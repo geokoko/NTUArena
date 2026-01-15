@@ -22,7 +22,7 @@
 
 .tournament-detail .card-title {
 	margin: 0;
-	color: #f0f0f0;
+	color: var(--text-heading, #fffaf5);
 	font-weight: 600;
 	font-size: 1.1rem;
 }
@@ -44,7 +44,7 @@
 .tournament-tabs .btn-secondary {
 	background: rgba(255, 255, 255, 0.1);
 	border: 1px solid rgba(255, 255, 255, 0.15);
-	color: #c0c0c0;
+	color: var(--text-secondary, #f5e6d3);
 }
 
 .tournament-tabs .btn-secondary:hover {
@@ -74,19 +74,19 @@
 	font-size: 0.75rem;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
-	color: #888;
+	color: var(--text-muted, #d4c4b0);
 	font-weight: 500;
 }
 
 .info-value {
 	font-size: 1rem;
-	color: #e0e0e0;
+	color: var(--text-secondary, #f5e6d3);
 	font-weight: 500;
 }
 
 /* Overview styles */
 .tournament-description {
-	color: #b0b0b0;
+	color: var(--text-secondary, #f5e6d3);
 	line-height: 1.6;
 	margin-bottom: 1.5rem;
 	padding-bottom: 1rem;
@@ -97,7 +97,7 @@
 	font-size: 0.9rem;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
-	color: #888;
+	color: var(--text-muted, #d4c4b0);
 	margin-bottom: 1rem;
 }
 
@@ -126,7 +126,7 @@
 .stat-label {
 	display: block;
 	font-size: 0.75rem;
-	color: #888;
+	color: var(--text-muted, #d4c4b0);
 	margin-top: 0.5rem;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
@@ -156,18 +156,18 @@
 	margin: 0;
 	font-size: 1.1rem;
 	font-weight: 600;
-	color: #f0f0f0;
+	color: var(--text-heading, #fffaf5);
 }
 
 .standings-count {
 	font-size: 0.85rem;
-	color: #888;
+	color: var(--text-muted, #d4c4b0);
 }
 
 .standings-empty {
 	padding: 3rem;
 	text-align: center;
-	color: #888;
+	color: var(--text-muted, #d4c4b0);
 }
 
 .standings-table-wrapper {
@@ -188,7 +188,7 @@
 	font-size: 0.75rem;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
-	color: #888;
+	color: var(--text-muted, #d4c4b0);
 	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -319,7 +319,7 @@
 
 .wdl-display .draw {
 	background: rgba(160, 174, 192, 0.2);
-	color: #a0aec0;
+	color: var(--text-secondary, #f5e6d3);
 }
 
 .wdl-display .loss {
@@ -343,7 +343,7 @@
 .pagination-btn {
 	background: rgba(255, 255, 255, 0.1);
 	border: 1px solid rgba(255, 255, 255, 0.15);
-	color: #c0c0c0;
+	color: var(--text-secondary, #f5e6d3);
 	padding: 0.5rem 1rem;
 	border-radius: 6px;
 	font-size: 0.85rem;
@@ -377,7 +377,7 @@
 	background: transparent;
 	border: 1px solid rgba(255, 255, 255, 0.1);
 	border-radius: 6px;
-	color: #a0a0a0;
+	color: var(--text-muted, #d4c4b0);
 	font-size: 0.85rem;
 	cursor: pointer;
 	transition: all 0.2s ease;
@@ -396,7 +396,7 @@
 }
 
 .pagination-ellipsis {
-	color: #666;
+	color: var(--text-subtle, #c4a882);
 	padding: 0 0.25rem;
 }
 
@@ -434,7 +434,7 @@
 
 .badge-secondary {
 	background-color: rgba(160, 174, 192, 0.2);
-	color: #a0aec0;
+	color: var(--text-secondary, #f5e6d3);
 }
 
 .badge-primary {

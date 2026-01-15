@@ -17,7 +17,7 @@ body {
 		sans-serif;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
-	color: #e0e6ed;
+	color: var(--text-secondary, #f5e6d3);
 	background-color: #f5f5f5;
 	font-size: 15px;
 	line-height: 1.5;

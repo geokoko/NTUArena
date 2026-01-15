@@ -17,7 +17,7 @@
 
 .player-rating {
 	font-size: 0.9rem;
-	color: #666;
+	color: var(--text-subtle, #c4a882);
 	margin-top: 5px;
 }
 
@@ -34,7 +34,7 @@
 
 .move-count {
 	font-size: 0.9rem;
-	color: #666;
+	color: var(--text-subtle, #c4a882);
 	margin-top: 5px;
 }
 

@@ -68,13 +68,13 @@
 .btn-secondary {
 	background: rgba(149, 165, 166, 0.2);
 	border-color: rgba(149, 165, 166, 0.4);
-	color: #95a5a6;
+	color: var(--text-muted, #d4c4b0);
 }
 
 .btn-secondary:hover {
 	background: rgba(149, 165, 166, 0.3);
 	border-color: rgba(149, 165, 166, 0.6);
-	color: #bdc3c7;
+	color: var(--text-muted, #d4c4b0);
 }
 
 .btn-info {

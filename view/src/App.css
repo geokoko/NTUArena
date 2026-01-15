@@ -1,6 +1,6 @@
 /* App.css - Layout & Component Styles */
 
-/* Z-Index Hierarchy */
+/* Z-Index Hierarchy and Color Variables */
 :root {
 	--z-background: 1;
 	--z-background-elements: 2;
@@ -11,6 +11,19 @@
 	--z-social: 1001;
 	--z-modal: 2000;
 	--z-tooltip: 3000;
+
+	/* Text color palette - designed for warm brown backgrounds */
+	--text-primary: #fff8f0;          /* Warm white for main text */
+	--text-secondary: #f5e6d3;        /* Cream for body text */
+	--text-muted: #d4c4b0;            /* Tan for muted/label text */
+	--text-subtle: #c4a882;           /* Light brown for subtle text */
+	--text-heading: #fffaf5;          /* Bright warm white for headings */
+	
+	/* Accent colors that work on warm backgrounds */
+	--accent-blue: #87ceeb;           /* Sky blue - readable on brown */
+	--accent-green: #90ee90;          /* Light green */
+	--accent-warning: #ffd700;        /* Gold */
+	--accent-danger: #ff6b6b;         /* Coral red */
 }
 
 /* App layout */
@@ -42,7 +55,7 @@
 /* Utility classes */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
-.text-muted { color: #bdc3c7; }
+.text-muted { color: var(--text-muted, #d4c4b0); }
 
 .mt-1 { margin-top: 0.25rem; }
 .mt-2 { margin-top: 0.5rem; }

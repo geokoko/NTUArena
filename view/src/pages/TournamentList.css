@@ -204,7 +204,7 @@
 }
 
 .tournament-text-muted {
-	color: #bdc3c7;
+	color: var(--text-muted, #d4c4b0);
 }
 
 /* Loading styles for tournament list */

@@ -10,7 +10,7 @@
 }
 
 .game-status p {
-	color: #666;
+	color: var(--text-subtle, #c4a882);
 	font-weight: bold;
 	margin: 0;
 }

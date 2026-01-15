@@ -224,7 +224,7 @@
 }
 
 .admin-text-muted {
-	color: #bdc3c7;
+	color: var(--text-muted, #d4c4b0);
 }
 
 /* Responsive */
