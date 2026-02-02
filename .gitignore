@@ -24,3 +24,6 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Dummy CSV files
+dummy_*.csv

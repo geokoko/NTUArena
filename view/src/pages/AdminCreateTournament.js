@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { tournamentAPI } from '../services/api';
 import './AdminCreateTournament.css';
 
@@ -15,10 +15,10 @@ const initialState = {
 };
 
 const AdminCreateTournament = () => {
+	const navigate = useNavigate();
 	const [form, setForm] = useState(initialState);
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState('');
-	const [success, setSuccess] = useState('');
 
 	const handleChange = (field) => (event) => {
 		const value = event.target.value;
@@ -37,7 +37,6 @@ const AdminCreateTournament = () => {
 	const handleSubmit = async (event) => {
 		event.preventDefault();
 		setError('');
-		setSuccess('');
 		setSubmitting(true);
 		try {
 			const maxPlayersValue = form.maxPlayers === '' ? undefined : Number(form.maxPlayers);
@@ -54,12 +53,18 @@ const AdminCreateTournament = () => {
 				type: form.type,
 				maxPlayers: maxPlayersValue,
 			};
-			await tournamentAPI.createTournament(payload);
-			setSuccess('Tournament created successfully.');
-			setForm(initialState);
+			const response = await tournamentAPI.createTournament(payload);
+			// Redirect to the created tournament's detail page
+			const createdTournament = response.data?.tournament || response.data;
+			const tournamentId = createdTournament?.id;
+			if (tournamentId) {
+				navigate(`/tournament/${tournamentId}`);
+			} else {
+				// Fallback to tournaments list if no ID returned
+				navigate('/tournaments');
+			}
 		} catch (err) {
 			setError(err.message || 'Failed to create tournament');
-		} finally {
 			setSubmitting(false);
 		}
 	};
@@ -77,7 +82,6 @@ const AdminCreateTournament = () => {
 				<div className="card-body admin-create-tournament__card-body">
 					<p className="text-muted">Provide the core details below. Required fields are marked with *.</p>
 					{error && <div className="alert alert-danger">{error}</div>}
-					{success && <div className="alert alert-success">{success}</div>}
 					<form onSubmit={handleSubmit} className="row g-3 admin-create-tournament__form">
 						<div className="col-md-6">
 							<label className="form-label">Name *</label>
