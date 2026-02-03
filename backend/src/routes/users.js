@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-//const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const userCtrl = require('../controllers/userController');
 
-// Player self-registration route
+// Player self-registration route (public - but we now use /api/auth/register)
 router.post('/users/register', userCtrl.register);
 
 // ---- Admin-only management routes ----
-//router.use(requireAuth, requireRole('admin'));
+router.use('/admin/users', requireAuth, requireRole('admin'));
 router.get('/admin/users', userCtrl.listUsers);
 router.get('/admin/users/:id', userCtrl.getUser);
 router.post('/admin/users', userCtrl.createUser);

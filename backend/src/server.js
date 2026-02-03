@@ -30,6 +30,7 @@ app.get('/health', (req, res) => {
 
 
 // API routes with /api prefix
+app.use('/api', require('./routes/auth'));
 app.use('/api', require('./routes/users'));
 app.use('/api', require('./routes/tournaments'));
 app.use('/api', require('./routes/games'));

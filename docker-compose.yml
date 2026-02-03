@@ -45,6 +45,8 @@ services:
       MONGO_DB: ntuarena
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      JWT_EXPIRES_IN: 7d
     depends_on:
       mongo:
         condition: service_healthy
