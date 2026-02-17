@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { authAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -15,22 +16,30 @@ export const AuthProvider = ({ children }) => {
 	const [token, setToken] = useState(null);
 	const [loading, setLoading] = useState(true);
 
-	// Load token and user from localStorage on mount
+	// Load token from localStorage and validate against server on mount
 	useEffect(() => {
 		const storedToken = localStorage.getItem('authToken');
-		const storedUser = localStorage.getItem('authUser');
 		
-		if (storedToken && storedUser) {
-			try {
-				setToken(storedToken);
-				setUser(JSON.parse(storedUser));
-			} catch (e) {
-				// Clear invalid data
-				localStorage.removeItem('authToken');
-				localStorage.removeItem('authUser');
-			}
+		if (storedToken) {
+			// Set token so the API interceptor includes it
+			setToken(storedToken);
+			
+			// Validate token against the server
+			authAPI.getMe()
+				.then((res) => {
+					setUser(res.data.user);
+					localStorage.setItem('authUser', JSON.stringify(res.data.user));
+				})
+				.catch(() => {
+					// Token expired or invalid — clear everything
+					localStorage.removeItem('authToken');
+					localStorage.removeItem('authUser');
+					setToken(null);
+				})
+				.finally(() => setLoading(false));
+		} else {
+			setLoading(false);
 		}
-		setLoading(false);
 	}, []);
 
 	const login = useCallback((userData, authToken) => {

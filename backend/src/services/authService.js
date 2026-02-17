@@ -7,6 +7,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const BCRYPT_ROUNDS = 12;
 
+/** Escape special regex characters to prevent ReDoS / injection */
+function escapeRegex(str) {
+	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});
 
 const sanitizeUser = (userDoc) => {
@@ -43,8 +48,8 @@ class AuthService {
 		// Check if user already exists
 		const existingUser = await User.findOne({
 			$or: [
-				{ username: { $regex: new RegExp(`^${username}$`, 'i') } },
-				{ email: { $regex: new RegExp(`^${email}$`, 'i') } }
+				{ username: { $regex: new RegExp(`^${escapeRegex(username)}$`, 'i') } },
+				{ email: { $regex: new RegExp(`^${escapeRegex(email)}$`, 'i') } }
 			],
 			isDeleted: { $ne: true }
 		});
@@ -64,7 +69,7 @@ class AuthService {
 			username,
 			email,
 			passwordHash,
-			role: rest.role || 'player',
+			role: 'player',
 			profile: rest.profile || {},
 		});
 
@@ -85,8 +90,8 @@ class AuthService {
 		// Find user by username or email
 		const user = await User.findOne({
 			$or: [
-				{ username: { $regex: new RegExp(`^${identifier}$`, 'i') } },
-				{ email: { $regex: new RegExp(`^${identifier}$`, 'i') } }
+				{ username: { $regex: new RegExp(`^${escapeRegex(identifier)}$`, 'i') } },
+				{ email: { $regex: new RegExp(`^${escapeRegex(identifier)}$`, 'i') } }
 			],
 			isDeleted: { $ne: true }
 		});
