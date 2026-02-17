@@ -1,5 +1,6 @@
 const asyncHandler = require('../middleware/asyncHandler');
 const authService = require('../services/authService');
+const { AUTH_ENABLED } = require('../middleware/auth');
 
 /**
  * POST /api/auth/register
@@ -53,3 +54,14 @@ exports.getMe = asyncHandler(async (req, res) => {
 		},
 	});
 });
+
+/**
+ * GET /api/auth/status
+ * Returns whether authentication is enabled or disabled
+ */
+exports.getAuthStatus = (req, res) => {
+	res.json({
+		success: true,
+		authEnabled: AUTH_ENABLED,
+	});
+};

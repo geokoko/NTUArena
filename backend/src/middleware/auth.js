@@ -5,10 +5,44 @@ const { findByIdOrPublicId } = require('../utils/identifiers');
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
 /**
+ * When AUTH_ENABLED=false, all auth middleware is bypassed
+ * and a mock admin user is injected into every request.
+ * Default: true (auth is enforced).
+ */
+const AUTH_ENABLED = process.env.AUTH_ENABLED !== 'false';
+
+if (!AUTH_ENABLED) {
+	console.warn('\n⚠️  AUTH_ENABLED=false — Authentication is DISABLED. All requests will run as a mock admin user.\n');
+}
+
+const DEV_MOCK_USER = {
+	_id: 'dev-user',
+	publicId: 'dev-user',
+	username: 'dev-admin',
+	email: 'dev@localhost',
+	role: 'admin',
+	isActive: true,
+	isDeleted: false,
+	globalElo: 0,
+	profile: { firstName: 'Dev', lastName: 'Admin' },
+	statistics: {},
+	settings: {},
+	registeredAt: new Date(),
+};
+
+/**
  * Middleware to require authentication.
- * Validates JWT from Authorization header and attaches user to req.user
+ * Validates JWT from Authorization header and attaches user to req.user.
+ * Bypassed when AUTH_ENABLED=false.
  */
 const requireAuth = async (req, res, next) => {
+	// Bypass: inject mock admin user when auth is disabled
+	if (!AUTH_ENABLED) {
+		req.user = DEV_MOCK_USER;
+		req.userId = DEV_MOCK_USER.publicId;
+		return next();
+	}
+
 	try {
 		const authHeader = req.headers.authorization;
 		
@@ -52,10 +86,16 @@ const requireAuth = async (req, res, next) => {
 /**
  * Middleware factory to require a specific role.
  * Must be used after requireAuth.
+ * Bypassed when AUTH_ENABLED=false (mock user is admin).
  * @param {...string} roles - Allowed roles
  */
 const requireRole = (...roles) => {
 	return (req, res, next) => {
+		// Bypass: mock user is admin, always passes
+		if (!AUTH_ENABLED) {
+			return next();
+		}
+
 		if (!req.user) {
 			return res.status(401).json({ error: 'Authentication required' });
 		}
@@ -71,4 +111,5 @@ const requireRole = (...roles) => {
 	};
 };
 
-module.exports = { requireAuth, requireRole };
+module.exports = { requireAuth, requireRole, AUTH_ENABLED };
+

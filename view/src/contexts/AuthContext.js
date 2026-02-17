@@ -15,31 +15,63 @@ export const AuthProvider = ({ children }) => {
 	const [user, setUser] = useState(null);
 	const [token, setToken] = useState(null);
 	const [loading, setLoading] = useState(true);
+	const [authEnabled, setAuthEnabled] = useState(true);
 
-	// Load token from localStorage and validate against server on mount
+	// Check auth status and validate token on mount
 	useEffect(() => {
-		const storedToken = localStorage.getItem('authToken');
-		
-		if (storedToken) {
-			// Set token so the API interceptor includes it
-			setToken(storedToken);
-			
-			// Validate token against the server
-			authAPI.getMe()
-				.then((res) => {
-					setUser(res.data.user);
-					localStorage.setItem('authUser', JSON.stringify(res.data.user));
-				})
-				.catch(() => {
-					// Token expired or invalid — clear everything
-					localStorage.removeItem('authToken');
-					localStorage.removeItem('authUser');
-					setToken(null);
-				})
-				.finally(() => setLoading(false));
-		} else {
-			setLoading(false);
-		}
+		authAPI.getAuthStatus()
+			.then((res) => {
+				const enabled = res.data.authEnabled;
+				setAuthEnabled(enabled);
+
+				if (!enabled) {
+					// Auth disabled: auto-authenticate as mock admin
+					setUser({
+						id: 'dev-user',
+						username: 'dev-admin',
+						email: 'dev@localhost',
+						role: 'admin',
+						isActive: true,
+					});
+					setToken('auth-disabled');
+					setLoading(false);
+					return;
+				}
+
+				// Auth enabled: validate stored token
+				const storedToken = localStorage.getItem('authToken');
+				if (storedToken) {
+					setToken(storedToken);
+					authAPI.getMe()
+						.then((meRes) => {
+							setUser(meRes.data.user);
+							localStorage.setItem('authUser', JSON.stringify(meRes.data.user));
+						})
+						.catch(() => {
+							localStorage.removeItem('authToken');
+							localStorage.removeItem('authUser');
+							setToken(null);
+						})
+						.finally(() => setLoading(false));
+				} else {
+					setLoading(false);
+				}
+			})
+			.catch(() => {
+				// Can't reach server — fall back to localStorage
+				const storedToken = localStorage.getItem('authToken');
+				const storedUser = localStorage.getItem('authUser');
+				if (storedToken && storedUser) {
+					try {
+						setToken(storedToken);
+						setUser(JSON.parse(storedUser));
+					} catch (e) {
+						localStorage.removeItem('authToken');
+						localStorage.removeItem('authUser');
+					}
+				}
+				setLoading(false);
+			});
 	}, []);
 
 	const login = useCallback((userData, authToken) => {
@@ -64,6 +96,7 @@ export const AuthProvider = ({ children }) => {
 		user,
 		token,
 		loading,
+		authEnabled,
 		isAuthenticated,
 		isAdmin,
 		isPlayer,
@@ -79,3 +112,4 @@ export const AuthProvider = ({ children }) => {
 };
 
 export default AuthContext;
+

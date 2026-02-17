@@ -4,6 +4,7 @@ const authController = require('../controllers/authController');
 const { requireAuth } = require('../middleware/auth');
 
 // Public routes
+router.get('/auth/status', authController.getAuthStatus);
 router.post('/auth/register', authController.register);
 router.post('/auth/login', authController.login);
 

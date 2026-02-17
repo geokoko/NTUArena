@@ -47,6 +47,8 @@ services:
       NODE_ENV: development
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
       JWT_EXPIRES_IN: 7d
+      # Set to "false" to disable authentication during development
+      AUTH_ENABLED: "true"
     depends_on:
       mongo:
         condition: service_healthy
