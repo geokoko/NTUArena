@@ -3,7 +3,11 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { findByIdOrPublicId, ensureDocumentPublicId } = require('../utils/identifiers');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+if (!process.env.JWT_SECRET) {
+	console.error('FATAL: JWT_SECRET environment variable is not set. Exiting.');
+	process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const BCRYPT_ROUNDS = 12;
 

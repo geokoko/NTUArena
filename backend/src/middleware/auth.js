@@ -2,7 +2,11 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { findByIdOrPublicId } = require('../utils/identifiers');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+if (!process.env.JWT_SECRET) {
+	console.error('FATAL: JWT_SECRET environment variable is not set. Exiting.');
+	process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 /**
  * When AUTH_ENABLED=false, all auth middleware is bypassed
