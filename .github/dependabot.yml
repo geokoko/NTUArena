@@ -1,0 +1,28 @@
+# Dependabot configuration
+# Groups all dependency updates into a single PR per ecosystem
+
+version: 2
+updates:
+  # Backend (Node.js)
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      all-backend-deps:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  # Frontend (React)
+  - package-ecosystem: "npm"
+    directory: "/view"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      all-frontend-deps:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
