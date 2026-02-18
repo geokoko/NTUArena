@@ -45,8 +45,8 @@ NTUArena is a web application built for **Skaki NTUA – Le Roi**, the chess clu
 |-------|-----------|
 | **Frontend** | React 18, React Router |
 | **Backend** | Node.js, Express |
-| **Database** | MongoDB 7 (replica set) |
-| **Cache** | Redis 7 |
+| **Database** | MongoDB |
+| **Cache** | Redis |
 | **Reverse Proxy** | Nginx |
 | **Containerization** | Docker Compose |
 
