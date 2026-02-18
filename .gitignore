@@ -27,3 +27,12 @@ yarn-error.log*
 
 # Dummy CSV files
 dummy_*.csv
+
+# Database backups
+backups/
+
+# SSL certificates
+nginx/certs/
+
+# MongoDB replica set keyfile
+mongo-keyfile

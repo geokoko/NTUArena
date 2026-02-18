@@ -3,18 +3,55 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('express-mongo-sanitize');
 const connectDB = require('./config/database');
 
 const app = express();
 
-// Security & parsing
+// Security headers
 app.use(helmet());
-app.use(cors());
+
+// CORS
+const corsOrigin = process.env.CORS_ORIGIN || '*';
+app.use(cors({
+	origin: corsOrigin === '*' ? true : corsOrigin.split(',').map(s => s.trim()),
+	credentials: true,
+}));
+
+// Body parsing 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Logging (dev only is common; keep always-on if you prefer)
-if (process.env.NODE_ENV !== 'production') {
+// NoSQL injection sanitization
+app.use(mongoSanitize());
+
+// Rate limiting
+// General limiter: 200 requests per 15 min per IP
+const generalLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000,
+	max: 200,
+	standardHeaders: true,
+	legacyHeaders: false,
+	message: { error: 'Too many requests, please try again later.' },
+});
+app.use(generalLimiter);
+
+// Strict limiter for auth endpoints: 20 requests per 15 min per IP
+const authLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000,
+	max: 20,
+	standardHeaders: true,
+	legacyHeaders: false,
+	message: { error: 'Too many authentication attempts, please try again later.' },
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
+// Logging
+if (process.env.NODE_ENV === 'production') {
+	app.use(morgan('combined'));
+} else {
 	app.use(morgan('dev'));
 }
 
@@ -30,6 +67,7 @@ app.get('/health', (req, res) => {
 
 
 // API routes with /api prefix
+app.use('/api', require('./routes/auth'));
 app.use('/api', require('./routes/users'));
 app.use('/api', require('./routes/tournaments'));
 app.use('/api', require('./routes/games'));
@@ -57,4 +95,5 @@ connectDB()
 		console.error('Failed to start monolith:', err);
 		process.exit(1);
 	});
+
 

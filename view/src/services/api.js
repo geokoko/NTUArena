@@ -8,15 +8,48 @@ const api = axios.create({
 	headers: { 'Content-Type': 'application/json' },
 });
 
-// Normalize errors -> { status, message }
+// Request interceptor - attach JWT token
+api.interceptors.request.use(
+	(config) => {
+		const token = localStorage.getItem('authToken');
+		if (token) {
+			config.headers.Authorization = `Bearer ${token}`;
+		}
+		return config;
+	},
+	(error) => Promise.reject(error)
+);
+
+// Response interceptor - normalize errors & handle 401
 api.interceptors.response.use(
 	(res) => res,
 	(err) => {
 		const status = err.response?.status ?? 0;
 		const message = err.response?.data?.error || err.message || 'Request failed';
+		
+		// Handle 401 Unauthorized - token expired or invalid
+		if (status === 401) {
+			// Clear auth data
+			localStorage.removeItem('authToken');
+			localStorage.removeItem('authUser');
+			
+			// Redirect to login if not already there
+			if (window.location.pathname !== '/login') {
+				window.location.href = '/login?session=expired';
+			}
+		}
+		
 		return Promise.reject({ status, message });
 	}
 );
+
+/** ---------------- Auth ---------------- **/
+export const authAPI = {
+	getAuthStatus: () => api.get('/api/auth/status'),
+	register: (data) => api.post('/api/auth/register', data),
+	login: (username, password) => api.post('/api/auth/login', { username, password }),
+	getMe: () => api.get('/api/auth/me'),
+};
 
 /** ---------------- Health ---------------- **/
 export const healthAPI = {
