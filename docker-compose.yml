@@ -11,7 +11,7 @@ services:
   mongo:
     image: mongo:latest
     hostname: mongo
-    command: ["mongod" ,"--replSet", "rs0", "--bind_ip_all", "--quiet"]
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--quiet"]
     networks:
       default:
         aliases:
@@ -20,26 +20,23 @@ services:
       - "mongo:127.0.0.1"
     environment:
       MONGO_INITDB_DATABASE: ${MONGO_DB}
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "mongosh -u ${MONGO_ROOT_USERNAME} -p ${MONGO_ROOT_PASSWORD} --authenticationDatabase admin --quiet --eval 'rs.status().ok' | grep 1"]
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' | grep 1"]
       interval: 5s
       timeout: 5s
-      retries: 60
+      retries: 30
 
+  # One-shot container: waits for mongod, initiates replica set, then exits
   mongo-init:
     image: mongo:latest
     depends_on:
       mongo:
         condition: service_started
-    environment:
-      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     networks:
       default:
+    restart: "no"
     entrypoint: >
       bash -c '
         echo "Waiting for mongod to accept connections..."
@@ -81,6 +78,8 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 

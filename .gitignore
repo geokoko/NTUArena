@@ -33,3 +33,6 @@ backups/
 
 # SSL certificates
 nginx/certs/
+
+# MongoDB replica set keyfile
+mongo-keyfile
