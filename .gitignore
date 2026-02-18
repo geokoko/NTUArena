@@ -27,3 +27,9 @@ yarn-error.log*
 
 # Dummy CSV files
 dummy_*.csv
+
+# Database backups
+backups/
+
+# SSL certificates
+nginx/certs/
