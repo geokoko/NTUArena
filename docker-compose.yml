@@ -24,12 +24,44 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo-data:/data/db
-      - ./mongo-init/replica-init.js:/docker-entrypoint-initdb.d/replica-init.js:ro
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval 'rs.status().ok' | grep 1"]
+      test: ["CMD-SHELL", "mongosh -u ${MONGO_ROOT_USERNAME} -p ${MONGO_ROOT_PASSWORD} --authenticationDatabase admin --quiet --eval 'rs.status().ok' | grep 1"]
       interval: 5s
       timeout: 5s
       retries: 60
+
+  mongo-init:
+    image: mongo:latest
+    depends_on:
+      mongo:
+        condition: service_started
+    environment:
+      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    networks:
+      default:
+    entrypoint: >
+      bash -c '
+        echo "Waiting for mongod to accept connections..."
+        until mongosh --host mongo --quiet --eval "db.runCommand({ping:1})" 2>/dev/null; do
+          sleep 2
+        done
+        echo "Mongod is up. Initiating replica set..."
+        mongosh --host mongo --quiet --eval "
+          try {
+            rs.initiate({ _id: \"rs0\", members: [{ _id: 0, host: \"mongo:27017\" }] });
+            print(\"Replica set initiated!\");
+          } catch (e) {
+            if (/already initialized/i.test(e.message)) {
+              print(\"Replica set already initialized.\");
+            } else {
+              print(\"Error: \" + e.message);
+              quit(1);
+            }
+          }
+        "
+        echo "Done."
+      '
 
   backend:
     build:
