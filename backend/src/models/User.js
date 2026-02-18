@@ -5,6 +5,7 @@ const userSchema = new mongoose.Schema({
 	publicId: { type: String, unique: true, default: () => createPublicId() },
 	username: { type: String, required: true, unique: true },
 	email: { type: String, required: true, unique: true },
+	passwordHash: { type: String, default: null },
 	role: { type: String, enum: ['player', 'admin', 'spectator'], default: 'player' },
 	fide_id: { type: Number, default: null },
 	globalElo: { type: Number, default: 0 },

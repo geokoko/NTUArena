@@ -1,10 +1,9 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -12,59 +11,103 @@ services:
   mongo:
     image: mongo:latest
     hostname: mongo
-    command: ["mongod" ,"--replSet", "rs0", "--bind_ip_all", "--quiet"]
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--quiet"]
     networks:
       default:
         aliases:
           - mongo
     extra_hosts:
       - "mongo:127.0.0.1"
-    ports:
-      - "27017:27017"
     environment:
-      MONGO_INITDB_DATABASE: ntuarena
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
     volumes:
       - mongo-data:/data/db
-      - ./mongo-init/replica-init.js:/docker-entrypoint-initdb.d/replica-init.js:ro
     healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval 'rs.status().ok' | grep 1"]
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' | grep 1"]
       interval: 5s
       timeout: 5s
-      retries: 60
+      retries: 30
+
+  # One-shot container: waits for mongod, initiates replica set, then exits
+  mongo-init:
+    image: mongo:latest
+    depends_on:
+      mongo:
+        condition: service_started
+    networks:
+      default:
+    restart: "no"
+    entrypoint: >
+      bash -c '
+        echo "Waiting for mongod to accept connections..."
+        until mongosh --host mongo --quiet --eval "db.runCommand({ping:1})" 2>/dev/null; do
+          sleep 2
+        done
+        echo "Mongod is up. Initiating replica set..."
+        mongosh --host mongo --quiet --eval "
+          try {
+            rs.initiate({ _id: \"rs0\", members: [{ _id: 0, host: \"mongo:27017\" }] });
+            print(\"Replica set initiated!\");
+          } catch (e) {
+            if (/already initialized/i.test(e.message)) {
+              print(\"Replica set already initialized.\");
+            } else {
+              print(\"Error: \" + e.message);
+              quit(1);
+            }
+          }
+        "
+        echo "Done."
+      '
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ntuarena-backend
-    ports:
-      - "5000:5000"
     environment:
-      PORT: 5000
-      MONGO_URI: mongodb://mongo:27017/ntuarena?replicaSet=rs0
-      MONGO_DB: ntuarena
-      REDIS_URL: redis://redis:6379
-      NODE_ENV: development
+      PORT: ${PORT}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB: ${MONGO_DB}
+      REDIS_URL: ${REDIS_URL}
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      AUTH_ENABLED: ${AUTH_ENABLED}
+      CORS_ORIGIN: ${CORS_ORIGIN}
     depends_on:
       mongo:
         condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
   frontend:
-    build: ./view
+    build:
+      context: ./view
+      dockerfile: Dockerfile.${APP_MODE:-dev}
     container_name: arena_frontend
-    ports:
-      - "3000:3000"
     environment:
       CHOKIDAR_USEPOLLING: true
-      FAST_REFRESH: true
     volumes:
       - ./view/src:/app/src
-      - ./view/public:/app/public
-      - /app/node_modules
     depends_on:
       - backend
+
+  nginx:
+    image: nginx:alpine
+    container_name: ntuarena-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.${APP_MODE:-dev}.conf:/etc/nginx/nginx.conf:ro
+      # Uncomment when SSL certificates are added 
+      # - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+      - frontend
     restart: unless-stopped
 
 volumes:
