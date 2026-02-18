@@ -1,10 +1,9 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -19,10 +18,10 @@ services:
           - mongo
     extra_hosts:
       - "mongo:127.0.0.1"
-    ports:
-      - "27017:27017"
     environment:
-      MONGO_INITDB_DATABASE: ntuarena
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo-data:/data/db
       - ./mongo-init/replica-init.js:/docker-entrypoint-initdb.d/replica-init.js:ro
@@ -40,15 +39,14 @@ services:
     ports:
       - "5000:5000"
     environment:
-      PORT: 5000
-      MONGO_URI: mongodb://mongo:27017/ntuarena?replicaSet=rs0
-      MONGO_DB: ntuarena
-      REDIS_URL: redis://redis:6379
-      NODE_ENV: development
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
-      JWT_EXPIRES_IN: 7d
-      # Set to "false" to disable authentication during development
-      AUTH_ENABLED: "true"
+      PORT: ${PORT}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB: ${MONGO_DB}
+      REDIS_URL: ${REDIS_URL}
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      AUTH_ENABLED: ${AUTH_ENABLED}
     depends_on:
       mongo:
         condition: service_healthy
@@ -73,3 +71,4 @@ services:
 
 volumes:
   mongo-data:
+
