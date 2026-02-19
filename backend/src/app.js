@@ -13,6 +13,22 @@ app.use(helmet());
 const corsOrigin = process.env.CORS_ORIGIN;
 if (!corsOrigin) throw new Error('CORS_ORIGIN environment variable is required');
 
+// Enforce consistency between APP_MODE and NODE_ENV
+const appMode = process.env.APP_MODE;
+const nodeEnv = process.env.NODE_ENV;
+
+if (appMode === 'prod' && nodeEnv !== 'production') {
+	throw new Error('Configuration Mismatch: APP_MODE=prod requires NODE_ENV=production');
+}
+if (appMode === 'dev' && nodeEnv !== 'development') {
+	// Warn but don't crash for dev mismatches, as sometimes dev uses 'test' or others
+	console.warn(`Warning: APP_MODE=dev but NODE_ENV=${nodeEnv}. Expected 'development'.`);
+}
+
+if (nodeEnv === 'production' && corsOrigin === '*') {
+	throw new Error('CORS_ORIGIN cannot be * in production');
+}
+
 app.use(cors({
 	origin: corsOrigin === '*' ? true : corsOrigin.split(',').map(s => s.trim()),
 	credentials: true,
