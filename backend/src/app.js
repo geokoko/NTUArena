@@ -10,7 +10,9 @@ const app = express();
 app.use(helmet());
 
 // CORS
-const corsOrigin = process.env.CORS_ORIGIN || '*';
+const corsOrigin = process.env.CORS_ORIGIN;
+if (!corsOrigin) throw new Error('CORS_ORIGIN environment variable is required');
+
 app.use(cors({
 	origin: corsOrigin === '*' ? true : corsOrigin.split(',').map(s => s.trim()),
 	credentials: true,
