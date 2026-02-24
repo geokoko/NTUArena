@@ -43,6 +43,10 @@ app.use(express.urlencoded({ extended: true }));
 // so we sanitize only req.body and req.params manually.
 const sanitize = (obj) => {
 	if (!obj || typeof obj !== 'object') return obj;
+	if (Array.isArray(obj)) {
+		obj.forEach(item => sanitize(item));
+		return obj;
+	}
 	for (const key of Object.keys(obj)) {
 		if (key.startsWith('$')) {
 			delete obj[key];
