@@ -75,6 +75,7 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
       AUTH_ENABLED: ${AUTH_ENABLED}
       CORS_ORIGIN: ${CORS_ORIGIN}
+      APP_MODE: ${APP_MODE}
     depends_on:
       mongo:
         condition: service_healthy

@@ -380,7 +380,7 @@ class TournamentService {
 			typeof tournament.maxPlayers === 'number' &&
 			tournament.maxPlayers > 0
 		) {
-			const activeCount = await Player.countDocuments({ tournament: tournamentId, status: { $nin: ['withdrawn'] } });
+			const activeCount = await Player.countDocuments({ tournament: tournament._id, status: { $nin: ['withdrawn'] } });
 			if (activeCount >= tournament.maxPlayers) {
 				throw makeError('Tournament is full');
 			}

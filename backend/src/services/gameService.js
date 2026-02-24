@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Game = require('../models/Game');
 const Player = require('../models/Player');
+const User = require('../models/User');
 const Tournament = require('../models/Tournament');
 const { enqueue } = require('./queue/redisQueue');
 const {

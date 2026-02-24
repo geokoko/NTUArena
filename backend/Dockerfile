@@ -8,17 +8,16 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
 
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl dos2unix
+
+COPY --chown=node:node entrypoint.sh /app/entrypoint.sh
+RUN dos2unix /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
   CMD curl -fsS "http://localhost:${PORT}/health" || exit 1
 
 USER node
-
-
-COPY --chown=node:node entrypoint.sh /app/entrypoint.sh
-
 
 CMD [ "./entrypoint.sh" ]
 
