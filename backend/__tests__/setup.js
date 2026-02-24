@@ -1,5 +1,7 @@
 // Set required env variables before importing any app modules
 process.env.JWT_SECRET = 'test-secret-for-unit-tests';
+process.env.CORS_ORIGIN = '*';
+process.env.NODE_ENV = 'test';
 
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
