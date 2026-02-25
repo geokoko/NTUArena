@@ -9,6 +9,8 @@ const GameSchema = new mongoose.Schema({
 	isFinished: { type: Boolean, default: false },
 	finishedAt: { type: Date },
 	resultColor: { type: String, enum: ['white', 'draw', 'black'] },
+	isCancelled: { type: Boolean, default: false },
+	cancelledAt: { type: Date },
 	createdAt: { type: Date, default: Date.now }
 });
 
