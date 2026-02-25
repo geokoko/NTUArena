@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { tournamentAPI, gameAPI } from '../services/api';
+import { tournamentAPI, gameAPI, userAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { getDisplayName } from '../utils/tournamentDisplay';
+import CSVImport from '../components/CSVImport';
 import './TournamentDetail.css';
 
 const PLAYERS_PER_PAGE = 15;
 const AUTO_REFRESH_MS = 1000;
+const PLAYERS_CSV_TEMPLATE = `name,rating,identifier
+John Doe,1500,john@example.com
+Jane Smith,1600,
+Guest Player,1400,`;
 
 const TournamentDetail = () => {
 	const { id } = useParams();
@@ -25,6 +31,10 @@ const TournamentDetail = () => {
 	const [actionError, setActionError] = useState('');
 	const [submittingGameId, setSubmittingGameId] = useState(null);
 	const [selectedHistoryPlayerId, setSelectedHistoryPlayerId] = useState('');
+	const [users, setUsers] = useState([]);
+	const [usersError, setUsersError] = useState('');
+	const [addSelection, setAddSelection] = useState('');
+	const [showCSVImport, setShowCSVImport] = useState(false);
 
 	const loadTournamentDetails = useCallback(async () => {
 		try {
@@ -88,6 +98,28 @@ const TournamentDetail = () => {
 		}
 	}, [id]);
 
+	const refreshTournament = useCallback(async () => {
+		if (!id) return;
+		try {
+			const { data } = await tournamentAPI.getTournament(id);
+			setTournament(data || null);
+		} catch (err) {
+			console.error('Refresh tournament error:', err);
+		}
+	}, [id]);
+
+	const fetchUsers = useCallback(async () => {
+		if (!isAdmin) return;
+		setUsersError('');
+		try {
+			const res = await userAPI.getAll();
+			const list = res.data?.users || res.data || [];
+			setUsers(Array.isArray(list) ? list : []);
+		} catch (err) {
+			setUsersError(err.message || 'Failed to load users');
+		}
+	}, [isAdmin]);
+
 	useEffect(() => {
 		setLoading(true);
 		setError('');
@@ -101,6 +133,12 @@ const TournamentDetail = () => {
 		}, AUTO_REFRESH_MS);
 		return () => clearInterval(timer);
 	}, [autoRefresh, activeTab, refreshGames]);
+
+	useEffect(() => {
+		if (!isAdmin || activeTab !== 'manage') return;
+		if (users.length > 0) return;
+		fetchUsers();
+	}, [activeTab, fetchUsers, isAdmin, users.length]);
 
 	useEffect(() => {
 		setCurrentPage(1);
@@ -193,18 +231,23 @@ const TournamentDetail = () => {
 		);
 	}, [completedGames, selectedHistoryPlayerId]);
 
+	const addableUsers = useMemo(() => {
+		const existingUserIds = new Set(players.map((p) => p.userId).filter(Boolean));
+		return users.filter((u) => !existingUserIds.has(u.id));
+	}, [players, users]);
+
 	const withAdminAction = useCallback(async (fn) => {
 		setActionLoading(true);
 		setActionError('');
 		try {
 			await fn();
-			await Promise.all([refreshPlayers(), refreshGames(), refreshStandings()]);
+			await Promise.all([refreshPlayers(), refreshGames(), refreshStandings(), refreshTournament()]);
 		} catch (err) {
 			setActionError(err.message || 'Action failed');
 		} finally {
 			setActionLoading(false);
 		}
-	}, [refreshPlayers, refreshGames, refreshStandings]);
+	}, [refreshPlayers, refreshGames, refreshStandings, refreshTournament]);
 
 	const handlePausePlayer = useCallback((userId) =>
 		withAdminAction(async () => {
@@ -236,6 +279,29 @@ const TournamentDetail = () => {
 			setSubmittingGameId(null);
 		}
 	}, [refreshGames, refreshStandings, refreshPlayers]);
+
+	const handleAddPlayer = useCallback(() =>
+		withAdminAction(async () => {
+			if (!addSelection) return;
+			await tournamentAPI.adminAddPlayer(id, addSelection);
+			setAddSelection('');
+		}), [withAdminAction, addSelection, id]);
+
+	const handleCSVImport = useCallback(async (csvText) => {
+		const res = await tournamentAPI.importPlayersCSV(id, csvText);
+		await Promise.all([refreshPlayers(), refreshStandings(), refreshGames(), refreshTournament()]);
+		return res.data;
+	}, [id, refreshGames, refreshPlayers, refreshStandings, refreshTournament]);
+
+	const handleStartTournament = useCallback(() =>
+		withAdminAction(async () => {
+			await tournamentAPI.startTournament(id);
+		}), [withAdminAction, id]);
+
+	const handleEndTournament = useCallback(() =>
+		withAdminAction(async () => {
+			await tournamentAPI.endTournament(id);
+		}), [withAdminAction, id]);
 
 	if (loading) {
 		return (
@@ -639,6 +705,72 @@ const TournamentDetail = () => {
 						<h3 className="card-title">Manage Participants</h3>
 					</div>
 					{actionError && <div className="alert alert-danger mb-3">{actionError}</div>}
+					{usersError && <div className="alert alert-warning mb-3">{usersError}</div>}
+					<div className="tournament-admin__lifecycle">
+						<button
+							type="button"
+							className="btn btn-sm btn-success tournament-admin__lifecycle-btn"
+							onClick={handleStartTournament}
+							disabled={tournament?.tournStatus !== 'upcoming' || actionLoading}
+						>
+							Start Tournament
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm btn-warning tournament-admin__lifecycle-btn"
+							onClick={handleEndTournament}
+							disabled={tournament?.tournStatus !== 'in progress' || actionLoading}
+						>
+							End Tournament
+						</button>
+					</div>
+					<div className="tournament-admin__add-panel">
+						<div className="tournament-admin__add-row">
+							<div className="tournament-admin__add-field">
+								<label htmlFor="add-participant" className="form-label small mb-1">Add existing user</label>
+								<select
+									id="add-participant"
+									className="form-select form-select-sm"
+									value={addSelection}
+									onChange={(e) => setAddSelection(e.target.value)}
+								>
+									<option value="">Select user</option>
+									{addableUsers.map((candidate) => (
+										<option key={candidate.id} value={candidate.id}>
+											{getDisplayName(candidate)}
+										</option>
+									))}
+								</select>
+							</div>
+							<button
+								type="button"
+								className="btn btn-sm btn-primary tournament-admin__add-btn"
+								onClick={handleAddPlayer}
+								disabled={!addSelection || actionLoading}
+							>
+								Add participant
+							</button>
+						</div>
+						<div className="tournament-admin__import">
+							<button
+								type="button"
+								className={`btn btn-sm ${showCSVImport ? 'btn-secondary' : 'btn-outline-secondary'}`}
+								onClick={() => setShowCSVImport(!showCSVImport)}
+							>
+								{showCSVImport ? 'Hide CSV Import' : 'Import Players from CSV'}
+							</button>
+							{showCSVImport && (
+								<div className="tournament-admin__import-widget">
+									<CSVImport
+										type="players"
+										onImport={handleCSVImport}
+										templateContent={PLAYERS_CSV_TEMPLATE}
+										templateFilename="players_template.csv"
+									/>
+								</div>
+							)}
+						</div>
+					</div>
 					{players.length === 0 ? (
 						<p className="text-muted text-center">No participants registered.</p>
 					) : (
