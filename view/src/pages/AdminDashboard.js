@@ -41,16 +41,7 @@ const AdminDashboard = () => {
 						</div>
 					</div>
 				</div>
-                <div className="col-md-6 col-lg-4">
-					<div className="card h-100">
-						<div className="card-body">
-							<h5 className="card-title">Ongoing Games</h5>
-							<p className="card-text text-muted">Monitor and manage active games.</p>
-							<Link to="/admin/games" className="btn btn-primary">Manage Games</Link>
-						</div>
-					</div>
-				</div>
-                <div className="col-md-6 col-lg-4">
+				<div className="col-md-6 col-lg-4">
 					<div className="card h-100">
 						<div className="card-body">
 							<h5 className="card-title">Tournaments</h5>

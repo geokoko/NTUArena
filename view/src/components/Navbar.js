@@ -38,7 +38,6 @@ const Navbar = () => {
 				{isAdmin && (
 					<>
 						<li><Link to="/admin">Dashboard</Link></li>
-						<li><Link to="/admin/games">Ongoing Games</Link></li>
 						<li><Link to="/users">User Database</Link></li>
 					</>
 				)}

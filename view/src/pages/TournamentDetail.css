@@ -52,6 +52,104 @@
 	color: #fff;
 }
 
+/* Active games */
+.tournament-active__header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 1rem;
+}
+
+.tournament-active__subtitle {
+	margin: 0.35rem 0 0;
+	color: var(--text-muted, #d4c4b0);
+	font-size: 0.85rem;
+}
+
+.tournament-active__controls {
+	display: flex;
+	gap: 1rem;
+	align-items: center;
+	flex-wrap: wrap;
+}
+
+.tournament-active__timestamp {
+	margin: -0.5rem 1.5rem 0.75rem;
+	font-size: 0.8rem;
+	color: var(--text-muted, #d4c4b0);
+}
+
+.tournament-active__table th,
+.tournament-active__table td {
+	color: #e8e1d7;
+}
+
+.tournament-active__result-buttons {
+	display: flex;
+	gap: 0.35rem;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+}
+
+/* History */
+.tournament-history__header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
+}
+
+.tournament-history__controls {
+	min-width: 220px;
+}
+
+.tournament-history__table th,
+.tournament-history__table td {
+	color: #e8e1d7;
+}
+
+/* Admin manage */
+.tournament-admin__table th,
+.tournament-admin__table td {
+	color: #e8e1d7;
+}
+
+.tournament-admin__actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.tournament-admin__note {
+	color: var(--text-muted, #d4c4b0);
+	font-size: 0.85rem;
+}
+
+.tournament-admin__status {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.25rem 0.6rem;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	text-transform: capitalize;
+}
+
+.tournament-admin__status--active {
+	background: rgba(72, 187, 120, 0.2);
+	color: #68d391;
+}
+
+.tournament-admin__status--paused {
+	background: rgba(246, 173, 85, 0.2);
+	color: #f6ad55;
+}
+
+.tournament-admin__status--withdrawn {
+	background: rgba(160, 174, 192, 0.2);
+	color: #e2e8f0;
+}
+
 /* Tournament Info Card */
 .tournament-info-card {
 	background: linear-gradient(135deg, rgba(90, 103, 216, 0.15) 0%, rgba(76, 81, 191, 0.1) 100%);
@@ -459,6 +557,16 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+	.tournament-active__header,
+	.tournament-history__header {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.tournament-history__controls {
+		width: 100%;
+	}
+
 	.stats-grid {
 		grid-template-columns: repeat(2, 1fr);
 	}
