@@ -547,31 +547,31 @@ const TournamentDetail = () => {
 											<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
 											<td>{formatDateTime(game.startedAt)}</td>
 											<td>{getGameResultDisplay(game)}</td>
-											{isAdmin && (
-												<td className="text-end">
-													<div className="tournament-active__result-buttons">
-														<button
-															className="btn btn-sm btn-success"
-															onClick={() => handleSubmitResult(game.id, 'white')}
-															disabled={!!submittingGameId}
-														>
-															White wins
-														</button>
-														<button
-															className="btn btn-sm btn-dark"
-															onClick={() => handleSubmitResult(game.id, 'black')}
-															disabled={!!submittingGameId}
-														>
-															Black wins
-														</button>
-														<button
-															className="btn btn-sm btn-secondary"
-															onClick={() => handleSubmitResult(game.id, 'draw')}
-															disabled={!!submittingGameId}
-														>
-															Draw
-														</button>
-													</div>
+								{isAdmin && (
+									<td className="text-end">
+										<div className="tournament-active__result-buttons">
+											<button
+												className="btn btn-sm btn-success tournament-active__result-btn tournament-active__result-btn--white"
+												onClick={() => handleSubmitResult(game.id, 'white')}
+												disabled={!!submittingGameId}
+											>
+												White wins
+											</button>
+											<button
+												className="btn btn-sm btn-dark tournament-active__result-btn tournament-active__result-btn--black"
+												onClick={() => handleSubmitResult(game.id, 'black')}
+												disabled={!!submittingGameId}
+											>
+												Black wins
+											</button>
+											<button
+												className="btn btn-sm btn-secondary tournament-active__result-btn tournament-active__result-btn--draw"
+												onClick={() => handleSubmitResult(game.id, 'draw')}
+												disabled={!!submittingGameId}
+											>
+												Draw
+											</button>
+										</div>
 												</td>
 											)}
 										</tr>
@@ -667,31 +667,31 @@ const TournamentDetail = () => {
 												</td>
 												<td className="text-end">
 													<div className="tournament-admin__actions">
-														{statusRaw === 'active' && (
-															<button
-																className="btn btn-sm btn-outline-warning"
-																onClick={() => handlePausePlayer(userId)}
-																disabled={actionLoading}
-															>
-																Pause
+										{statusRaw === 'active' && (
+											<button
+												className="btn btn-sm btn-outline-warning tournament-admin__action-btn tournament-admin__action-btn--pause"
+												onClick={() => handlePausePlayer(userId)}
+												disabled={actionLoading}
+											>
+												Pause
 															</button>
 														)}
-														{statusRaw === 'paused' && (
-															<button
-																className="btn btn-sm btn-outline-success"
-																onClick={() => handleResumePlayer(userId)}
-																disabled={actionLoading}
-															>
-																Resume
+										{statusRaw === 'paused' && (
+											<button
+												className="btn btn-sm btn-outline-success tournament-admin__action-btn tournament-admin__action-btn--resume"
+												onClick={() => handleResumePlayer(userId)}
+												disabled={actionLoading}
+											>
+												Resume
 															</button>
 														)}
-														{statusRaw !== 'withdrawn' && (
-															<button
-																className="btn btn-sm btn-outline-danger"
-																onClick={() => handleRemovePlayer(userId)}
-																disabled={actionLoading}
-															>
-																Remove
+										{statusRaw !== 'withdrawn' && (
+											<button
+												className="btn btn-sm btn-outline-danger tournament-admin__action-btn tournament-admin__action-btn--remove"
+												onClick={() => handleRemovePlayer(userId)}
+												disabled={actionLoading}
+											>
+												Remove
 															</button>
 														)}
 														{statusRaw === 'withdrawn' && (
