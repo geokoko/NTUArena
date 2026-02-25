@@ -8,6 +8,8 @@ const {
 	ensureDocumentPublicId,
 	ensureDocumentsPublicId,
 	findByIdOrPublicId,
+	isObjectId,
+	normalizeLookupId,
 } = require('../utils/identifiers');
 
 const makeError = (message, status = 400) => {
@@ -151,13 +153,25 @@ async function cancelActiveGame(player, tournament) {
  * or directly a Player id/publicId (for temp players with no linked User account).
  */
 async function resolvePlayerInTournament(idOrPublicId, tournamentObjectId) {
-	const user = await findByIdOrPublicId(User, idOrPublicId);
+	const lookupId = normalizeLookupId(idOrPublicId);
+	if (!lookupId) return null;
+
+	const user = await findByIdOrPublicId(User, lookupId);
 	if (user) {
 		const p = await Player.findOne({ user: user._id, tournament: tournamentObjectId });
 		if (p) return p;
 	}
-	// Fallback: temp player — look up by player publicId/objectId directly
-	return Player.findOne({ publicId: idOrPublicId, tournament: tournamentObjectId });
+
+	// Fallback: temp player — look up by player objectId, then publicId.
+	if (isObjectId(lookupId)) {
+		const playerById = await Player.findOne({ _id: lookupId, tournament: tournamentObjectId });
+		if (playerById) return playerById;
+	}
+
+	return Player.findOne({
+		publicId: { $eq: lookupId },
+		tournament: tournamentObjectId,
+	});
 }
 
 class TournamentService {
