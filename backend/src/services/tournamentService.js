@@ -8,6 +8,8 @@ const {
 	ensureDocumentPublicId,
 	ensureDocumentsPublicId,
 	findByIdOrPublicId,
+	isObjectId,
+	normalizeLookupId,
 } = require('../utils/identifiers');
 
 const makeError = (message, status = 400) => {
@@ -92,6 +94,85 @@ const sanitizeTournamentSummary = (tournament) => {
 		participantCount: Array.isArray(base.participants) ? base.participants.length : 0,
 	};
 };
+
+/**
+ * Voids the active game for a player who is mid-game.
+ * Marks the game as cancelled, clears isPlaying on both players,
+ * and re-queues the opponent if the tournament is still in progress.
+ */
+async function cancelActiveGame(player, tournament) {
+	const game = await Game.findOne({
+		$or: [{ playerWhite: player._id }, { playerBlack: player._id }],
+		isFinished: false,
+		isCancelled: { $ne: true },
+	});
+
+	if (!game) return;
+
+	game.isCancelled = true;
+	game.cancelledAt = new Date();
+	game.isFinished = true;
+	game.finishedAt = game.cancelledAt;
+	await game.save();
+
+	const opponentId = game.playerWhite.toString() === player._id.toString()
+		? game.playerBlack
+		: game.playerWhite;
+
+	const opponent = await Player.findById(opponentId);
+
+	player.isPlaying = false;
+	if (opponent) opponent.isPlaying = false;
+
+	await Promise.all([
+		player.save(),
+		opponent ? opponent.save() : Promise.resolve(),
+	]);
+
+	if (opponent && opponent.status === 'active' && tournament.tournStatus === 'in progress') {
+		const now = new Date();
+		opponent.waitingSince = now;
+		await opponent.save();
+		await enqueue(String(tournament._id), {
+			_id: String(opponent._id),
+			user: opponent.user,
+			score: opponent.score ?? 0,
+			liveRating: opponent.liveRating ?? 0,
+			entryRating: opponent.entryRating ?? 0,
+			recentOpponents: (opponent.recentOpponents ?? []).map(String),
+			colorHistory: opponent.colorHistory ?? [],
+			status: opponent.status,
+			waitingSince: opponent.waitingSince,
+			enqueuedAt: Date.now(),
+		});
+	}
+}
+
+/**
+ * Resolve a Player document within a tournament from either a User id/publicId
+ * or directly a Player id/publicId (for temp players with no linked User account).
+ */
+async function resolvePlayerInTournament(idOrPublicId, tournamentObjectId) {
+	const lookupId = normalizeLookupId(idOrPublicId);
+	if (!lookupId) return null;
+
+	const user = await findByIdOrPublicId(User, lookupId);
+	if (user) {
+		const p = await Player.findOne({ user: user._id, tournament: tournamentObjectId });
+		if (p) return p;
+	}
+
+	// Fallback: temp player — look up by player objectId, then publicId.
+	if (isObjectId(lookupId)) {
+		const playerById = await Player.findOne({ _id: lookupId, tournament: tournamentObjectId });
+		if (playerById) return playerById;
+	}
+
+	return Player.findOne({
+		publicId: { $eq: lookupId },
+		tournament: tournamentObjectId,
+	});
+}
 
 class TournamentService {
 	filterSettings(settings = {}) {
@@ -436,17 +517,14 @@ class TournamentService {
 	}
 
 	async leaveTournament(userId, tournamentId) {
-		const [tournament, user] = await Promise.all([
-			findByIdOrPublicId(Tournament, tournamentId),
-			findByIdOrPublicId(User, userId),
-		]);
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
 		if (!tournament) throw makeError('Tournament not found', 404);
-		if (!user) throw makeError('User not found', 404);
 
-		const player = await Player.findOne({ user: user._id, tournament: tournament._id });
+		const player = await resolvePlayerInTournament(userId, tournament._id);
 		if (!player) throw makeError('Player not found in tournament', 404);
+
 		if (player.isPlaying) {
-			throw makeError('Player cannot leave while playing an active game');
+			await cancelActiveGame(player, tournament);
 		}
 
 		player.status = 'withdrawn';
@@ -480,19 +558,17 @@ class TournamentService {
 	}
 
 	async pausePlayer(userId, tournamentId) {
-		const [tournament, user] = await Promise.all([
-			findByIdOrPublicId(Tournament, tournamentId),
-			findByIdOrPublicId(User, userId),
-		]);
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
 		if (!tournament) throw makeError('Tournament not found', 404);
-		if (!user) throw makeError('User not found', 404);
-		const player = await Player.findOne({ user: user._id, tournament: tournament._id });
+
+		const player = await resolvePlayerInTournament(userId, tournament._id);
 		if (!player) throw makeError('Player not found in tournament', 404);
 		if (player.status === 'withdrawn') {
 			throw makeError('Player already withdrawn from the tournament');
 		}
+
 		if (player.isPlaying) {
-			throw makeError('Player cannot be paused while playing an active game');
+			await cancelActiveGame(player, tournament);
 		}
 
 		player.status = 'paused';
@@ -508,15 +584,10 @@ class TournamentService {
 	}
 
 	async resumePlayer(userId, tournamentId) {
-		const [tournament, user] = await Promise.all([
-			findByIdOrPublicId(Tournament, tournamentId),
-			findByIdOrPublicId(User, userId),
-		]);
-
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
 		if (!tournament) throw makeError('Tournament not found', 404);
-		if (!user) throw makeError('User not found', 404);
 
-		const player = await Player.findOne({ user: user._id, tournament: tournament._id });
+		const player = await resolvePlayerInTournament(userId, tournament._id);
 		if (!player) throw makeError('Player not found in tournament', 404);
 		if (player.status === 'withdrawn') {
 			throw makeError('Withdrawn players cannot be resumed');

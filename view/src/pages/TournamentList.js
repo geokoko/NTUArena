@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { tournamentAPI } from '../services/api';
 import { statusBadge, formatDate, summarizeDescription } from '../utils/tournamentDisplay';
 import './TournamentList.css';
@@ -10,6 +10,7 @@ const TournamentList = () => {
 	const [error, setError] = useState('');
 	const [cardLoading, setCardLoading] = useState({});
 	const [cardError, setCardError] = useState({});
+	const navigate = useNavigate();
 
 	const updateCardLoading = (id, value) => setCardLoading((prev) => ({ ...prev, [id]: value }));
 	const updateCardError = (id, value) => setCardError((prev) => ({ ...prev, [id]: value }));
@@ -35,7 +36,8 @@ const TournamentList = () => {
 		loadTournaments();
 	}, [loadTournaments]);
 
-	const handleDelete = async (id) => {
+	const handleDelete = async (id, event) => {
+		if (event) event.stopPropagation();
 		if (!id) return;
 		if (!window.confirm('Delete this tournament?')) return;
 		updateCardLoading(id, true);
@@ -68,13 +70,41 @@ const TournamentList = () => {
 					const tournamentId = tournament.id;
 					const isDeleting = Boolean(tournamentId) && cardLoading[tournamentId];
 					const errorMessage = tournamentId ? cardError[tournamentId] : '';
+					const isClickable = Boolean(tournamentId);
 
 					return (
-						<div key={tournamentId || tournament.name} className="card shadow-sm tournament-card">
-							<div className="card-header d-flex justify-content-between align-items-center">
-								<h3 className="card-title mb-0">{tournament.name || 'Untitled Tournament'}</h3>
-								{statusBadge(tournament.tournStatus)}
-							</div>
+							<div
+								key={tournamentId || tournament.name}
+								className={`card shadow-sm tournament-card ${isClickable ? 'tournament-card--clickable' : 'tournament-card--disabled'}`}
+								onClick={() => isClickable && navigate(`/tournament/${tournamentId}`)}
+								role={isClickable ? 'button' : undefined}
+								tabIndex={isClickable ? 0 : -1}
+								onKeyDown={(event) => {
+									if (!isClickable) return;
+									if (event.key === 'Enter' || event.key === ' ') {
+										event.preventDefault();
+										navigate(`/tournament/${tournamentId}`);
+									}
+								}}
+							>
+								<div className="card-header tournament-card__header">
+									<h3 className="card-title mb-0">{tournament.name || 'Untitled Tournament'}</h3>
+									<div className="tournament-card__header-actions">
+										{statusBadge(tournament.tournStatus)}
+										<button
+											type="button"
+											className="tournament-card__delete"
+											onClick={(event) => handleDelete(tournamentId, event)}
+											disabled={!tournamentId || isDeleting}
+											aria-label="Delete tournament"
+											title="Delete tournament"
+										>
+											<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+												<path d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z" />
+											</svg>
+										</button>
+									</div>
+								</div>
 							<div className="card-body">
 								<p className="mb-2 text-muted">{summarizeDescription(tournament.description)}</p>
 								<div className="row small text-muted">
@@ -90,32 +120,8 @@ const TournamentList = () => {
 							</div>
 							<div className="card-footer bg-transparent">
 								{errorMessage && <div className="text-danger small mb-2">{errorMessage}</div>}
-								<div className="row g-2">
-									<div className="col-12 col-sm-6 col-md-4">
-										<Link to={tournamentId ? `/tournament/${tournamentId}` : '#'} className="btn btn-outline-primary w-100">
-											View Details
-										</Link>
-									</div>
-									<div className="col-12 col-sm-6 col-md-4">
-										{tournamentId ? (
-											<Link to={`/admin/tournaments/${tournamentId}/manage`} className="btn btn-primary w-100">
-												Manage Tournament
-											</Link>
-										) : (
-											<button className="btn btn-secondary w-100" disabled>
-												Manage Tournament
-											</button>
-										)}
-									</div>
-									<div className="col-12 col-sm-6 col-md-4">
-										<button
-											onClick={() => tournamentId && handleDelete(tournamentId)}
-											className="btn btn-danger w-100"
-											disabled={!tournamentId || isDeleting}
-										>
-											{isDeleting ? 'Deleting…' : 'Delete Tournament'}
-										</button>
-									</div>
+								<div className="tournament-card__footer-hint">
+									Click to view tournament details
 								</div>
 							</div>
 						</div>

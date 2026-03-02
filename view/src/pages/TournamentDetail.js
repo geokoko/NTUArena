@@ -1,13 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { tournamentAPI } from '../services/api';
-import GameBoard from '../components/GameBoard';
+import { tournamentAPI, gameAPI, userAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import { getDisplayName } from '../utils/tournamentDisplay';
+import CSVImport from '../components/CSVImport';
 import './TournamentDetail.css';
 
 const PLAYERS_PER_PAGE = 15;
+const AUTO_REFRESH_MS = 1000;
+const PLAYERS_CSV_TEMPLATE = `name,rating,identifier
+John Doe,1500,john@example.com
+Jane Smith,1600,
+Guest Player,1400,`;
 
-const TournamentDetail = ({ user }) => {
+const TournamentDetail = () => {
 	const { id } = useParams();
+	const { user, isAdmin } = useAuth();
 	const [tournament, setTournament] = useState(null);
 	const [standings, setStandings] = useState([]);
 	const [games, setGames] = useState([]);
@@ -16,44 +24,135 @@ const TournamentDetail = ({ user }) => {
 	const [error, setError] = useState('');
 	const [activeTab, setActiveTab] = useState('overview');
 	const [currentPage, setCurrentPage] = useState(1);
+	const [autoRefresh, setAutoRefresh] = useState(true);
+	const [refreshing, setRefreshing] = useState(false);
+	const [lastUpdated, setLastUpdated] = useState(null);
+	const [actionLoading, setActionLoading] = useState(false);
+	const [actionError, setActionError] = useState('');
+	const [submittingGameId, setSubmittingGameId] = useState(null);
+	const [selectedHistoryPlayerId, setSelectedHistoryPlayerId] = useState('');
+	const [users, setUsers] = useState([]);
+	const [usersError, setUsersError] = useState('');
+	const [addSelection, setAddSelection] = useState('');
+	const [showCSVImport, setShowCSVImport] = useState(false);
 
-	useEffect(() => {
-		const fetchTournamentDetails = async () => {
-			try {
-				const [tournamentRes, standingsRes, gamesRes, playersRes] = await Promise.all([
-					tournamentAPI.getTournament(id),
-					tournamentAPI.getTournamentStandings(id),
-					tournamentAPI.getTournamentGames(id),
-					tournamentAPI.getTournamentPlayers(id),
-				]);
+	const loadTournamentDetails = useCallback(async () => {
+		try {
+			const [tournamentRes, standingsRes, gamesRes, playersRes] = await Promise.all([
+				tournamentAPI.getTournament(id),
+				tournamentAPI.getTournamentStandings(id),
+				tournamentAPI.getTournamentGames(id),
+				tournamentAPI.getTournamentPlayers(id),
+			]);
 
-				setTournament(tournamentRes.data);
-				setStandings(standingsRes.data);
-				setGames(gamesRes.data);
-				setPlayers(playersRes.data);
-			} catch (err) {
-				if (err.status === 404) {
-					setError('Tournament not found');
-				} else if (err.status === 0) {
-					setError('Cannot reach server. Please try again.');
-				} else {
-					setError(err.message || 'Failed to load tournament details');
-				}
-				console.error('Load tournament details error:', err);
-			} finally {
-				setLoading(false);
+			setTournament(tournamentRes.data);
+			setStandings(Array.isArray(standingsRes.data) ? standingsRes.data : []);
+			setGames(Array.isArray(gamesRes.data) ? gamesRes.data : []);
+			setPlayers(Array.isArray(playersRes.data) ? playersRes.data : []);
+			setLastUpdated(new Date());
+		} catch (err) {
+			if (err.status === 404) {
+				setError('Tournament not found');
+			} else if (err.status === 0) {
+				setError('Cannot reach server. Please try again.');
+			} else {
+				setError(err.message || 'Failed to load tournament details');
 			}
-		};
-
-		fetchTournamentDetails();
+			console.error('Load tournament details error:', err);
+		} finally {
+			setLoading(false);
+		}
 	}, [id]);
 
-	// Reset page when switching tabs
+	const refreshGames = useCallback(async () => {
+		if (!id) return;
+		setRefreshing(true);
+		try {
+			const { data } = await tournamentAPI.getTournamentGames(id);
+			setGames(Array.isArray(data) ? data : []);
+			setLastUpdated(new Date());
+		} catch (err) {
+			console.error('Refresh games error:', err);
+		} finally {
+			setRefreshing(false);
+		}
+	}, [id]);
+
+	const refreshPlayers = useCallback(async () => {
+		if (!id) return;
+		try {
+			const { data } = await tournamentAPI.getTournamentPlayers(id);
+			setPlayers(Array.isArray(data) ? data : []);
+		} catch (err) {
+			console.error('Refresh players error:', err);
+		}
+	}, [id]);
+
+	const refreshStandings = useCallback(async () => {
+		if (!id) return;
+		try {
+			const { data } = await tournamentAPI.getTournamentStandings(id);
+			setStandings(Array.isArray(data) ? data : []);
+		} catch (err) {
+			console.error('Refresh standings error:', err);
+		}
+	}, [id]);
+
+	const refreshTournament = useCallback(async () => {
+		if (!id) return;
+		try {
+			const { data } = await tournamentAPI.getTournament(id);
+			setTournament(data || null);
+		} catch (err) {
+			console.error('Refresh tournament error:', err);
+		}
+	}, [id]);
+
+	const fetchUsers = useCallback(async () => {
+		if (!isAdmin) return;
+		setUsersError('');
+		try {
+			const res = await userAPI.getAll();
+			const list = res.data?.users || res.data || [];
+			setUsers(Array.isArray(list) ? list : []);
+		} catch (err) {
+			setUsersError(err.message || 'Failed to load users');
+		}
+	}, [isAdmin]);
+
+	useEffect(() => {
+		setLoading(true);
+		setError('');
+		loadTournamentDetails();
+	}, [loadTournamentDetails]);
+
+	useEffect(() => {
+		if (!autoRefresh || activeTab !== 'active-games') return;
+		const timer = setInterval(() => {
+			refreshGames();
+		}, AUTO_REFRESH_MS);
+		return () => clearInterval(timer);
+	}, [autoRefresh, activeTab, refreshGames]);
+
+	useEffect(() => {
+		if (!isAdmin || activeTab !== 'manage') return;
+		if (users.length > 0) return;
+		fetchUsers();
+	}, [activeTab, fetchUsers, isAdmin, users.length]);
+
 	useEffect(() => {
 		setCurrentPage(1);
 	}, [activeTab]);
 
-	// Pagination logic for standings
+	useEffect(() => {
+		if (!players.length) return;
+		setSelectedHistoryPlayerId((current) => {
+			if (current) return current;
+			const self = user ? players.find((p) => p.userId === user.id) : null;
+			return self ? self.id : 'all';
+		});
+	}, [players, user]);
+
 	const paginatedStandings = useMemo(() => {
 		const startIndex = (currentPage - 1) * PLAYERS_PER_PAGE;
 		return standings.slice(startIndex, startIndex + PLAYERS_PER_PAGE);
@@ -75,17 +174,11 @@ const TournamentDetail = ({ user }) => {
 	};
 
 	const getGameResultDisplay = (game) => {
-		if (!game.isFinished) {
-			return <span className="badge badge-warning">Ongoing</span>;
-		}
-
-		if (game.resultColor === 'white') {
-			return <span className="badge badge-success">1-0</span>;
-		} else if (game.resultColor === 'black') {
-			return <span className="badge badge-success">0-1</span>;
-		} else {
-			return <span className="badge badge-secondary">½-½</span>;
-		}
+		if (!game.isFinished) return <span className="badge badge-warning">Ongoing</span>;
+		if (!game.resultColor) return <span className="badge badge-secondary">Cancelled</span>;
+		if (game.resultColor === 'white') return <span className="badge badge-success">1-0</span>;
+		if (game.resultColor === 'black') return <span className="badge badge-success">0-1</span>;
+		return <span className="badge badge-secondary">½-½</span>;
 	};
 
 	const getRankClass = (rank) => {
@@ -103,13 +196,112 @@ const TournamentDetail = ({ user }) => {
 	};
 
 	const getStreakIndicator = (standing) => {
-		// Check for winning streaks based on recent performance
 		const winRate = standing.games > 0 ? standing.wins / standing.games : 0;
 		if (standing.wins >= 3 && winRate >= 0.7) {
 			return <span className="streak-fire" title="On fire!">🔥</span>;
 		}
 		return null;
 	};
+
+	const formatDateTime = (value) => {
+		if (!value) return '—';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return '—';
+		return date.toLocaleString();
+	};
+
+	const activeGames = useMemo(() => games.filter((g) => !g.isFinished), [games]);
+	const completedGames = useMemo(() => games.filter((g) => g.isFinished), [games]);
+
+	const historyPlayers = useMemo(() => {
+		return players
+			.map((p) => ({
+				id: p.id,
+				name: p.name || p.username || 'Unknown player',
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}, [players]);
+
+	const historyGames = useMemo(() => {
+		if (!selectedHistoryPlayerId || selectedHistoryPlayerId === 'all') {
+			return completedGames;
+		}
+		return completedGames.filter((game) =>
+			game.playerWhite?.id === selectedHistoryPlayerId || game.playerBlack?.id === selectedHistoryPlayerId
+		);
+	}, [completedGames, selectedHistoryPlayerId]);
+
+	const addableUsers = useMemo(() => {
+		const existingUserIds = new Set(players.map((p) => p.userId).filter(Boolean));
+		return users.filter((u) => !existingUserIds.has(u.id));
+	}, [players, users]);
+
+	const withAdminAction = useCallback(async (fn) => {
+		setActionLoading(true);
+		setActionError('');
+		try {
+			await fn();
+			await Promise.all([refreshPlayers(), refreshGames(), refreshStandings(), refreshTournament()]);
+		} catch (err) {
+			setActionError(err.message || 'Action failed');
+		} finally {
+			setActionLoading(false);
+		}
+	}, [refreshPlayers, refreshGames, refreshStandings, refreshTournament]);
+
+	const handlePausePlayer = useCallback((userId) =>
+		withAdminAction(async () => {
+			if (!userId) return;
+			await tournamentAPI.pausePlayer(id, userId);
+		}), [withAdminAction, id]);
+
+	const handleResumePlayer = useCallback((userId) =>
+		withAdminAction(async () => {
+			if (!userId) return;
+			await tournamentAPI.resumePlayer(id, userId);
+		}), [withAdminAction, id]);
+
+	const handleRemovePlayer = useCallback((userId) =>
+		withAdminAction(async () => {
+			if (!userId) return;
+			await tournamentAPI.adminRemovePlayer(id, userId);
+		}), [withAdminAction, id]);
+
+	const handleSubmitResult = useCallback(async (gameId, result) => {
+		if (!gameId) return;
+		setSubmittingGameId(gameId);
+		try {
+			await gameAPI.submitGameResult(gameId, result);
+			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+		} catch (err) {
+			alert(err.message || 'Failed to submit result');
+		} finally {
+			setSubmittingGameId(null);
+		}
+	}, [refreshGames, refreshStandings, refreshPlayers]);
+
+	const handleAddPlayer = useCallback(() =>
+		withAdminAction(async () => {
+			if (!addSelection) return;
+			await tournamentAPI.adminAddPlayer(id, addSelection);
+			setAddSelection('');
+		}), [withAdminAction, addSelection, id]);
+
+	const handleCSVImport = useCallback(async (csvText) => {
+		const res = await tournamentAPI.importPlayersCSV(id, csvText);
+		await Promise.all([refreshPlayers(), refreshStandings(), refreshGames(), refreshTournament()]);
+		return res.data;
+	}, [id, refreshGames, refreshPlayers, refreshStandings, refreshTournament]);
+
+	const handleStartTournament = useCallback(() =>
+		withAdminAction(async () => {
+			await tournamentAPI.startTournament(id);
+		}), [withAdminAction, id]);
+
+	const handleEndTournament = useCallback(() =>
+		withAdminAction(async () => {
+			await tournamentAPI.endTournament(id);
+		}), [withAdminAction, id]);
 
 	if (loading) {
 		return (
@@ -138,8 +330,7 @@ const TournamentDetail = ({ user }) => {
 
 	return (
 		<div className="tournament-detail">
-			{/* Header */}
-			<div className="d-flex justify-content-between align-items-center mb-4">
+			<div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
 				<div>
 					<h1>{tournament.name}</h1>
 					{getStatusBadge(tournament.tournStatus)}
@@ -149,34 +340,45 @@ const TournamentDetail = ({ user }) => {
 				</Link>
 			</div>
 
-			{/* Navigation Tabs */}
 			<div className="tournament-tabs mb-4">
-				<div className="d-flex gap-2">
-					<button 
+				<div className="d-flex gap-2 flex-wrap">
+					<button
 						onClick={() => setActiveTab('overview')}
 						className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
 					>
 						Overview
 					</button>
-					<button 
+					<button
 						onClick={() => setActiveTab('standings')}
 						className={`btn ${activeTab === 'standings' ? 'btn-primary' : 'btn-secondary'}`}
 					>
 						Standings
 					</button>
-					<button 
-						onClick={() => setActiveTab('games')}
-						className={`btn ${activeTab === 'games' ? 'btn-primary' : 'btn-secondary'}`}
+					<button
+						onClick={() => setActiveTab('active-games')}
+						className={`btn ${activeTab === 'active-games' ? 'btn-primary' : 'btn-secondary'}`}
 					>
-						Games
+						Active Games
 					</button>
+					<button
+						onClick={() => setActiveTab('history')}
+						className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
+					>
+						Game History
+					</button>
+					{isAdmin && (
+						<button
+							onClick={() => setActiveTab('manage')}
+							className={`btn ${activeTab === 'manage' ? 'btn-primary' : 'btn-secondary'}`}
+						>
+							Manage
+						</button>
+					)}
 				</div>
 			</div>
 
-			{/* Tab Content */}
 			{activeTab === 'overview' && (
 				<div className="overview-content">
-					{/* Tournament Information Card - Only visible in Overview */}
 					<div className="card mb-4 tournament-info-card">
 						<div className="card-header">
 							<h3 className="card-title">Tournament Information</h3>
@@ -196,11 +398,11 @@ const TournamentDetail = ({ user }) => {
 							</div>
 							<div className="info-item">
 								<span className="info-label">Start Date</span>
-								<span className="info-value">{new Date(tournament.startDate).toLocaleString()}</span>
+								<span className="info-value">{formatDateTime(tournament.startDate)}</span>
 							</div>
 							<div className="info-item">
 								<span className="info-label">End Date</span>
-								<span className="info-value">{new Date(tournament.endDate).toLocaleString()}</span>
+								<span className="info-value">{formatDateTime(tournament.endDate)}</span>
 							</div>
 							<div className="info-item">
 								<span className="info-label">Current Players</span>
@@ -209,7 +411,6 @@ const TournamentDetail = ({ user }) => {
 						</div>
 					</div>
 
-					{/* Quick Stats Card */}
 					<div className="card">
 						<div className="card-header">
 							<h3 className="card-title">Tournament Overview</h3>
@@ -226,15 +427,15 @@ const TournamentDetail = ({ user }) => {
 										<span className="stat-label">Total Games</span>
 									</div>
 									<div className="stat-item">
-										<span className="stat-value">{games.filter(g => g.isFinished).length}</span>
+										<span className="stat-value">{completedGames.length}</span>
 										<span className="stat-label">Completed</span>
 									</div>
 									<div className="stat-item">
-										<span className="stat-value">{games.filter(g => !g.isFinished).length}</span>
+										<span className="stat-value">{activeGames.length}</span>
 										<span className="stat-label">Ongoing</span>
 									</div>
 									<div className="stat-item">
-										<span className="stat-value">{players.filter(p => (p.status || 'active') === 'active').length}</span>
+										<span className="stat-value">{players.filter((p) => (p.status || 'active') === 'active').length}</span>
 										<span className="stat-label">Active Players</span>
 									</div>
 								</div>
@@ -251,7 +452,7 @@ const TournamentDetail = ({ user }) => {
 							<h3>Leaderboard</h3>
 							<span className="standings-count">{standings.length} players</span>
 						</div>
-						
+
 						{standings.length === 0 ? (
 							<div className="standings-empty">
 								<p>No standings available yet.</p>
@@ -308,32 +509,30 @@ const TournamentDetail = ({ user }) => {
 									</table>
 								</div>
 
-								{/* Pagination */}
 								{totalPages > 1 && (
 									<div className="standings-pagination">
-										<button 
+										<button
 											className="pagination-btn"
-											onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+											onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
 											disabled={currentPage === 1}
 										>
 											← Previous
 										</button>
-										
+
 										<div className="pagination-pages">
-											{Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
-												// Show first, last, current, and adjacent pages
-												const showPage = page === 1 || 
-													page === totalPages || 
+											{Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+												const showPage = page === 1 ||
+													page === totalPages ||
 													Math.abs(page - currentPage) <= 1;
 												const showEllipsis = (page === 2 && currentPage > 3) ||
 													(page === totalPages - 1 && currentPage < totalPages - 2);
-												
+
 												if (showEllipsis && !showPage) {
 													return <span key={page} className="pagination-ellipsis">…</span>;
 												}
-												
+
 												if (!showPage && !showEllipsis) return null;
-												
+
 												return (
 													<button
 														key={page}
@@ -346,9 +545,9 @@ const TournamentDetail = ({ user }) => {
 											})}
 										</div>
 
-										<button 
+										<button
 											className="pagination-btn"
-											onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+											onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
 											disabled={currentPage === totalPages}
 										>
 											Next →
@@ -361,37 +560,288 @@ const TournamentDetail = ({ user }) => {
 				</div>
 			)}
 
-			{activeTab === 'games' && (
-				<div className="card games-content">
-					<div className="card-header">
-						<h3 className="card-title">Tournament Games</h3>
-					</div>
-					<div className="row">
-						{games.length === 0 ? (
-							<div className="col-12">
-								<p className="text-muted text-center">No games yet.</p>
+			{activeTab === 'active-games' && (
+				<div className="card tournament-active">
+					<div className="card-header tournament-active__header">
+						<div>
+							<h3 className="card-title">Active Games</h3>
+							<p className="tournament-active__subtitle">Live pairings update every second when auto refresh is on.</p>
+						</div>
+						<div className="tournament-active__controls">
+							<div className="form-check form-switch">
+								<input
+									id="active-auto-refresh"
+									type="checkbox"
+									className="form-check-input"
+									checked={autoRefresh}
+									onChange={(e) => setAutoRefresh(e.target.checked)}
+								/>
+								<label className="form-check-label" htmlFor="active-auto-refresh">Auto refresh (1s)</label>
 							</div>
-						) : (
-							games.map((game) => (
-								<div key={game.id} className="col-md-6 mb-4">
-									<GameBoard
-										gameId={game.id}
-										player1={game.playerWhite?.name || game.playerWhite?.username}
-										player2={game.playerBlack?.name || game.playerBlack?.username}
-										player1Rating={game.playerWhite?.liveRating}
-										player2Rating={game.playerBlack?.liveRating}
-										result={getGameResultDisplay(game)}
-										isLive={!game.isFinished}
-										gameState={null}
+							<button
+								className="btn btn-outline-secondary btn-sm"
+								onClick={refreshGames}
+								disabled={refreshing}
+							>
+								{refreshing ? 'Refreshing…' : 'Refresh now'}
+							</button>
+						</div>
+					</div>
+					{lastUpdated && (
+						<div className="tournament-active__timestamp">
+							Updated {formatDateTime(lastUpdated)}
+						</div>
+					)}
+					{activeGames.length === 0 ? (
+						<p className="text-muted text-center">No active games at the moment.</p>
+					) : (
+						<div className="table-responsive">
+							<table className="table table-sm align-middle tournament-active__table">
+								<thead>
+									<tr>
+										<th>White</th>
+										<th>Black</th>
+										<th>Started</th>
+										<th>Status</th>
+										{isAdmin && <th className="text-end">Set Result</th>}
+									</tr>
+								</thead>
+								<tbody>
+									{activeGames.map((game) => (
+										<tr key={game.id}>
+											<td>{game.playerWhite?.name || game.playerWhite?.username || 'Unknown'}</td>
+											<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
+											<td>{formatDateTime(game.startedAt)}</td>
+											<td>{getGameResultDisplay(game)}</td>
+								{isAdmin && (
+									<td className="text-end">
+										<div className="tournament-active__result-buttons">
+											<button
+												className="btn btn-sm btn-success tournament-active__result-btn tournament-active__result-btn--white"
+												onClick={() => handleSubmitResult(game.id, 'white')}
+												disabled={!!submittingGameId}
+											>
+												White wins
+											</button>
+											<button
+												className="btn btn-sm btn-dark tournament-active__result-btn tournament-active__result-btn--black"
+												onClick={() => handleSubmitResult(game.id, 'black')}
+												disabled={!!submittingGameId}
+											>
+												Black wins
+											</button>
+											<button
+												className="btn btn-sm btn-secondary tournament-active__result-btn tournament-active__result-btn--draw"
+												onClick={() => handleSubmitResult(game.id, 'draw')}
+												disabled={!!submittingGameId}
+											>
+												Draw
+											</button>
+										</div>
+												</td>
+											)}
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+					)}
+				</div>
+			)}
+
+			{activeTab === 'history' && (
+				<div className="card tournament-history">
+					<div className="card-header tournament-history__header">
+						<h3 className="card-title">Game History</h3>
+						<div className="tournament-history__controls">
+							<label className="form-label small mb-1" htmlFor="history-player">Show games for</label>
+							<select
+								id="history-player"
+								className="form-select form-select-sm"
+								value={selectedHistoryPlayerId || 'all'}
+								onChange={(e) => setSelectedHistoryPlayerId(e.target.value)}
+							>
+								<option value="all">All players</option>
+								{historyPlayers.map((player) => (
+									<option key={player.id} value={player.id}>
+										{player.name}
+									</option>
+								))}
+							</select>
+						</div>
+					</div>
+					{historyGames.length === 0 ? (
+						<p className="text-muted text-center">No completed games yet.</p>
+					) : (
+						<div className="table-responsive">
+							<table className="table table-sm align-middle tournament-history__table">
+								<thead>
+									<tr>
+										<th>White</th>
+										<th>Black</th>
+										<th>Result</th>
+										<th>Finished</th>
+									</tr>
+								</thead>
+								<tbody>
+									{historyGames.map((game) => (
+										<tr key={game.id}>
+											<td>{game.playerWhite?.name || game.playerWhite?.username || 'Unknown'}</td>
+											<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
+											<td>{getGameResultDisplay(game)}</td>
+											<td>{formatDateTime(game.finishedAt)}</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+					)}
+				</div>
+			)}
+
+			{isAdmin && activeTab === 'manage' && (
+				<div className="card tournament-admin">
+					<div className="card-header">
+						<h3 className="card-title">Manage Participants</h3>
+					</div>
+					{actionError && <div className="alert alert-danger mb-3">{actionError}</div>}
+					{usersError && <div className="alert alert-warning mb-3">{usersError}</div>}
+					<div className="tournament-admin__lifecycle">
+						<button
+							type="button"
+							className="btn btn-sm btn-success tournament-admin__lifecycle-btn"
+							onClick={handleStartTournament}
+							disabled={tournament?.tournStatus !== 'upcoming' || actionLoading}
+						>
+							Start Tournament
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm btn-warning tournament-admin__lifecycle-btn"
+							onClick={handleEndTournament}
+							disabled={tournament?.tournStatus !== 'in progress' || actionLoading}
+						>
+							End Tournament
+						</button>
+					</div>
+					<div className="tournament-admin__add-panel">
+						<div className="tournament-admin__add-row">
+							<div className="tournament-admin__add-field">
+								<label htmlFor="add-participant" className="form-label small mb-1">Add existing user</label>
+								<select
+									id="add-participant"
+									className="form-select form-select-sm"
+									value={addSelection}
+									onChange={(e) => setAddSelection(e.target.value)}
+								>
+									<option value="">Select user</option>
+									{addableUsers.map((candidate) => (
+										<option key={candidate.id} value={candidate.id}>
+											{getDisplayName(candidate)}
+										</option>
+									))}
+								</select>
+							</div>
+							<button
+								type="button"
+								className="btn btn-sm btn-primary tournament-admin__add-btn"
+								onClick={handleAddPlayer}
+								disabled={!addSelection || actionLoading}
+							>
+								Add participant
+							</button>
+						</div>
+						<div className="tournament-admin__import">
+							<button
+								type="button"
+								className={`btn btn-sm ${showCSVImport ? 'btn-secondary' : 'btn-outline-secondary'}`}
+								onClick={() => setShowCSVImport(!showCSVImport)}
+							>
+								{showCSVImport ? 'Hide CSV Import' : 'Import Players from CSV'}
+							</button>
+							{showCSVImport && (
+								<div className="tournament-admin__import-widget">
+									<CSVImport
+										type="players"
+										onImport={handleCSVImport}
+										templateContent={PLAYERS_CSV_TEMPLATE}
+										templateFilename="players_template.csv"
 									/>
 								</div>
-							))
-						)}
+							)}
+						</div>
 					</div>
+					{players.length === 0 ? (
+						<p className="text-muted text-center">No participants registered.</p>
+					) : (
+						<div className="table-responsive">
+							<table className="table table-sm align-middle tournament-admin__table">
+								<thead>
+									<tr>
+										<th>Player</th>
+										<th>Status</th>
+										<th className="text-end">Actions</th>
+									</tr>
+								</thead>
+								<tbody>
+									{players.map((player) => {
+										const statusRaw = (player.status || 'active').toLowerCase();
+										const statusLabel = statusRaw.replace(/\b\w/g, (char) => char.toUpperCase());
+										const userId = player.userId ?? player.id;
+
+										return (
+											<tr key={player.id}>
+												<td>{player.name || player.username || 'Unknown player'}</td>
+												<td>
+													<span className={`tournament-admin__status tournament-admin__status--${statusRaw}`}>
+														{statusLabel}
+													</span>
+												</td>
+												<td className="text-end">
+													<div className="tournament-admin__actions">
+										{statusRaw === 'active' && (
+											<button
+												className="btn btn-sm btn-outline-warning tournament-admin__action-btn tournament-admin__action-btn--pause"
+												onClick={() => handlePausePlayer(userId)}
+												disabled={actionLoading}
+											>
+												Pause
+															</button>
+														)}
+										{statusRaw === 'paused' && (
+											<button
+												className="btn btn-sm btn-outline-success tournament-admin__action-btn tournament-admin__action-btn--resume"
+												onClick={() => handleResumePlayer(userId)}
+												disabled={actionLoading}
+											>
+												Resume
+															</button>
+														)}
+										{statusRaw !== 'withdrawn' && (
+											<button
+												className="btn btn-sm btn-outline-danger tournament-admin__action-btn tournament-admin__action-btn--remove"
+												onClick={() => handleRemovePlayer(userId)}
+												disabled={actionLoading}
+											>
+												Remove
+															</button>
+														)}
+														{statusRaw === 'withdrawn' && (
+															<span className="tournament-admin__note">No actions</span>
+														)}
+													</div>
+												</td>
+											</tr>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+					)}
 				</div>
 			)}
 		</div>
 	);
 };
 
-export default TournamentDetail; 
+export default TournamentDetail;

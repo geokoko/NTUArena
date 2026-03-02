@@ -3,16 +3,34 @@ const { createPublicId } = require('./publicId');
 
 const isObjectId = (value) => {
 	if (!value) return false;
-	return mongoose.Types.ObjectId.isValid(value);
+	if (typeof value === 'string') {
+		return mongoose.Types.ObjectId.isValid(value);
+	}
+	if (value instanceof mongoose.Types.ObjectId) {
+		return true;
+	}
+	return false;
+};
+
+const normalizeLookupId = (value) => {
+	if (typeof value === 'string') {
+		const trimmed = value.trim();
+		return trimmed.length ? trimmed : null;
+	}
+	if (value instanceof mongoose.Types.ObjectId) {
+		return value.toString();
+	}
+	return null;
 };
 
 async function findByIdOrPublicId(Model, idOrPublicId) {
-	if (!idOrPublicId) return null;
-	if (isObjectId(idOrPublicId)) {
-		const doc = await Model.findById(idOrPublicId);
+	const lookupId = normalizeLookupId(idOrPublicId);
+	if (!lookupId) return null;
+	if (isObjectId(lookupId)) {
+		const doc = await Model.findById(lookupId);
 		if (doc) return doc;
 	}
-	return await Model.findOne({ publicId: idOrPublicId });
+	return await Model.findOne({ publicId: { $eq: lookupId } });
 }
 
 async function ensureDocumentPublicId(doc, Model) {
@@ -34,6 +52,7 @@ async function ensureDocumentsPublicId(docs, Model) {
 
 module.exports = {
 	isObjectId,
+	normalizeLookupId,
 	findByIdOrPublicId,
 	ensureDocumentPublicId,
 	ensureDocumentsPublicId,

@@ -15,7 +15,6 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminCreateUser from './pages/AdminCreateUser';
 import AdminCreateTournament from './pages/AdminCreateTournament';
 import ChessboardPage from './pages/ChessboardPage';
-import AdminOngoingGames from './pages/AdminOngoingGames';
 import UserDatabasePage from './pages/UserDatabasePage';
 import './App.css';
 
@@ -62,11 +61,6 @@ function App() {
 								<Route path="/admin/tournaments/:id/manage" element={
 									<ProtectedRoute requiredRole="admin">
 										<TournamentManage />
-									</ProtectedRoute>
-								} />
-								<Route path="/admin/games" element={
-									<ProtectedRoute requiredRole="admin">
-										<AdminOngoingGames />
 									</ProtectedRoute>
 								} />
 								<Route path="/users" element={

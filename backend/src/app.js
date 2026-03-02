@@ -65,8 +65,8 @@ app.use((req, res, next) => {
 // Rate limiting (skip in test environment)
 if (process.env.NODE_ENV !== 'test') {
 	const generalLimiter = rateLimit({
-		windowMs: 15 * 60 * 1000,
-		max: 200,
+		windowMs: 60 * 1000,
+		max: 240,
 		standardHeaders: true,
 		legacyHeaders: false,
 		message: { error: 'Too many requests, please try again later.' },
