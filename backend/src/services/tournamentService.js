@@ -63,6 +63,8 @@ const summarizePlayer = (player) => {
 		status: base.status || 'active',
 		entryRating: base.entryRating ?? user?.globalElo ?? 0,
 		lastResultAt: base.lastResultAt ?? null,
+		// Persisted rank within the tournament; null until the first game result is submitted.
+		standing: base.standing ?? null,
 	};
 };
 
@@ -371,7 +373,13 @@ class TournamentService {
 		await ensureDocumentsPublicId(players, Player);
 		await ensurePlayerHierarchyIds(players);
 
+		// Sort by the persisted standing field (set by refreshStandings() after each game result).
+		// Players without a standing yet (no games played) fall to the bottom of the list,
+		// tiebroken by score DESC then liveRating DESC so the initial display is still sensible.
 		players.sort((a, b) => {
+			const sa = a.standing ?? Infinity;
+			const sb = b.standing ?? Infinity;
+			if (sa !== sb) return sa - sb;
 			const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
 			if (scoreDiff !== 0) return scoreDiff;
 			return (b.liveRating ?? 0) - (a.liveRating ?? 0);
@@ -380,7 +388,8 @@ class TournamentService {
 		return players.map((player, index) => {
 			const summary = summarizePlayer(player);
 			return {
-				rank: index + 1,
+				// Use the persisted standing as rank; fall back to sorted position if not yet set.
+				rank: player.standing ?? (index + 1),
 				player: {
 					id: summary?.id,
 					userId: summary?.userId,

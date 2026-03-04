@@ -87,6 +87,29 @@ function applyResultToPlayer({ player, opponentRating, resultColor, perspective,
 	});
 }
 
+/**
+ * Recomputes and persists the `standing` field for all players in a tournament.
+ * Ranked by score DESC, then liveRating DESC as tiebreaker.
+ * Called fire-and-forget after every game result so standings are always current.
+ */
+async function refreshStandings(tournamentId) {
+	const players = await Player.find({ tournament: tournamentId })
+		.select('_id score liveRating')
+		.sort({ score: -1, liveRating: -1 })
+		.lean();
+
+	if (!players.length) return;
+
+	const bulkOps = players.map((p, idx) => ({
+		updateOne: {
+			filter: { _id: p._id },
+			update: { $set: { standing: idx + 1 } },
+		},
+	}));
+
+	await Player.bulkWrite(bulkOps);
+}
+
 class GameService {
 	async getGameById(id) {
 		const game = await findByIdOrPublicId(Game, id);
@@ -241,6 +264,12 @@ class GameService {
 			black.waitingSince = shouldWait ? new Date() : null;
 			await black.save();
 		}
+
+		// Refresh standings for all players in the tournament after every result.
+		// Fire-and-forget: standings are for display only and do not block the response.
+		refreshStandings(game.tournament).catch((err) =>
+			console.error('[GameService] standings refresh failed:', err),
+		);
 
 		if (!tournamentActive) {
 			return game;
