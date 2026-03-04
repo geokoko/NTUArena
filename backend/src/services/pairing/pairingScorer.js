@@ -17,10 +17,33 @@ const MAX_COLOR_IMBALANCE = 3; // Hard-block if |whitesPlayed - blacksPlayed| wo
  */
 
 function justPlayedTogether(a, b) {
-	if (!a.recentOpponents || !a.recentOpponents.length) return false;
 	const bId = String(b._id);
-	// recentOpponents are Player ObjectIds; compare stringified
-	return String(a.recentOpponents[0]) === bId || String(b.recentOpponents?.[0]) === String(a._id);
+	const aId = String(a._id);
+	// recentOpponents are appended at the end, so index 0 is the oldest opponent
+	// and the last index is the most recent. Check the last entry of each player.
+	const aLastOpp = a.recentOpponents?.at(-1);
+	const bLastOpp = b.recentOpponents?.at(-1);
+	return String(aLastOpp) === bId || String(bLastOpp) === aId;
+}
+
+/**
+ * Returns the color player `a` played in their most recent game against player `b`,
+ * or null if they have not played together within the recorded history.
+ *
+ * colorHistory and recentOpponents are appended in sync in createGameFromPairing,
+ * so colorHistory[i] is the color played in the game against recentOpponents[i].
+ */
+function lastColorVsOpponent(a, b) {
+	const bId = String(b._id);
+	const opponents = a.recentOpponents ?? [];
+	const colors = a.colorHistory ?? [];
+	// Scan from the end so we get the most recent meeting first.
+	for (let i = opponents.length - 1; i >= 0; i--) {
+		if (String(opponents[i]) === bId) {
+			return colors[i] ?? null;
+		}
+	}
+	return null;
 }
 
 function headToHeadCount(a, b) {
@@ -162,6 +185,38 @@ function evaluatePair(a, b, opts = {}) {
 	if (justPlayedTogether(a, b)) return { ok: false, reason: 'recent_opponents' };
 	if (tooManyHeadToHead(a, b, maxHeadToHead)) return { ok: false, reason: 'too_many_meetings' };
 
+	// Rematch color-swap enforcement:
+	// If these players have met before, force the opposite color from their last
+	// meeting to prevent same-color rematches. This is mandatory — only one color
+	// assignment is offered. If that assignment violates a hard constraint (streak or
+	// imbalance), the pair is rejected entirely so the worker can try other options.
+	const lastColorA = lastColorVsOpponent(a, b);
+	if (lastColorA !== null) {
+		const requiredColorA = lastColorA === 'white' ? 'black' : 'white';
+		const requiredColorB = lastColorA === 'white' ? 'white' : 'black';
+
+		const forcedInvalid =
+			wouldExceedColorLimit(a, requiredColorA) || wouldExceedColorLimit(b, requiredColorB) ||
+			wouldExceedImbalanceLimit(a, requiredColorA) || wouldExceedImbalanceLimit(b, requiredColorB);
+
+		if (forcedInvalid) {
+			return { ok: false, reason: 'color_constraint' };
+		}
+
+		// Score the forced assignment with normal soft penalties for fair ranking
+		// against other potential pairs the worker is evaluating.
+		const pen =
+			colorPenalty(a, requiredColorA) + colorImbalancePenalty(a, requiredColorA) +
+			colorPenalty(b, requiredColorB) + colorImbalancePenalty(b, requiredColorB);
+		const prox = proximityScore(a, b, proximityWeights);
+		const waitBonus = waitTimeBonus(a, b);
+		const colors = requiredColorA === 'white'
+			? { white: a, black: b }
+			: { white: b, black: a };
+
+		return { ok: true, score: prox + waitBonus - colorWeights.colorBias * pen, colors };
+	}
+
 	// A color assignment is invalid if it would violate EITHER the consecutive-
 	// streak limit OR the overall color-imbalance limit for either player.
 	const whiteAssignmentInvalid =
@@ -211,6 +266,7 @@ module.exports = {
 	evaluatePair,
 	// Export helpers for tests
 	justPlayedTogether,
+	lastColorVsOpponent,
 	tooManyHeadToHead,
 	colorTailStreak,
 	colorImbalance,
