@@ -7,10 +7,22 @@ const Tournament = require('../../models/Tournament');
 const Player = require('../../models/Player');
 
 class PairingWorker {
-	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400 } = {}) {
+	/**
+	 * @param {object} opts
+	 * @param {string}  opts.workerId   - unique id for this worker instance
+	 * @param {number}  opts.batchSize  - max snapshots to dequeue per cycle
+	 * @param {number}  opts.idleMs     - sleep between empty cycles
+	 * @param {number}  opts.settleMs   - "quiet window": the worker WILL NOT pair
+	 *        until this many ms have passed since the newest player entered the
+	 *        queue.  This lets the admin finish inputting all game results before
+	 *        a new pairing round fires, maximising the available player pool.
+	 *        Set to 0 to disable.
+	 */
+	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400, settleMs = 10_000 } = {}) {
 		this.workerId = workerId;
 		this.batchSize = batchSize;
 		this.idleMs = idleMs;
+		this.settleMs = settleMs;
 		this.running = false;
 	}
 
@@ -69,6 +81,27 @@ class PairingWorker {
 			return;
 		}
 
+		// WAITING FOR SETTLE WINDOW:
+		// Wait until `settleMs` has elapsed since the most recently
+		// enqueued player in the batch.  This ensures the admin has
+		// stopped inputting results, so the full available player pool
+		// is considered before any pairing decisions are made.
+		if (this.settleMs > 0) {
+			const newestEnqueue = Math.max(
+				...remaining.map((s) => Number(s.enqueuedAt) || 0),
+			);
+			const quietElapsed = Date.now() - newestEnqueue;
+
+			if (quietElapsed < this.settleMs) {
+				// Pool is still "hot" – put everyone back and wait
+				// for the remaining quiet gap.
+				await requeueLeftovers(tournamentId, this.workerId, remaining);
+				const sleepFor = this.settleMs - quietElapsed;
+				await this.#sleep(sleepFor);
+				return;
+			}
+		}
+
 		// 2. Try to pair them off
 		const pairedCount = { count: 0 };
 
@@ -100,7 +133,7 @@ class PairingWorker {
 
 			const { white, black } = bestEval.colors;
 
-			// 3) Create the game via GameService (atomic transaction inside)
+			// 3. Create the game via GameService (atomic transaction inside)
 			let gameDoc = null;
 			try {
 				gameDoc = await gameService.createGameFromPairing(white._id, black._id, tournamentId);
