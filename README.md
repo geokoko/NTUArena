@@ -39,32 +39,32 @@ NTUArena is a web application built for **Skaki NTUA – Le Roi**, the chess clu
 - **CSV Import** — Bulk import players and users via CSV files
 - **Responsive UI** — Works on desktop and mobile browsers
 
-## Tech Stack
+## Tech Stack - Containers
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | React 18, React Router |
+| **Frontend** | React, React Router |
 | **Backend** | Node.js, Express |
 | **Database** | MongoDB |
 | **Cache** | Redis |
 | **Reverse Proxy** | Nginx |
 | **Containerization** | Docker Compose |
 
-## Architecture
+## High-Level Architecture
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Browser    │────▶│    Nginx     │────▶│   React     │
-│              │     │  (port 80)  │     │  Frontend   │
+│   Browser   │────>│    Nginx    │────>│   React     │
+│             │     │  (port 80)  │     │  Frontend   │
 └─────────────┘     │             │     └─────────────┘
-                    │  /api/ ───▶ │     ┌─────────────┐
-                    │             │────▶│   Express    │
+                    │  /api/ ───> │     ┌─────────────┐
+                    │             │────>│   Express   │
                     └─────────────┘     │   Backend   │
                                         │  (port 5000)│
                                         └──────┬──────┘
                                                │
-                                    ┌──────────┴──────────┐
-                                    │                     │
+                                    ┌──────────┴─────────┐
+                                    │                    │
                               ┌─────┴─────┐         ┌────┴────┐
                               │  MongoDB  │         │  Redis  │
                               │ (replica) │         │ (cache) │
@@ -84,7 +84,7 @@ git clone https://github.com/YOUR_USERNAME/ArenaManager.git
 cd ArenaManager
 ```
 
-### 2. Configure environment
+### 2. Configure environment variables
 
 ```bash
 cp .env.example .env
@@ -111,7 +111,7 @@ http://localhost
 | `APP_MODE` | `dev` or `prod` — selects Dockerfile and Nginx config | `dev` |
 | `PORT` | Backend server port | `5000` |
 | `NODE_ENV` | Node environment | `development` |
-| `AUTH_ENABLED` | Enable JWT authentication | `true` |
+| `AUTH_ENABLED` | Enable JWT authentication | `false` (recommended for local use) |
 | `JWT_SECRET` | Secret key for JWT tokens | *(change in production)* |
 | `JWT_EXPIRES_IN` | Token expiration time | `7d` |
 | `MONGO_DB` | MongoDB database name | `ntuarena` |
@@ -151,7 +151,7 @@ ArenaManager/
 ├── backend/
 │   ├── src/
 │   │   ├── controllers/     # Route handlers
-│   │   ├── middleware/       # Auth, validation
+│   │   ├── middleware/      # Auth, validation
 │   │   ├── models/          # Mongoose schemas (User, Player, Tournament, Game)
 │   │   ├── routes/          # Express route definitions
 │   │   ├── services/        # Business logic (pairing, Elo, etc.)
@@ -189,15 +189,6 @@ Run a manual backup:
 ```bash
 ./scripts/backup-mongo.sh
 ```
-
-Schedule daily backups via cron:
-
-```bash
-# Every day at 3 AM
-0 3 * * * /path/to/ArenaManager/scripts/backup-mongo.sh
-```
-
-Backups are stored in `backups/` with 7-day retention.
 
 ## Security
 
