@@ -1,5 +1,7 @@
 # Dependabot configuration
-# Groups all dependency updates into a single PR per ecosystem
+# Groups all dependency updates into unified PRs per ecosystem.
+# - version-updates: batched weekly on Monday
+# - security-updates: also grouped (rather than one PR per package)
 
 version: 2
 updates:
@@ -11,9 +13,14 @@ updates:
       day: "monday"
     groups:
       all-backend-deps:
+        applies-to: version-updates
         patterns:
           - "*"
-    open-pull-requests-limit: 5
+      all-backend-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    open-pull-requests-limit: 2
 
   # Frontend (React)
   - package-ecosystem: "npm"
@@ -23,6 +30,11 @@ updates:
       day: "monday"
     groups:
       all-frontend-deps:
+        applies-to: version-updates
         patterns:
           - "*"
-    open-pull-requests-limit: 5
+      all-frontend-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    open-pull-requests-limit: 2
