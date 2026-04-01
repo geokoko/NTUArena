@@ -11,7 +11,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "axios": "^1.14.0",
+    "axios": "1.14.0",
     "chess.js": "^1.4.0",
     "react": "^19.2.4",
     "react-chessboard": "^5.10.0",
@@ -25,7 +25,22 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "audit:full": "npm audit && npx @socketsecurity/cli@latest ci"
+  },
+  "overrides": {
+    "@rollup/plugin-terser": "1.0.0",
+    "@svgr/webpack": "6.5.1",
+    "bfj": "7.0.2",
+    "css-minimizer-webpack-plugin": "8.0.0",
+    "glob": "10.5.0",
+    "node-forge": "1.4.0",
+    "path-to-regexp": "0.1.13",
+    "picomatch": "2.3.2",
+    "resolve-url-loader": "5.0.0",
+    "serialize-javascript": "7.0.5",
+    "terser-webpack-plugin": "5.4.0",
+    "workbox-webpack-plugin": "7.4.0"
   },
   "eslintConfig": {
     "extends": [

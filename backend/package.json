@@ -8,19 +8,20 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "jest --forceExit --detectOpenHandles",
-    "simulate:tournament": "node test-scripts/simulateTournament.js"
+    "simulate:tournament": "node test-scripts/simulateTournament.js",
+    "audit:full": "npm audit && npx @socketsecurity/cli@latest ci"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "express-mongo-sanitize": "^2.2.0",
-    "express-rate-limit": "^8.3.1",
-    "helmet": "^8.1.0",
-    "ioredis": "^5.10.1",
-    "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.3.1",
+    "bcryptjs": "3.0.3",
+    "cors": "2.8.6",
+    "dotenv": "17.3.1",
+    "express": "5.2.1",
+    "express-mongo-sanitize": "2.2.0",
+    "express-rate-limit": "8.3.1",
+    "helmet": "8.1.0",
+    "ioredis": "5.10.1",
+    "jsonwebtoken": "9.0.3",
+    "mongoose": "9.3.1",
     "morgan": "^1.10.0"
   },
   "devDependencies": {
@@ -28,5 +29,8 @@
     "mongodb-memory-server": "^11.0.1",
     "supertest": "^7.2.2",
     "nodemon": "^3.1.14"
+  },
+  "overrides": {
+    "path-to-regexp": "8.4.1"
   }
 }
