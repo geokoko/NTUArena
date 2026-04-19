@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "jest --forceExit --detectOpenHandles",
-    "simulate:tournament": "node test-scripts/simulateTournament.js"
+    "simulate:tournament": "node test-scripts/simulateTournament.js",
+    "simulate:arena-pairings": "node test-scripts/simulateArenaPairings.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
