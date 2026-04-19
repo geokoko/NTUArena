@@ -1,12 +1,18 @@
+const mongoose = require('mongoose');
 const { connect, clearDatabase, disconnect } = require('./setup');
 const tournamentService = require('../src/services/tournamentService');
 const userService = require('../src/services/userService');
 const User = require('../src/models/User');
 const Tournament = require('../src/models/Tournament');
 const Player = require('../src/models/Player');
+const Game = require('../src/models/Game');
+const redisQueue = require('../src/services/queue/redisQueue');
 
 beforeAll(async () => await connect());
-afterEach(async () => await clearDatabase());
+afterEach(async () => {
+	jest.clearAllMocks();
+	await clearDatabase();
+});
 afterAll(async () => await disconnect());
 
 // Helpers
@@ -38,6 +44,50 @@ const createTestTournament = async (overrides = {}) =>
 		endDate: dayAfter(),
 		...overrides,
 	});
+
+const setupActiveGameFixture = async () => {
+	const whiteUser = await createTestUser({ globalElo: 1500 });
+	const blackUser = await createTestUser({ globalElo: 1600 });
+	const tournament = await createTestTournament();
+
+	const whiteJoin = await tournamentService.joinTournament(whiteUser.id, tournament.id);
+	const blackJoin = await tournamentService.joinTournament(blackUser.id, tournament.id);
+	await tournamentService.startTournament(tournament.id);
+
+	const tournamentDoc = await Tournament.findOne({ publicId: tournament.id });
+	const whitePlayer = await Player.findOne({ publicId: whiteJoin.id });
+	const blackPlayer = await Player.findOne({ publicId: blackJoin.id });
+	const oldWhiteOpponent = new mongoose.Types.ObjectId();
+	const oldBlackOpponent = new mongoose.Types.ObjectId();
+
+	whitePlayer.isPlaying = true;
+	whitePlayer.recentOpponents = [oldWhiteOpponent, blackPlayer._id];
+	whitePlayer.colorHistory = ['black', 'white'];
+
+	blackPlayer.isPlaying = true;
+	blackPlayer.recentOpponents = [oldBlackOpponent, whitePlayer._id];
+	blackPlayer.colorHistory = ['white', 'black'];
+
+	await Promise.all([whitePlayer.save(), blackPlayer.save()]);
+
+	const game = await Game.create({
+		playerWhite: whitePlayer._id,
+		playerBlack: blackPlayer._id,
+		tournament: tournamentDoc._id,
+		isFinished: false,
+	});
+
+	return {
+		tournament,
+		game,
+		whiteUser,
+		blackUser,
+		whitePlayer,
+		blackPlayer,
+		oldWhiteOpponent,
+		oldBlackOpponent,
+	};
+};
 
 // ─────────────────────────────────────────────
 // createTournament
@@ -327,6 +377,34 @@ describe('pausePlayer', () => {
 
 		const paused = await tournamentService.pausePlayer(user.id, t.id);
 		expect(paused.status).toBe('paused');
+	});
+
+	test('cancels an active game and rolls back the synthetic pairing history', async () => {
+		const fixture = await setupActiveGameFixture();
+		redisQueue.enqueue.mockClear();
+
+		const paused = await tournamentService.pausePlayer(fixture.whiteUser.id, fixture.tournament.id);
+
+		expect(paused.status).toBe('paused');
+
+		const [updatedWhite, updatedBlack, cancelledGame] = await Promise.all([
+			Player.findById(fixture.whitePlayer._id),
+			Player.findById(fixture.blackPlayer._id),
+			Game.findById(fixture.game._id),
+		]);
+
+		expect(cancelledGame.isCancelled).toBe(true);
+		expect(cancelledGame.isFinished).toBe(true);
+
+		expect(updatedWhite.isPlaying).toBe(false);
+		expect(updatedBlack.isPlaying).toBe(false);
+
+		expect(updatedWhite.colorHistory).toEqual(['black']);
+		expect(updatedBlack.colorHistory).toEqual(['white']);
+		expect(updatedWhite.recentOpponents.map(String)).toEqual([String(fixture.oldWhiteOpponent)]);
+		expect(updatedBlack.recentOpponents.map(String)).toEqual([String(fixture.oldBlackOpponent)]);
+
+		expect(redisQueue.enqueue).toHaveBeenCalledTimes(1);
 	});
 
 	test('rejects pausing withdrawn player', async () => {

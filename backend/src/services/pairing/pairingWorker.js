@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending, removeSnapshotsFromPending } = require('../queue/redisQueue');
 const { evaluatePair } = require('./pairingScorer');
+const { selectBatchPairings } = require('./selectBatchPairings');
 
 const gameService = require('../gameService');
 const Tournament = require('../../models/Tournament');
@@ -104,34 +105,21 @@ class PairingWorker {
 
 		// 2. Try to pair them off
 		const pairedCount = { count: 0 };
+		const { pairings, leftovers, exhaustedNoLegalPairPool } = selectBatchPairings(remaining, evaluatePair);
+		remaining.length = 0;
+		remaining.push(...leftovers);
 
-		while (remaining.length >= 2) {
-			const anchor = remaining[0];
-			let bestIdx = -1;
-			let bestEval = null;
+		if (exhaustedNoLegalPairPool && remaining.length >= 2) {
+			console.warn('[PairingWorker] no legal pairings available in current pool; requeueing leftovers', {
+				tournamentId: String(tournamentId),
+				workerId: this.workerId,
+				poolSize: remaining.length,
+				pairingsCreated: pairings.length,
+				playerIds: remaining.map((player) => String(player._id)),
+			});
+		}
 
-			for (let i = 1; i < remaining.length; i++) {
-				const e = evaluatePair(anchor, remaining[i]);
-				if (!e.ok) continue;
-				if (!bestEval || e.score > bestEval.score) {
-					bestEval = e;
-					bestIdx = i;
-				}
-			}
-
-			if (bestIdx === -1) {
-				// Couldn't pair anchor now; rotate once to give others a chance
-				remaining.push(remaining.shift());
-				if (remaining.length <= 3) break; // avoid tight loop when pool is tiny
-				continue;
-			}
-
-			const partner = remaining[bestIdx];
-			// remove partner (higher index) first, then anchor (index 0, intitial player pick)
-			remaining.splice(bestIdx, 1);
-			remaining.shift();
-
-			const { white, black } = bestEval.colors;
+		for (const { white, black } of pairings) {
 
 			// 3. Create the game via GameService (atomic transaction inside)
 			let gameDoc = null;
@@ -165,4 +153,4 @@ class PairingWorker {
 	#sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 }
 
-module.exports = { PairingWorker };
+module.exports = { PairingWorker, selectBatchPairings };
