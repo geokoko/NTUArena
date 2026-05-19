@@ -95,4 +95,20 @@ describe('selectBatchPairings', () => {
 		expect(graph.totalPairingScore).toBe(16);
 		expect(pairIds).toEqual(['AC', 'BD']);
 	});
+
+	test('graph selector supports components larger than the old exact-DP cap', () => {
+		const players = Array.from({ length: 30 }, (_, index) => makePlayer(`P${String(index + 1).padStart(2, '0')}`));
+		const evaluator = (left, right) => ({
+			ok: true,
+			score: 1 - Math.abs(Number(left._id.slice(1)) - Number(right._id.slice(1))) / 100,
+			colors: { white: left, black: right },
+		});
+
+		const graph = selectBatchPairings(players, evaluator);
+
+		expect(graph.pairings).toHaveLength(15);
+		expect(graph.leftovers).toEqual([]);
+		expect(graph.usedFallback).toBe(false);
+		expect(graph.legalEdgeCount).toBe(435);
+	});
 });

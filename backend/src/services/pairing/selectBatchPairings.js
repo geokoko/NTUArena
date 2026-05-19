@@ -1,23 +1,15 @@
+const blossom = require('edmonds-blossom-fixed');
 const { evaluatePair } = require('./pairingScorer');
 
-const DEFAULT_MAX_EXACT_COMPONENT_VERTICES = 24;
-const EPSILON = 1e-9;
-
-function isBetterMatch(candidate, incumbent) {
-	if (!incumbent) return true;
-	if (candidate.count !== incumbent.count) return candidate.count > incumbent.count;
-	if (Math.abs(candidate.score - incumbent.score) > EPSILON) {
-		return candidate.score > incumbent.score;
-	}
-	return candidate.tieKey < incumbent.tieKey;
-}
-
-function pairTieKey(edges) {
-	return edges
-		.map((edge) => `${String(edge.colors.white._id)}-${String(edge.colors.black._id)}`)
-		.sort()
-		.join('|');
-}
+const DEFAULT_PAIRING_COST_WEIGHTS = {
+	legacyScore: 100,
+	headToHead: 250,
+	rank: 300,
+	rating: 140,
+	ratingDeviation: 60,
+	berserk: 40,
+	wait: 35,
+};
 
 function selectGreedyBatchPairings(batch, evaluatePairFn = evaluatePair) {
 	const remaining = [...batch];
@@ -68,24 +60,112 @@ function selectGreedyBatchPairings(batch, evaluatePairFn = evaluatePair) {
 	};
 }
 
-function buildPairingGraph(batch, evaluatePairFn = evaluatePair) {
+function asFiniteNumber(value, fallback = null) {
+	const n = Number(value);
+	return Number.isFinite(n) ? n : fallback;
+}
+
+function colorTailStreak(history, color) {
+	let streak = 0;
+	for (let i = (history ?? []).length - 1; i >= 0; i--) {
+		if (history[i] !== color) break;
+		streak += 1;
+	}
+	return streak;
+}
+
+function playerRank(player) {
+	return asFiniteNumber(player.standing ?? player.rank, null);
+}
+
+function playerRating(player) {
+	return asFiniteNumber(player.liveRating ?? player.entryRating ?? player.rating, 1200);
+}
+
+function playerRatingDeviation(player) {
+	return asFiniteNumber(player.ratingDeviation ?? player.rd ?? player.ratingDeviationValue, null);
+}
+
+function playerBerserkRate(player) {
+	return asFiniteNumber(player.berserkRate ?? player.zerkRate, null);
+}
+
+function headToHeadCount(a, b) {
+	const bId = String(b._id);
+	return (a.recentOpponents ?? []).filter((opponentId) => String(opponentId) === bId).length;
+}
+
+function normalizedDiff(left, right, scale) {
+	if (left == null || right == null) return 0;
+	return Math.tanh(Math.abs(left - right) / scale);
+}
+
+function averageWaitMinutes(a, b) {
+	const now = Date.now();
+	const waitA = a.waitingSince ? Math.max(0, now - new Date(a.waitingSince).getTime()) : 0;
+	const waitB = b.waitingSince ? Math.max(0, now - new Date(b.waitingSince).getTime()) : 0;
+	return (waitA + waitB) / 2 / 60000;
+}
+
+function forcedColorStress(player, color) {
+	const opposite = color === 'white' ? 'black' : 'white';
+	return colorTailStreak(player.colorHistory, opposite) >= 2 ? 0.2 : 0;
+}
+
+function pairingCost(a, b, evaluation, weights = DEFAULT_PAIRING_COST_WEIGHTS) {
+	const meetings = Math.max(headToHeadCount(a, b), headToHeadCount(b, a));
+	const rankA = playerRank(a);
+	const rankB = playerRank(b);
+	const rdA = playerRatingDeviation(a);
+	const rdB = playerRatingDeviation(b);
+	const berserkA = playerBerserkRate(a);
+	const berserkB = playerBerserkRate(b);
+	const colorStress =
+		forcedColorStress(evaluation.colors.white, 'white') +
+		forcedColorStress(evaluation.colors.black, 'black');
+
+	return (
+		-weights.legacyScore * (evaluation.score + colorStress) +
+		weights.headToHead * Math.min(meetings, 2) / 2 +
+		weights.rank * normalizedDiff(rankA, rankB, 8) +
+		weights.rating * normalizedDiff(playerRating(a), playerRating(b), 400) +
+		weights.ratingDeviation * normalizedDiff(rdA, rdB, 80) +
+		weights.berserk * normalizedDiff(berserkA, berserkB, 0.35) -
+		weights.wait * Math.tanh(averageWaitMinutes(a, b) / 3)
+	);
+}
+
+function buildPairingGraph(batch, evaluatePairFn = evaluatePair, options = {}) {
 	const edges = [];
 	const adjacency = Array.from({ length: batch.length }, () => []);
+	const costWeights = {
+		...DEFAULT_PAIRING_COST_WEIGHTS,
+		...(options.costWeights ?? {}),
+	};
 
 	for (let i = 0; i < batch.length; i++) {
 		for (let j = i + 1; j < batch.length; j++) {
 			const evaluation = evaluatePairFn(batch[i], batch[j]);
 			if (!evaluation.ok) continue;
+			const cost = pairingCost(batch[i], batch[j], evaluation, costWeights);
 
 			const edge = {
 				i,
 				j,
 				score: evaluation.score,
+				cost,
 				colors: evaluation.colors,
 			};
 			edges.push(edge);
 			adjacency[i].push(edge);
 			adjacency[j].push(edge);
+		}
+	}
+
+	if (edges.length) {
+		const maxCost = Math.max(...edges.map((edge) => edge.cost));
+		for (const edge of edges) {
+			edge.matchWeight = Math.max(1, Math.round((maxCost - edge.cost) * 1000) + 1);
 		}
 	}
 
@@ -121,9 +201,10 @@ function connectedComponents(vertexCount, adjacency) {
 	return components;
 }
 
-function solveExactComponent(vertices, adjacency) {
+function solveBlossomComponent(vertices, adjacency) {
 	const localIndex = new Map(vertices.map((vertex, index) => [vertex, index]));
-	const localEdges = Array.from({ length: vertices.length }, () => []);
+	const localEdges = [];
+	const edgeByLocalPair = new Map();
 
 	for (const vertex of vertices) {
 		const sourceLocal = localIndex.get(vertex);
@@ -132,48 +213,24 @@ function solveExactComponent(vertices, adjacency) {
 			if (!localIndex.has(other)) continue;
 			const targetLocal = localIndex.get(other);
 			if (sourceLocal < targetLocal) {
-				localEdges[sourceLocal].push({ ...edge, targetLocal });
+				localEdges.push([sourceLocal, targetLocal, edge.matchWeight]);
+				edgeByLocalPair.set(`${sourceLocal}:${targetLocal}`, edge);
 			}
 		}
 	}
 
-	const memo = new Map();
-	const fullMask = (1n << BigInt(vertices.length)) - 1n;
+	if (!localEdges.length) return [];
 
-	function solve(mask) {
-		if (mask === 0n) return { count: 0, score: 0, edges: [], tieKey: '' };
-		if (memo.has(mask)) return memo.get(mask);
-
-		let firstLocal = 0;
-		while ((mask & (1n << BigInt(firstLocal))) === 0n) {
-			firstLocal += 1;
-		}
-
-		const firstBit = 1n << BigInt(firstLocal);
-		const withoutFirst = mask & ~firstBit;
-		let best = solve(withoutFirst);
-
-		for (const edge of localEdges[firstLocal]) {
-			const targetBit = 1n << BigInt(edge.targetLocal);
-			if ((mask & targetBit) === 0n) continue;
-
-			const rest = solve(withoutFirst & ~targetBit);
-			const candidateEdges = [...rest.edges, edge];
-			const candidate = {
-				count: rest.count + 1,
-				score: rest.score + edge.score,
-				edges: candidateEdges,
-				tieKey: pairTieKey(candidateEdges),
-			};
-
-			if (isBetterMatch(candidate, best)) best = candidate;
-		}
-
-		memo.set(mask, best);
-		return best;
+	const mate = blossom(localEdges, true);
+	const selected = [];
+	for (let local = 0; local < mate.length; local++) {
+		const mateLocal = mate[local];
+		if (mateLocal == null || mateLocal < 0 || local >= mateLocal) continue;
+		const edge = edgeByLocalPair.get(`${local}:${mateLocal}`);
+		if (edge) selected.push(edge);
 	}
 
-	return solve(fullMask);
+	return selected;
 }
 
 function hasLegalLeftoverEdge(leftovers, graphEdges, batch) {
@@ -185,38 +242,25 @@ function hasLegalLeftoverEdge(leftovers, graphEdges, batch) {
 }
 
 function selectGraphBatchPairings(batch, evaluatePairFn = evaluatePair, options = {}) {
-	const maxExactComponentVertices = options.maxExactComponentVertices ?? DEFAULT_MAX_EXACT_COMPONENT_VERTICES;
-	const graph = buildPairingGraph(batch, evaluatePairFn);
+	const graph = buildPairingGraph(batch, evaluatePairFn, options);
 	const components = connectedComponents(batch.length, graph.adjacency);
 	const pairings = [];
 	const matchedIndexes = new Set();
-	let usedFallback = false;
 	let totalPairingScore = 0;
+	let totalPairingCost = 0;
 
 	for (const component of components) {
 		if (component.length < 2) continue;
 
-		if (component.length > maxExactComponentVertices) {
-			usedFallback = true;
-			const componentBatch = component.map((index) => batch[index]);
-			const fallback = selectGreedyBatchPairings(componentBatch, evaluatePairFn);
-			for (const pairing of fallback.pairings) {
-				pairings.push(pairing);
-				matchedIndexes.add(batch.findIndex((player) => String(player._id) === String(pairing.white._id)));
-				matchedIndexes.add(batch.findIndex((player) => String(player._id) === String(pairing.black._id)));
-			}
-			totalPairingScore += fallback.totalPairingScore;
-			continue;
-		}
-
-		const solution = solveExactComponent(component, graph.adjacency);
-		const selectedEdges = [...solution.edges].sort((left, right) => Math.min(left.i, left.j) - Math.min(right.i, right.j));
+		const selectedEdges = solveBlossomComponent(component, graph.adjacency)
+			.sort((left, right) => Math.min(left.i, left.j) - Math.min(right.i, right.j));
 
 		for (const edge of selectedEdges) {
 			pairings.push(edge.colors);
 			matchedIndexes.add(edge.i);
 			matchedIndexes.add(edge.j);
 			totalPairingScore += edge.score;
+			totalPairingCost += edge.cost;
 		}
 	}
 
@@ -228,8 +272,9 @@ function selectGraphBatchPairings(batch, evaluatePairFn = evaluatePair, options 
 		leftovers,
 		exhaustedNoLegalPairPool,
 		strategy: 'graph',
-		usedFallback,
+		usedFallback: false,
 		totalPairingScore,
+		totalPairingCost: Number(totalPairingCost.toFixed(3)),
 		legalEdgeCount: graph.edges.length,
 	};
 }
@@ -241,4 +286,5 @@ module.exports = {
 	selectGraphBatchPairings,
 	selectGreedyBatchPairings,
 	buildPairingGraph,
+	pairingCost,
 };

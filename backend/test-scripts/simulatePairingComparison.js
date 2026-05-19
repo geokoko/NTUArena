@@ -773,8 +773,9 @@ function runComparison(options) {
 
 function writeOutputs(report, outputDir) {
 	fs.mkdirSync(outputDir, { recursive: true });
-	const jsonPath = path.join(outputDir, 'pairing-comparison-20p.json');
-	const htmlPath = path.join(outputDir, 'pairing-comparison-20p.html');
+	const prefix = `pairing-comparison-${report.scenario.players}p-${report.scenario.durationMinutes}m`;
+	const jsonPath = path.join(outputDir, `${prefix}.json`);
+	const htmlPath = path.join(outputDir, `${prefix}.html`);
 	fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 	fs.writeFileSync(htmlPath, renderHtml(report));
 	return { jsonPath, htmlPath };
