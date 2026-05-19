@@ -76,6 +76,7 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED}
       CORS_ORIGIN: ${CORS_ORIGIN}
       APP_MODE: ${APP_MODE}
+      PAIRING_SETTLE_MS: ${PAIRING_SETTLE_MS}
     depends_on:
       mongo:
         condition: service_healthy
