@@ -19,7 +19,7 @@ const {
 const DEFAULTS = {
 	players: 20,
 	seed: 20260519,
-	durationMinutes: 120,
+	durationMinutes: 60,
 	outputDir: path.join(__dirname, '..', 'test-output'),
 };
 
@@ -73,6 +73,10 @@ function asNumber(value, fallback = 0) {
 
 function minutes(ms) {
 	return Math.round(ms / 60000);
+}
+
+function roundMinutes(ms) {
+	return Number((ms / 60000).toFixed(2));
 }
 
 function formatClock(startMs, timestamp) {
@@ -155,10 +159,9 @@ function refreshStandings(players) {
 
 function buildLeaveSchedule(players, startMs, durationMs) {
 	const planned = [
-		{ index: 16, at: 42 },
-		{ index: 7, at: 67 },
-		{ index: 12, at: 86 },
-		{ index: 3, at: 104 },
+		{ index: 16, at: 32 },
+		{ index: 7, at: 47 },
+		{ index: 12, at: 57 },
 	];
 	return planned
 		.filter(({ index, at }) => index < players.length && at * 60000 < durationMs)
@@ -199,14 +202,18 @@ function applyPairing(white, black, now) {
 
 function gameDurationMs({ white, black, startMs, seed, gameNumber }) {
 	const roll = hashToUnit(seed, 'duration', white._id, black._id, Math.floor(startMs / 60000), gameNumber);
+	const jitter = hashToUnit(seed, 'duration-jitter', black._id, white._id, gameNumber);
+	const ratingGap = Math.abs((white.liveRating ?? white.entryRating) - (black.liveRating ?? black.entryRating));
+	const mismatchShortcut = Math.min(ratingGap / 1200, 0.35);
 	let durationMinutes;
-	if (roll < 0.12) durationMinutes = 8 + Math.floor(roll * 30);
-	else if (roll < 0.32) durationMinutes = 15;
-	else if (roll < 0.5) durationMinutes = 22;
-	else if (roll < 0.68) durationMinutes = 30;
-	else durationMinutes = 34 + Math.floor(roll * 18);
 
-	return durationMinutes * 60000;
+	if (roll < 0.08) durationMinutes = 1.8 + jitter * 1.2;
+	else if (roll < 0.36) durationMinutes = 3 + jitter * 2.2;
+	else if (roll < 0.76) durationMinutes = 5.2 + jitter * 2.6;
+	else durationMinutes = 7.8 + jitter * 2.45;
+
+	durationMinutes = clamp(durationMinutes - mismatchShortcut, 1.5, 10.25);
+	return Math.round(durationMinutes * 60000);
 }
 
 function scoreResult(white, black, seed, gameNumber) {
@@ -305,6 +312,7 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 		const timeline = [];
 		const cycles = [];
 		const waitSamples = [];
+		const waitRecords = [];
 		const metrics = {
 			gamesStarted: 0,
 			gamesCompleted: 0,
@@ -451,12 +459,16 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 				activeGames.set(gameId, game);
 				scheduleEvent({ type: 'finish', time: game.finishTime, gameId });
 				metrics.gamesStarted += 1;
+				waitRecords.push(
+					{ playerId: white._id, gameId, waitMinutes: roundMinutes(whiteWaitMs), pairedAt: formatClock(startMs, now) },
+					{ playerId: black._id, gameId, waitMinutes: roundMinutes(blackWaitMs), pairedAt: formatClock(startMs, now) },
+				);
 
 				pairLog.push({
 					gameId,
 					whiteId: white._id,
 					blackId: black._id,
-					durationMinutes: minutes(duration),
+					durationMinutes: roundMinutes(duration),
 					resultColor,
 					priorMeetings: validation.priorMeetings,
 					violations: validation.violations,
@@ -511,17 +523,35 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 		const avgWaitMinutes = waitSamples.length
 			? waitSamples.reduce((sum, value) => sum + value, 0) / waitSamples.length / 60000
 			: 0;
+		const maxWaitMinutes = waitSamples.length
+			? Math.max(...waitSamples) / 60000
+			: 0;
+		const activeWaitingAtEnd = waitingQueue
+			.map((id) => playersById.get(id))
+			.filter((player) => player?.status === 'active' && player.waitingSince)
+			.map((player) => ({
+				playerId: player._id,
+				waitMinutes: roundMinutes(startMs + durationMs - new Date(player.waitingSince).getTime()),
+			}))
+			.sort((left, right) => right.waitMinutes - left.waitMinutes);
 
 		return {
 			name,
 			metrics: {
 				...metrics,
 				avgWaitMinutes: Number(avgWaitMinutes.toFixed(2)),
+				maxWaitMinutes: Number(maxWaitMinutes.toFixed(2)),
+				waitsOver5Minutes: waitRecords.filter((record) => record.waitMinutes > 5).length,
+				waitsOver8Minutes: waitRecords.filter((record) => record.waitMinutes > 8).length,
 				playersStillWaiting: waitingQueue.length,
 				activeGamesAtEnd: activeGames.size,
 			},
 			cycles,
 			timeline,
+			longestWaits: [...waitRecords]
+				.sort((left, right) => right.waitMinutes - left.waitMinutes)
+				.slice(0, 12),
+			activeWaitingAtEnd,
 			finalStandings: refreshStandings(players).map(summarizePlayer),
 		};
 	} finally {
@@ -554,6 +584,9 @@ function renderHtml(report) {
 			<td>${m.ruleViolations}</td>
 			<td>${m.engineWarnings}</td>
 			<td>${m.avgWaitMinutes}</td>
+			<td>${m.maxWaitMinutes}</td>
+			<td>${m.waitsOver5Minutes}</td>
+			<td>${m.waitsOver8Minutes}</td>
 		</tr>`;
 	}).join('');
 
@@ -603,6 +636,27 @@ function renderHtml(report) {
 		</section>`;
 	}).join('');
 
+	const waitTables = report.results.map((result) => {
+		const rows = result.longestWaits.map((record) => `<tr>
+			<td>${escapeHtml(record.playerId)}</td>
+			<td>${escapeHtml(record.gameId)}</td>
+			<td>${record.waitMinutes}</td>
+			<td>${escapeHtml(record.pairedAt)}</td>
+		</tr>`).join('');
+		const endRows = result.activeWaitingAtEnd.map((record) => `<tr>
+			<td>${escapeHtml(record.playerId)}</td>
+			<td>${record.waitMinutes}</td>
+		</tr>`).join('');
+		return `<section>
+			<h2>${escapeHtml(result.name)} longest waits</h2>
+			<table>
+				<thead><tr><th>Player</th><th>Game</th><th>Wait minutes</th><th>Paired at</th></tr></thead>
+				<tbody>${rows}</tbody>
+			</table>
+			${endRows ? `<h2>${escapeHtml(result.name)} waiting at time control</h2><table><thead><tr><th>Player</th><th>Wait minutes</th></tr></thead><tbody>${endRows}</tbody></table>` : ''}
+		</section>`;
+	}).join('');
+
 	const eventRows = report.results.map((result) => {
 		const rows = result.timeline.slice(0, 160).map((event) => `<tr>
 			<td>${event.time}</td>
@@ -637,12 +691,12 @@ function renderHtml(report) {
 <body>
 	<main>
 		<h1>Pairing Algorithm Comparison</h1>
-		<p>Scenario: ${report.scenario.players} players, ${report.scenario.durationMinutes} minutes, fixed leave schedule, asynchronous game finishes, seed <code>${report.scenario.seed}</code>.</p>
+		<p>Scenario: ${report.scenario.players} players, ${report.scenario.durationMinutes} minutes, ${escapeHtml(report.scenario.timeControl)}, varied game durations capped near 10 minutes, fixed leave schedule, asynchronous game finishes, seed <code>${report.scenario.seed}</code>.</p>
 		<section class="grid">
 			<div class="panel">
 				<h2>Summary</h2>
 				<table>
-					<thead><tr><th>Algorithm</th><th>Started</th><th>Completed</th><th>Cancelled</th><th>Stalled</th><th>Rule violations</th><th>Warnings</th><th>Avg wait</th></tr></thead>
+					<thead><tr><th>Algorithm</th><th>Started</th><th>Completed</th><th>Cancelled</th><th>Stalled</th><th>Rule violations</th><th>Warnings</th><th>Avg wait</th><th>Max wait</th><th>&gt;5m</th><th>&gt;8m</th></tr></thead>
 					<tbody>${rows}</tbody>
 				</table>
 			</div>
@@ -652,6 +706,7 @@ function renderHtml(report) {
 			</div>
 		</section>
 		${cycleTables}
+		${waitTables}
 		${standings}
 		<section>
 			<h2>Timeline Sample</h2>
@@ -674,6 +729,12 @@ function runComparison(options) {
 		players: options.players,
 		seed: options.seed,
 		durationMinutes: options.durationMinutes,
+		timeControl: '3+2 blitz',
+		gameDurationModel: {
+			minMinutes: 1.5,
+			maxMinutes: 10.25,
+			description: 'Piecewise deterministic random distribution with short games, a middle mass around 5-8 minutes, and a long tail near the 3+2 maximum.',
+		},
 		rules: {
 			maxColorStreak: MAX_COLOR_STREAK,
 			maxColorImbalance: MAX_COLOR_IMBALANCE,
@@ -731,7 +792,8 @@ try {
 			`${result.name}: started=${result.metrics.gamesStarted} completed=${result.metrics.gamesCompleted} `
 			+ `cancelled=${result.metrics.gamesCancelled} stalled=${result.metrics.stalledPoolEvents} `
 			+ `violations=${result.metrics.ruleViolations} warnings=${result.metrics.engineWarnings} `
-			+ `avgWaitMinutes=${result.metrics.avgWaitMinutes}`
+			+ `avgWaitMinutes=${result.metrics.avgWaitMinutes} maxWaitMinutes=${result.metrics.maxWaitMinutes} `
+			+ `waitsOver5=${result.metrics.waitsOver5Minutes} waitsOver8=${result.metrics.waitsOver8Minutes}`
 		);
 	}
 	console.log(`json=${outputs.jsonPath}`);
