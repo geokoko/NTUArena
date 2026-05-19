@@ -1,5 +1,6 @@
-# Use Node.js 16 Alpine for smaller image
-FROM node:16-alpine
+# Node 22 Alpine — matches Dockerfile.prod. Node 18 or older breaks
+# serialize-javascript@7 (pinned via overrides), which needs globalThis.crypto.
+FROM node:22-alpine
 
 # Set working directory
 WORKDIR /app
