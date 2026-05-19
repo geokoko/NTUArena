@@ -105,7 +105,7 @@ class PairingWorker {
 		}
 
 		// 2. Try to pair them off
-		const pairedCount = { count: 0 };
+		const handledSnapshots = [];
 		const { pairings, leftovers, exhaustedNoLegalPairPool } = selectBatchPairings(remaining, evaluatePair);
 		remaining.length = 0;
 		remaining.push(...leftovers);
@@ -131,22 +131,24 @@ class PairingWorker {
 			}
 
 			if (!gameDoc) {
-				// if race or validation failed, then requeue both
+				// Pair creation failed: re-enqueue both to the main queue.
+				// They also need to be removed from pending below, otherwise
+				// they double-exist (in pending AND in main).
 				await enqueue(tournamentId, white);
 				await enqueue(tournamentId, black);
+				handledSnapshots.push(white, black);
 				continue;
 			}
 
-			pairedCount.count += 2;
+			handledSnapshots.push(white, black);
 		}
 
 		// Requeue leftovers from pending
 		await requeueLeftovers(tournamentId, this.workerId, remaining);
 
-		// Acknowledge the consumed (paired) items
-		if (pairedCount.count > 0) {
-			await ackFromPending(tournamentId, this.workerId, pairedCount.count);
-		}
+		// Remove handled (paired or failed) snapshots from pending by payload.
+		// Ack by count is wrong because pairings are not in pending-head order.
+		await ackFromPending(tournamentId, this.workerId, handledSnapshots);
 
 		await this.#sleep(remaining.length > 0 ? 50 : 0);
 	}

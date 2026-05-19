@@ -57,14 +57,19 @@ async function batchDequeueToPending(tournamentId, workerId, n = 50) {
 }
 
 /**
- * Acknowledge N items from pending (remove from head).
+ * Acknowledge handled snapshots from pending by removing each by exact
+ * payload. Removing by count from the head is wrong: pairings are not in
+ * head order (Blossom can pair head with tail), so popping N from head
+ * removes the wrong entries when some pairs succeed and others fail.
  */
-async function ackFromPending(tournamentId, workerId, n) {
+async function ackFromPending(tournamentId, workerId, snapshots) {
+	if (!snapshots.length) return;
 	const key = pendingKey(tournamentId, workerId);
-	// Trim from head by popping n items
-	const pipeline = redis.pipeline();
-	for (let i = 0; i < n; i++) pipeline.lpop(key);
-	await pipeline.exec();
+	const pipe = redis.pipeline();
+	for (const snap of snapshots) {
+		pipe.lrem(key, 1, JSON.stringify(snap));
+	}
+	await pipe.exec();
 }
 
 /**
