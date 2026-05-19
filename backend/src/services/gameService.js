@@ -151,10 +151,11 @@ class GameService {
 		let createdGame;
 		try {
 			await session.withTransaction(async () => {
-				const [white, black] = await Promise.all([
-					Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session).exec(),
-					Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session).exec(),
-				]);
+				// Run reads sequentially. A ClientSession is not thread-safe, so
+				// parallel ops sharing one session collide on the active transaction
+				// number and yield MongoServerError 117 ConflictingOperationInProgress.
+				const white = await Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session).exec();
+				const black = await Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session).exec();
 
 				if (!white || !black || white.isPlaying || black.isPlaying) {
 					throw new Error('Players busy or not found');
@@ -179,11 +180,9 @@ class GameService {
 				white.waitingSince = null;
 				black.waitingSince = null;
 
-				await Promise.all([
-					white.save({ session }),
-					black.save({ session }),
-					game.save({ session }),
-				]);
+				await white.save({ session });
+				await black.save({ session });
+				await game.save({ session });
 
 				createdGame = game;
 			}, {
