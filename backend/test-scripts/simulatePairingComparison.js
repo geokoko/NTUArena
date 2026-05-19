@@ -808,27 +808,41 @@ function writeOutputs(report, outputDir) {
 	return { jsonPath, htmlPath };
 }
 
-try {
-	const options = parseArgs(process.argv.slice(2));
-	const report = runComparison(options);
-	const outputs = writeOutputs(report, options.outputDir);
+function runCli() {
+	try {
+		const options = parseArgs(process.argv.slice(2));
+		const report = runComparison(options);
+		const outputs = writeOutputs(report, options.outputDir);
 
-	console.log('Pairing comparison simulation');
-	console.log(`players=${options.players} durationMinutes=${options.durationMinutes} settleSeconds=${options.settleSeconds} seed=${options.seed}`);
-	for (const result of report.results) {
-		console.log(
-			`${result.name}: started=${result.metrics.gamesStarted} completed=${result.metrics.gamesCompleted} `
-			+ `cancelled=${result.metrics.gamesCancelled} stalled=${result.metrics.stalledPoolEvents} `
-			+ `violations=${result.metrics.ruleViolations} warnings=${result.metrics.engineWarnings} `
-			+ `avgWaitMinutes=${result.metrics.avgWaitMinutes} maxWaitMinutes=${result.metrics.maxWaitMinutes} `
-			+ `waitsOver5=${result.metrics.waitsOver5Minutes} waitsOver8=${result.metrics.waitsOver8Minutes} `
-			+ `avgPool=${result.metrics.avgPairingPoolSize} maxPool=${result.metrics.maxPairingPoolSize}`
-		);
+		console.log('Pairing comparison simulation');
+		console.log(`players=${options.players} durationMinutes=${options.durationMinutes} settleSeconds=${options.settleSeconds} seed=${options.seed}`);
+		for (const result of report.results) {
+			console.log(
+				`${result.name}: started=${result.metrics.gamesStarted} completed=${result.metrics.gamesCompleted} `
+				+ `cancelled=${result.metrics.gamesCancelled} stalled=${result.metrics.stalledPoolEvents} `
+				+ `violations=${result.metrics.ruleViolations} warnings=${result.metrics.engineWarnings} `
+				+ `avgWaitMinutes=${result.metrics.avgWaitMinutes} maxWaitMinutes=${result.metrics.maxWaitMinutes} `
+				+ `waitsOver5=${result.metrics.waitsOver5Minutes} waitsOver8=${result.metrics.waitsOver8Minutes} `
+				+ `avgPool=${result.metrics.avgPairingPoolSize} maxPool=${result.metrics.maxPairingPoolSize}`
+			);
+		}
+		console.log(`json=${outputs.jsonPath}`);
+		console.log(`html=${outputs.htmlPath}`);
+		process.exit(report.results.every((result) => result.metrics.ruleViolations === 0 && result.metrics.engineWarnings === 0) ? 0 : 1);
+	} catch (error) {
+		console.error(error.stack || error.message);
+		process.exit(1);
 	}
-	console.log(`json=${outputs.jsonPath}`);
-	console.log(`html=${outputs.htmlPath}`);
-	process.exit(report.results.every((result) => result.metrics.ruleViolations === 0 && result.metrics.engineWarnings === 0) ? 0 : 1);
-} catch (error) {
-	console.error(error.stack || error.message);
-	process.exit(1);
 }
+
+if (require.main === module) {
+	runCli();
+}
+
+module.exports = {
+	DEFAULTS,
+	parseArgs,
+	runComparison,
+	writeOutputs,
+	renderHtml,
+};

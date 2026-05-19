@@ -11,6 +11,7 @@
     "simulate:tournament": "node test-scripts/simulateTournament.js",
     "simulate:arena-pairings": "node test-scripts/simulateArenaPairings.js",
     "simulate:pairing-comparison": "node test-scripts/simulatePairingComparison.js",
+    "simulate:pairing-pareto": "node test-scripts/simulatePairingPareto.js",
     "audit:full": "npm audit && npx @socketsecurity/cli@latest ci"
   },
   "dependencies": {
