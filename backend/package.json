@@ -9,7 +9,8 @@
     "dev": "nodemon src/server.js",
     "test": "jest --forceExit --detectOpenHandles",
     "simulate:tournament": "node test-scripts/simulateTournament.js",
-    "simulate:arena-pairings": "node test-scripts/simulateArenaPairings.js"
+    "simulate:arena-pairings": "node test-scripts/simulateArenaPairings.js",
+    "simulate:pairing-comparison": "node test-scripts/simulatePairingComparison.js",
     "audit:full": "npm audit && npx @socketsecurity/cli@latest ci"
   },
   "dependencies": {
