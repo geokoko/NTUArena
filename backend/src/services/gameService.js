@@ -112,6 +112,25 @@ async function refreshStandings(tournamentId) {
 	await Player.bulkWrite(bulkOps);
 }
 
+// Chain refreshes per tournament so concurrent result submissions cannot
+// interleave read/write phases and overwrite newer standings with stale
+// ones. Refreshes for different tournaments still run in parallel.
+const standingsChains = new Map();
+
+function scheduleStandingsRefresh(tournamentId) {
+	const key = String(tournamentId);
+	const prev = standingsChains.get(key) || Promise.resolve();
+	const next = prev
+		.catch(() => {})
+		.then(() => refreshStandings(tournamentId))
+		.catch((err) => console.error('[GameService] standings refresh failed:', err));
+	standingsChains.set(key, next);
+	next.finally(() => {
+		if (standingsChains.get(key) === next) standingsChains.delete(key);
+	});
+	return next;
+}
+
 class GameService {
 	async getGameById(id) {
 		const game = await findByIdOrPublicId(Game, id);
@@ -288,10 +307,9 @@ class GameService {
 		}
 
 		// Refresh standings for all players in the tournament after every result.
-		// Fire-and-forget: standings are for display only and do not block the response.
-		refreshStandings(game.tournament).catch((err) =>
-			console.error('[GameService] standings refresh failed:', err),
-		);
+		// Fire-and-forget but serialized per tournament: concurrent refreshes
+		// of the same tournament can otherwise commit stale ranks out of order.
+		scheduleStandingsRefresh(game.tournament);
 
 		if (!tournamentActive) {
 			return game;
