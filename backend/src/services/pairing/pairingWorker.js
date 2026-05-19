@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending, removeSnapshotsFromPending } = require('../queue/redisQueue');
 const { evaluatePair } = require('./pairingScorer');
+const { DEFAULT_PAIRING_SETTLE_MS } = require('./pairingConfig');
 const { selectBatchPairings } = require('./selectBatchPairings');
 
 const gameService = require('../gameService');
@@ -19,7 +20,7 @@ class PairingWorker {
 	 *        a new pairing round fires, maximising the available player pool.
 	 *        Set to 0 to disable.
 	 */
-	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400, settleMs = 10_000 } = {}) {
+	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400, settleMs = DEFAULT_PAIRING_SETTLE_MS } = {}) {
 		this.workerId = workerId;
 		this.batchSize = batchSize;
 		this.idleMs = idleMs;

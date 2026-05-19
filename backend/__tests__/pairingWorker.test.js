@@ -2,6 +2,26 @@ const {
 	selectBatchPairings,
 	selectGreedyBatchPairings,
 } = require('../src/services/pairing/selectBatchPairings');
+const {
+	DEFAULT_PAIRING_SETTLE_MS,
+	parsePairingSettleMs,
+} = require('../src/services/pairing/pairingConfig');
+
+describe('pairing settle config', () => {
+	test('defaults to a 30 second quiet window', () => {
+		expect(DEFAULT_PAIRING_SETTLE_MS).toBe(30_000);
+		expect(parsePairingSettleMs()).toBe(30_000);
+		expect(parsePairingSettleMs('')).toBe(30_000);
+		expect(parsePairingSettleMs('not-a-number')).toBe(30_000);
+		expect(parsePairingSettleMs('-1')).toBe(30_000);
+	});
+
+	test('accepts explicit non-negative millisecond values', () => {
+		expect(parsePairingSettleMs('0')).toBe(0);
+		expect(parsePairingSettleMs('45000')).toBe(45_000);
+		expect(parsePairingSettleMs(20_000)).toBe(20_000);
+	});
+});
 
 describe('selectBatchPairings', () => {
 	const makePlayer = (_id) => ({ _id });

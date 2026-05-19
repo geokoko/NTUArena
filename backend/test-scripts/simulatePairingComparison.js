@@ -20,6 +20,7 @@ const DEFAULTS = {
 	players: 20,
 	seed: 20260519,
 	durationMinutes: 60,
+	settleSeconds: 30,
 	outputDir: path.join(__dirname, '..', 'test-output'),
 };
 
@@ -30,7 +31,7 @@ function parseArgs(argv) {
 		if (!arg.startsWith('--')) continue;
 		const key = arg.slice(2);
 		const next = argv[i + 1];
-		if (['players', 'seed', 'durationMinutes'].includes(key)) {
+		if (['players', 'seed', 'durationMinutes', 'settleSeconds'].includes(key)) {
 			const value = Number(next);
 			if (!Number.isFinite(value)) throw new Error(`Invalid numeric value for --${key}: ${next}`);
 			opts[key] = value;
@@ -297,7 +298,7 @@ function summarizePlayer(player) {
 	};
 }
 
-function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, startMs, durationMs }) {
+function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, startMs, durationMs, settleMs }) {
 	const originalDateNow = Date.now;
 	let now = startMs;
 	Date.now = () => now;
@@ -313,6 +314,8 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 		const cycles = [];
 		const waitSamples = [];
 		const waitRecords = [];
+		const frontierSamples = [];
+		let scheduledPairingAt = null;
 		const metrics = {
 			gamesStarted: 0,
 			gamesCompleted: 0,
@@ -332,6 +335,7 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 			if (waitingQueue.includes(player._id)) return;
 			if (!player.waitingSince) player.waitingSince = new Date(now);
 			waitingQueue.push(player._id);
+			requestPairingCycle();
 		}
 
 		function removeFromQueue(playerId) {
@@ -342,9 +346,15 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 			events.push(event);
 			events.sort((left, right) => {
 				if (left.time !== right.time) return left.time - right.time;
-				const order = { finish: 0, leave: 1 };
+				const order = { finish: 0, leave: 1, pair: 2 };
 				return (order[left.type] ?? 9) - (order[right.type] ?? 9);
 			});
+		}
+
+		function requestPairingCycle() {
+			const pairingAt = now + settleMs;
+			scheduledPairingAt = pairingAt;
+			scheduleEvent({ type: 'pair', time: pairingAt });
 		}
 
 		function finishGame(gameId) {
@@ -422,6 +432,7 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 
 			const candidates = waitingQueue.map((id) => playersById.get(id));
 			if (candidates.length < 2) return;
+			frontierSamples.push(candidates.length);
 
 			const result = selector(candidates, evaluatePair, { maxExactComponentVertices: 24 });
 			const used = new Set();
@@ -515,8 +526,11 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 			for (const event of simultaneous.filter((item) => item.type === 'leave')) {
 				pausePlayer(event.playerId, event.reason);
 			}
-
-			runPairingCycle(`after ${simultaneous.map((event) => event.type).join('+')}`);
+			for (const event of simultaneous.filter((item) => item.type === 'pair')) {
+				if (scheduledPairingAt !== event.time) continue;
+				scheduledPairingAt = null;
+				runPairingCycle(`settled ${settleMs / 1000}s`);
+			}
 		}
 
 		refreshStandings(players);
@@ -534,6 +548,9 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 				waitMinutes: roundMinutes(startMs + durationMs - new Date(player.waitingSince).getTime()),
 			}))
 			.sort((left, right) => right.waitMinutes - left.waitMinutes);
+		const avgPairingPoolSize = frontierSamples.length
+			? frontierSamples.reduce((sum, value) => sum + value, 0) / frontierSamples.length
+			: 0;
 
 		return {
 			name,
@@ -543,6 +560,10 @@ function simulateAlgorithm({ name, selector, basePlayers, leaveSchedule, seed, s
 				maxWaitMinutes: Number(maxWaitMinutes.toFixed(2)),
 				waitsOver5Minutes: waitRecords.filter((record) => record.waitMinutes > 5).length,
 				waitsOver8Minutes: waitRecords.filter((record) => record.waitMinutes > 8).length,
+				maxPairingPoolSize: frontierSamples.length ? Math.max(...frontierSamples) : 0,
+				avgPairingPoolSize: Number(avgPairingPoolSize.toFixed(2)),
+				cyclesWithPoolAtLeast6: frontierSamples.filter((value) => value >= 6).length,
+				cyclesWithPoolAtLeast10: frontierSamples.filter((value) => value >= 10).length,
 				playersStillWaiting: waitingQueue.length,
 				activeGamesAtEnd: activeGames.size,
 			},
@@ -587,6 +608,9 @@ function renderHtml(report) {
 			<td>${m.maxWaitMinutes}</td>
 			<td>${m.waitsOver5Minutes}</td>
 			<td>${m.waitsOver8Minutes}</td>
+			<td>${m.avgPairingPoolSize}</td>
+			<td>${m.maxPairingPoolSize}</td>
+			<td>${m.cyclesWithPoolAtLeast6}</td>
 		</tr>`;
 	}).join('');
 
@@ -691,12 +715,12 @@ function renderHtml(report) {
 <body>
 	<main>
 		<h1>Pairing Algorithm Comparison</h1>
-		<p>Scenario: ${report.scenario.players} players, ${report.scenario.durationMinutes} minutes, ${escapeHtml(report.scenario.timeControl)}, varied game durations capped near 10 minutes, fixed leave schedule, asynchronous game finishes, seed <code>${report.scenario.seed}</code>.</p>
+		<p>Scenario: ${report.scenario.players} players, ${report.scenario.durationMinutes} minutes, ${escapeHtml(report.scenario.timeControl)}, ${report.scenario.settleSeconds}s settle window, varied game durations capped near 10 minutes, fixed leave schedule, asynchronous game finishes, seed <code>${report.scenario.seed}</code>.</p>
 		<section class="grid">
 			<div class="panel">
 				<h2>Summary</h2>
 				<table>
-					<thead><tr><th>Algorithm</th><th>Started</th><th>Completed</th><th>Cancelled</th><th>Stalled</th><th>Rule violations</th><th>Warnings</th><th>Avg wait</th><th>Max wait</th><th>&gt;5m</th><th>&gt;8m</th></tr></thead>
+					<thead><tr><th>Algorithm</th><th>Started</th><th>Completed</th><th>Cancelled</th><th>Stalled</th><th>Rule violations</th><th>Warnings</th><th>Avg wait</th><th>Max wait</th><th>&gt;5m</th><th>&gt;8m</th><th>Avg pool</th><th>Max pool</th><th>Pool >=6</th></tr></thead>
 					<tbody>${rows}</tbody>
 				</table>
 			</div>
@@ -729,6 +753,7 @@ function runComparison(options) {
 		players: options.players,
 		seed: options.seed,
 		durationMinutes: options.durationMinutes,
+		settleSeconds: options.settleSeconds,
 		timeControl: '3+2 blitz',
 		gameDurationModel: {
 			minMinutes: 1.5,
@@ -756,6 +781,7 @@ function runComparison(options) {
 			seed: options.seed,
 			startMs,
 			durationMs,
+			settleMs: options.settleSeconds * 1000,
 		}),
 		simulateAlgorithm({
 			name: 'graph-matching',
@@ -765,6 +791,7 @@ function runComparison(options) {
 			seed: options.seed,
 			startMs,
 			durationMs,
+			settleMs: options.settleSeconds * 1000,
 		}),
 	];
 
@@ -773,7 +800,7 @@ function runComparison(options) {
 
 function writeOutputs(report, outputDir) {
 	fs.mkdirSync(outputDir, { recursive: true });
-	const prefix = `pairing-comparison-${report.scenario.players}p-${report.scenario.durationMinutes}m`;
+	const prefix = `pairing-comparison-${report.scenario.players}p-${report.scenario.durationMinutes}m-${report.scenario.settleSeconds}s-settle`;
 	const jsonPath = path.join(outputDir, `${prefix}.json`);
 	const htmlPath = path.join(outputDir, `${prefix}.html`);
 	fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2));
@@ -787,14 +814,15 @@ try {
 	const outputs = writeOutputs(report, options.outputDir);
 
 	console.log('Pairing comparison simulation');
-	console.log(`players=${options.players} durationMinutes=${options.durationMinutes} seed=${options.seed}`);
+	console.log(`players=${options.players} durationMinutes=${options.durationMinutes} settleSeconds=${options.settleSeconds} seed=${options.seed}`);
 	for (const result of report.results) {
 		console.log(
 			`${result.name}: started=${result.metrics.gamesStarted} completed=${result.metrics.gamesCompleted} `
 			+ `cancelled=${result.metrics.gamesCancelled} stalled=${result.metrics.stalledPoolEvents} `
 			+ `violations=${result.metrics.ruleViolations} warnings=${result.metrics.engineWarnings} `
 			+ `avgWaitMinutes=${result.metrics.avgWaitMinutes} maxWaitMinutes=${result.metrics.maxWaitMinutes} `
-			+ `waitsOver5=${result.metrics.waitsOver5Minutes} waitsOver8=${result.metrics.waitsOver8Minutes}`
+			+ `waitsOver5=${result.metrics.waitsOver5Minutes} waitsOver8=${result.metrics.waitsOver8Minutes} `
+			+ `avgPool=${result.metrics.avgPairingPoolSize} maxPool=${result.metrics.maxPairingPoolSize}`
 		);
 	}
 	console.log(`json=${outputs.jsonPath}`);
