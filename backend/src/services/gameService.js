@@ -159,8 +159,13 @@ class GameService {
 				const white = await Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session).exec();
 				const black = await Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session).exec();
 
-				if (!white || !black || white.isPlaying || black.isPlaying) {
-					throw new Error('Players busy or not found');
+				// Reject paused/withdrawn players. Pairing decisions are made off
+				// stale Redis snapshots taken when the player was enqueued; by the
+				// time we land here, the admin may have flipped status to 'paused'
+				// or 'withdrawn'. isPlaying alone does not catch that.
+				const isInactive = (p) => p.status && p.status !== 'active';
+				if (!white || !black || white.isPlaying || black.isPlaying || isInactive(white) || isInactive(black)) {
+					throw new Error('Players unavailable (busy or inactive)');
 				}
 
 				const game = new Game({
