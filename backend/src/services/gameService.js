@@ -7,6 +7,8 @@ const { enqueue } = require('./queue/redisQueue');
 const {
 	findByIdOrPublicId,
 	ensureDocumentPublicId,
+	isObjectId,
+	normalizeLookupId,
 } = require('../utils/identifiers');
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -203,10 +205,6 @@ class GameService {
    * Marks game finished, applies result, frees both players, and re-enqueues them.
    */
 	async submitGameResult(gameId, result) {
-		const game = await findByIdOrPublicId(Game, gameId);
-		if (!game) throw new Error('Game not found');
-		if (game.isFinished) throw new Error(`Game with ID: ${gameId} already finished with result ${game.resultColor}`);
-
 		// Normalize incoming result to one of: 'white' | 'black' | 'draw'
 		const normalize = (r) => {
 			if (!r) return null;
@@ -220,10 +218,30 @@ class GameService {
 		const resultColor = normalize(result);
 		if (!resultColor) throw new Error('Invalid result value');
 
-		game.resultColor = resultColor;
-		game.isFinished = true;
-		game.finishedAt = new Date();
-		await game.save();
+		const lookupId = normalizeLookupId(gameId);
+		if (!lookupId) throw new Error('Game not found');
+
+		// Atomically claim the unfinished game. Without this, two concurrent
+		// submissions (admin double-click, retry, two tabs) can both pass an
+		// isFinished check and both apply player stats, double-counting score
+		// and win/loss totals.
+		const lookupFilter = isObjectId(lookupId)
+			? { $or: [{ _id: lookupId }, { publicId: lookupId }] }
+			: { publicId: lookupId };
+
+		const game = await Game.findOneAndUpdate(
+			{ ...lookupFilter, isFinished: false },
+			{ $set: { isFinished: true, resultColor, finishedAt: new Date() } },
+			{ new: true },
+		);
+
+		if (!game) {
+			// Distinguish "not found" from "already finished" for clearer errors.
+			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished');
+			if (!existing) throw new Error('Game not found');
+			throw new Error(`Game with ID: ${gameId} already finished with result ${existing.resultColor}`);
+		}
+
 		await ensureDocumentPublicId(game, Game);
 		console.log(`[GameService] Game ended with result: ${resultColor}`);
 
