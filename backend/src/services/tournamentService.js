@@ -78,21 +78,48 @@ const recomputeTournamentDates = (tournament) => {
 		: null;
 };
 
-const rollbackLatestPairingHistory = (player, opponentId, expectedColor) => {
-	if (!player) return;
-	const opponents = [...(player.recentOpponents ?? [])];
-	const colors = [...(player.colorHistory ?? [])];
-	if (!opponents.length || !colors.length) return;
-
-	const latestOpponent = opponents.at(-1);
-	const latestColor = colors.at(-1);
-	if (String(latestOpponent) !== String(opponentId) || latestColor !== expectedColor) {
-		return;
-	}
-
-	player.recentOpponents = opponents.slice(0, -1);
-	player.colorHistory = colors.slice(0, -1);
+const normalizeSeedRating = (value) => {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 };
+
+const buildInitialPlayerData = ({ tournamentId, user = null, tempName = null, seedRating = 0, isActiveTournament = false, now = new Date() }) => {
+	const rating = normalizeSeedRating(seedRating);
+	return {
+		user: user?._id || null,
+		tempName,
+		tournament: tournamentId,
+		isPlaying: false,
+		waitingSince: isActiveTournament ? now : null,
+		liveRating: rating,
+		entryRating: rating,
+		performanceRating: null,
+		standing: null,
+		score: 0,
+		gamesPlayed: 0,
+		wins: 0,
+		draws: 0,
+		losses: 0,
+		sumOpponentRatings: 0,
+		status: 'active',
+		enteredAt: now,
+	};
+};
+
+const playerQueueSnapshot = (player, { enqueuedAt = Date.now() } = {}) => ({
+	_id: String(player._id),
+	user: player.user || null,
+	tempName: player.tempName || null,
+	score: player.score ?? 0,
+	liveRating: player.entryRating ?? player.liveRating ?? 0,
+	entryRating: player.entryRating ?? 0,
+	performanceRating: player.performanceRating ?? null,
+	recentOpponents: (player.recentOpponents ?? []).map(String),
+	colorHistory: player.colorHistory ?? [],
+	status: player.status,
+	waitingSince: player.waitingSince ?? null,
+	enqueuedAt,
+});
 
 const summarizePlayer = (player) => {
 	if (!player) return null;
@@ -160,66 +187,6 @@ const sanitizeTournamentSummary = (tournament) => {
 		participantCount: Array.isArray(base.participants) ? base.participants.length : 0,
 	};
 };
-
-/**
- * Voids the active game for a player who is mid-game.
- * Marks the game as cancelled, clears isPlaying on both players,
- * and re-queues the opponent if the tournament is still in progress.
- */
-async function cancelActiveGame(player, tournament) {
-	const game = await Game.findOne({
-		$or: [{ playerWhite: player._id }, { playerBlack: player._id }],
-		isFinished: false,
-		isCancelled: { $ne: true },
-	});
-
-	if (!game) return;
-
-	game.isCancelled = true;
-	game.cancelledAt = new Date();
-	game.isFinished = true;
-	game.finishedAt = game.cancelledAt;
-	await game.save();
-
-	const opponentId = game.playerWhite.toString() === player._id.toString()
-		? game.playerBlack
-		: game.playerWhite;
-
-	const opponent = await Player.findById(opponentId);
-
-	if (opponent) {
-		const playerColor = game.playerWhite.toString() === player._id.toString() ? 'white' : 'black';
-		const opponentColor = playerColor === 'white' ? 'black' : 'white';
-		rollbackLatestPairingHistory(player, opponent._id, playerColor);
-		rollbackLatestPairingHistory(opponent, player._id, opponentColor);
-	}
-
-	player.isPlaying = false;
-	if (opponent) opponent.isPlaying = false;
-
-	await Promise.all([
-		player.save(),
-		opponent ? opponent.save() : Promise.resolve(),
-	]);
-
-	if (opponent && opponent.status === 'active' && tournament.tournStatus === 'in progress') {
-		const now = new Date();
-		opponent.waitingSince = now;
-		await opponent.save();
-		await enqueue(String(tournament._id), {
-			_id: String(opponent._id),
-			user: opponent.user,
-			score: opponent.score ?? 0,
-			liveRating: opponent.liveRating ?? 0,
-			entryRating: opponent.entryRating ?? 0,
-			recentOpponents: (opponent.recentOpponents ?? []).map(String),
-			colorHistory: opponent.colorHistory ?? [],
-			status: opponent.status,
-			waitingSince: opponent.waitingSince,
-			enqueuedAt: Date.now(),
-		});
-	}
-}
 
 /**
  * Resolve a Player document within a tournament from either a User id/publicId
@@ -596,7 +563,7 @@ class TournamentService {
 		return { message: 'Tournament deleted' };
 	}
 
-	async joinTournament(userId, tournamentId) {
+	async joinTournament(userId, tournamentId, { seedRatingOverride = null } = {}) {
 		const [tournament, user] = await Promise.all([
 			findByIdOrPublicId(Tournament, tournamentId),
 			findByIdOrPublicId(User, userId),
@@ -622,45 +589,27 @@ class TournamentService {
 		if (exists) throw makeError('User already joined the tournament');
 
 		const now = new Date();
-		const seedRating = Number.isFinite(user.globalElo) ? Number(user.globalElo) : 0;
+		const seedRating = seedRatingOverride !== null && seedRatingOverride !== undefined
+			? seedRatingOverride
+			: user.globalElo;
 		const isActiveTournament = tournament.tournStatus === 'in progress';
 
-		const player = new Player({
-			user: user._id,
-			tournament: tournament._id,
-			isPlaying: false,
-			waitingSince: isActiveTournament ? now : null,
-			liveRating: seedRating,
-			entryRating: seedRating,
-			score: 0,
-			gamesPlayed: 0,
-			wins: 0,
-			draws: 0,
-			losses: 0,
-			sumOpponentRatings: 0,
-			status: 'active',
-			enteredAt: now,
-		});
+		const player = new Player(buildInitialPlayerData({
+			tournamentId: tournament._id,
+			user,
+			seedRating,
+			isActiveTournament,
+			now,
+		}));
 		await player.save();
 
-		tournament.participants = Array.isArray(tournament.participants)
-			? [...tournament.participants, player._id]
-			: [player._id];
-		await tournament.save();
+		await Tournament.updateOne(
+			{ _id: tournament._id },
+			{ $addToSet: { participants: player._id } }
+		);
 
 		if (isActiveTournament) {
-			await enqueue(String(tournament._id), {
-				_id: String(player._id),
-				user: player.user,
-				score: 0,
-				liveRating: player.entryRating ?? player.liveRating,
-				entryRating: player.entryRating,
-				recentOpponents: [],
-				colorHistory: [],
-				status: player.status,
-				waitingSince: player.waitingSince,
-				enqueuedAt: Date.now(),
-			});
+			await enqueue(String(tournament._id), playerQueueSnapshot(player));
 		}
 
 		await ensureDocumentPublicId(player, Player);
@@ -780,18 +729,7 @@ class TournamentService {
 		if (player.user) await ensureDocumentPublicId(player.user, User);
 
 		if (inProgress) {
-			await enqueue(String(tournament._id), {
-				_id: String(player._id),
-				user: player.user,
-				score: player.score ?? 0,
-				liveRating: player.entryRating ?? player.liveRating ?? 0,
-				entryRating: player.entryRating ?? 0,
-				recentOpponents: (player.recentOpponents ?? []).map(String),
-				colorHistory: player.colorHistory ?? [],
-				status: player.status,
-				waitingSince: player.waitingSince,
-				enqueuedAt: Date.now(),
-			});
+			await enqueue(String(tournament._id), playerQueueSnapshot(player));
 		}
 
 		await logEvent(tournament._id, 'intervention.manual', {
@@ -1100,7 +1038,8 @@ class TournamentService {
 					// Add linked player via existing joinTournament method
 					const player = await this.joinTournament(
 						linkedUser.publicId || linkedUser._id.toString(),
-						tournamentId
+						tournamentId,
+						{ seedRatingOverride: rating }
 					);
 					results.added.push({ row: rowNum, name, player, linked: true });
 					existingUserIds.add(linkedUser._id.toString());
@@ -1117,44 +1056,22 @@ class TournamentService {
 					}
 
 					const now = new Date();
-					const player = new Player({
-						user: null,
+					const player = new Player(buildInitialPlayerData({
+						tournamentId: tournament._id,
 						tempName: name,
-						tournament: tournament._id,
-						isPlaying: false,
-						waitingSince: isActiveTournament ? now : null,
-						liveRating: rating,
-						entryRating: rating,
-						score: 0,
-						gamesPlayed: 0,
-						wins: 0,
-						draws: 0,
-						losses: 0,
-						sumOpponentRatings: 0,
-						status: 'active',
-						enteredAt: now,
-					});
+						seedRating: rating,
+						isActiveTournament,
+						now,
+					}));
 					await player.save();
 
-					tournament.participants = Array.isArray(tournament.participants)
-						? [...tournament.participants, player._id]
-						: [player._id];
-					await tournament.save();
+					await Tournament.updateOne(
+						{ _id: tournament._id },
+						{ $addToSet: { participants: player._id } }
+					);
 
 					if (isActiveTournament) {
-						await enqueue(String(tournament._id), {
-							_id: String(player._id),
-							user: null,
-							tempName: name,
-							score: 0,
-							liveRating: rating,
-							entryRating: rating,
-							recentOpponents: [],
-							colorHistory: [],
-							status: player.status,
-							waitingSince: player.waitingSince,
-							enqueuedAt: Date.now(),
-						});
+						await enqueue(String(tournament._id), playerQueueSnapshot(player));
 					}
 
 					await ensureDocumentPublicId(player, Player);

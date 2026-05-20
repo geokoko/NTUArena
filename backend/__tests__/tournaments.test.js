@@ -459,6 +459,30 @@ describe('bulkAddPlayers', () => {
 	});
 });
 
+describe('bulkAddPlayersFromCSV', () => {
+	test('uses CSV rating as entry rating for linked and temp players', async () => {
+		const tournament = await createTestTournament();
+		const user = await createTestUser({ username: 'csv_user', email: 'csv@example.com', globalElo: 1200 });
+
+		const result = await tournamentService.bulkAddPlayersFromCSV(tournament.id, [
+			{ name: 'Linked Player', rating: '1750', identifier: user.email, _rowNumber: 2 },
+			{ name: 'Temp Player', rating: '1420', identifier: '', _rowNumber: 3 },
+		]);
+		const tournamentDoc = await Tournament.findOne({ publicId: tournament.id });
+		const userDoc = await User.findOne({ publicId: user.id });
+		const linkedPlayer = await Player.findOne({ tournament: tournamentDoc._id, user: userDoc._id });
+		const tempPlayer = await Player.findOne({ tournament: tournamentDoc._id, tempName: 'Temp Player' });
+
+		expect(result.added).toHaveLength(2);
+		expect(linkedPlayer.entryRating).toBe(1750);
+		expect(linkedPlayer.liveRating).toBe(1750);
+		expect(linkedPlayer.performanceRating).toBeNull();
+		expect(tempPlayer.entryRating).toBe(1420);
+		expect(tempPlayer.liveRating).toBe(1420);
+		expect(tempPlayer.performanceRating).toBeNull();
+	});
+});
+
 // ─────────────────────────────────────────────
 // getTournamentPlayers / getTournamentStandings
 // ─────────────────────────────────────────────
