@@ -21,9 +21,7 @@ function asNumber(value, fallback = 0) {
 
 function resolveOpponentRating(opponent) {
 	if (!opponent) return 0;
-	const rating = asNumber(opponent.entryRating);
-	if (rating !== 0) return rating;
-	return asNumber(opponent.liveRating, 0);
+	return asNumber(opponent.entryRating);
 }
 
 // FIDE-style performance rating calculation
@@ -109,7 +107,6 @@ function playerSnapshot(player) {
 		_id: String(player._id),
 		user: player.user,
 		score: player.score ?? 0,
-		liveRating: player.entryRating ?? player.liveRating ?? 0,
 		entryRating: player.entryRating ?? 0,
 		performanceRating: player.performanceRating ?? null,
 		recentOpponents: (player.recentOpponents ?? []).map(String),
@@ -564,7 +561,6 @@ const summarizeGamePlayer = (player) => {
 		name: buildDisplayName(user),
 		username: user.username || null,
 		score: base.score ?? 0,
-		liveRating: base.entryRating ?? base.liveRating ?? user.globalElo ?? 0,
 		entryRating: base.entryRating ?? user.globalElo ?? 0,
 		performanceRating: base.performanceRating ?? null,
 		status: base.status || 'active',

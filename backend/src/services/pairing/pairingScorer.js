@@ -7,7 +7,6 @@ const MAX_COLOR_IMBALANCE = 3; // Hard-block if |whitesPlayed - blacksPlayed| wo
  *   _id: string,
  *   user: string,
  *   score: number,             // tournament score so far
- *   liveRating: number,        // tournament live rating
  *   entryRating: number,       // rating at tournament start
  *   standing: number,          // lower = better rank
  *   recentOpponents: string[], // last K opponent player IDs (most recent at end of array)
@@ -137,7 +136,7 @@ function colorImbalancePenalty(player, assignColor, maxPenalty = 3) {
  */
 function proximityScore(a, b, weights = { score: 0.6, elo: 0.4, standing: 0 }) {
 	const scoreDiff = Math.abs((a.score ?? 0) - (b.score ?? 0));
-	const ratingOf = (player) => player.entryRating ?? player.liveRating ?? 1200;
+	const ratingOf = (player) => player.entryRating ?? 1200;
 	const eloDiff   = Math.abs(ratingOf(a) - ratingOf(b));
 	const aStanding = a.standing ?? null;
 	const bStanding = b.standing ?? null;

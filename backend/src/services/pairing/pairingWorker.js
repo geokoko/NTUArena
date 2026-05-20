@@ -173,7 +173,7 @@ class PairingWorker {
 					scoreState: batch.map((player) => ({
 						playerId: String(player._id),
 						score: player.score ?? 0,
-						liveRating: player.entryRating ?? player.liveRating ?? 0,
+						entryRating: player.entryRating ?? 0,
 					})),
 				},
 			});

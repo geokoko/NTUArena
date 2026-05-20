@@ -7,7 +7,6 @@ const PlayerSchema = new mongoose.Schema({
 	tempName: { type: String, default: null }, // Display name for temp players without user accounts
 	tournament: { type: mongoose.Schema.Types.ObjectId, ref: 'Tournament', required: true },
 	score: { type: Number, required: true, default: 0 },
-	liveRating: { type: Number, required: true, default: 0 },
 	entryRating: { type: Number, default: 0 },
 	performanceRating: { type: Number, default: null },
 	// Current rank within the tournament (1 = leader). Recomputed after every

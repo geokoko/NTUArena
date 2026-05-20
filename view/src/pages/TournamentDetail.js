@@ -508,7 +508,7 @@ const TournamentDetail = () => {
 													</td>
 													<td className="col-games">{standing.games}</td>
 													<td className="col-rating">
-														<span className="rating-value">{standing.liveRating}</span>
+														<span className="rating-value">{standing.entryRating}</span>
 													</td>
 													<td className="col-performance">
 														{standing.performanceRating || '—'}

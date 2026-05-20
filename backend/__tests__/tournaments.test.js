@@ -296,7 +296,6 @@ describe('joinTournament', () => {
 
 		expect(player.userId).toBe(user.id);
 		expect(player.entryRating).toBe(1500);
-		expect(player.liveRating).toBe(1500);
 		expect(player.score).toBe(0);
 	});
 
@@ -475,10 +474,8 @@ describe('bulkAddPlayersFromCSV', () => {
 
 		expect(result.added).toHaveLength(2);
 		expect(linkedPlayer.entryRating).toBe(1750);
-		expect(linkedPlayer.liveRating).toBe(1750);
 		expect(linkedPlayer.performanceRating).toBeNull();
 		expect(tempPlayer.entryRating).toBe(1420);
-		expect(tempPlayer.liveRating).toBe(1420);
 		expect(tempPlayer.performanceRating).toBeNull();
 	});
 });
@@ -497,8 +494,8 @@ describe('getTournamentPlayers', () => {
 
 		const players = await tournamentService.getTournamentPlayers(t.id);
 		expect(players).toHaveLength(2);
-		// sorted by score (both 0), then by liveRating desc (2000 first)
-		expect(players[0].liveRating).toBe(2000);
+		// sorted by score (both 0), then by entryRating desc (2000 first)
+		expect(players[0].entryRating).toBe(2000);
 	});
 
 	test('throws for non-existent tournament', async () => {

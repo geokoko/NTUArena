@@ -16,7 +16,7 @@ class PairingService {
 			isPlaying: false,
 			status: { $nin: ['paused', 'withdrawn'] },
 		})
-			.select('_id user score liveRating entryRating performanceRating recentOpponents colorHistory waitingSince status');
+			.select('_id user score entryRating performanceRating recentOpponents colorHistory waitingSince status');
 		await Player.updateMany(
 			{ tournament: tournamentId, isPlaying: false, status: { $nin: ['paused', 'withdrawn'] } },
 			{ $set: { waitingSince: now } }
@@ -27,7 +27,6 @@ class PairingService {
 				_id: String(p._id),
 				user: p.user,
 				score: p.score ?? 0,
-				liveRating: p.entryRating ?? p.liveRating ?? 0,
 				entryRating: p.entryRating ?? 0,
 				performanceRating: p.performanceRating ?? null,
 				// store as strings for fast compare in scorer
