@@ -1,10 +1,20 @@
-FROM node:22-alpine
-
+FROM node:22-alpine AS base
 WORKDIR /app
+COPY package*.json ./
+
+# Test target: installs devDependencies and runs jest. Built explicitly via
+# `docker build --target test` from CI. Order matters — the default build
+# (no --target) uses the LAST stage, so prod must remain at the bottom to
+# keep docker-compose and existing prod builds unchanged.
+FROM base AS test
+ENV NODE_ENV=test
+RUN npm ci
+COPY . .
+CMD ["npm", "test"]
+
+FROM base AS prod
 ENV NODE_ENV=production
 ENV PORT=5000
-
-COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
 
@@ -20,4 +30,3 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 USER node
 
 CMD [ "./entrypoint.sh" ]
-
