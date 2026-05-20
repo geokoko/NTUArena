@@ -306,10 +306,9 @@ class GameService {
 			await black.save();
 		}
 
-		// Refresh standings for all players in the tournament after every result.
-		// Fire-and-forget but serialized per tournament: concurrent refreshes
-		// of the same tournament can otherwise commit stale ranks out of order.
-		scheduleStandingsRefresh(game.tournament);
+		// Refresh the persisted standing cache before returning. Refreshes are
+		// still serialized per tournament to avoid stale concurrent writes.
+		await scheduleStandingsRefresh(game.tournament);
 
 		if (!tournamentActive) {
 			return game;
