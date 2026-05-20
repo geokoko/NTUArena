@@ -5,6 +5,7 @@ const { DEFAULT_PAIRING_SETTLE_MS } = require('./pairingConfig');
 const { selectBatchPairings } = require('./selectBatchPairings');
 
 const gameService = require('../gameService');
+const { debugPairing } = require('./pairingDebugLogger');
 const Tournament = require('../../models/Tournament');
 const Player = require('../../models/Player');
 
@@ -111,7 +112,7 @@ class PairingWorker {
 		remaining.push(...leftovers);
 
 		if (exhaustedNoLegalPairPool && remaining.length >= 2) {
-			console.warn('[PairingWorker] no legal pairings available in current pool; requeueing leftovers', {
+			await debugPairing(tournamentId, 'no_legal_pairings', {
 				tournamentId: String(tournamentId),
 				workerId: this.workerId,
 				poolSize: remaining.length,
@@ -149,6 +150,19 @@ class PairingWorker {
 		// Remove handled (paired or failed) snapshots from pending by payload.
 		// Ack by count is wrong because pairings are not in pending-head order.
 		await ackFromPending(tournamentId, this.workerId, handledSnapshots);
+
+		if (pairings.length || remaining.length) {
+			await debugPairing(tournamentId, 'pairing_summary', {
+				workerId: this.workerId,
+				poolSize: batch.length,
+				pairings: pairings.map(({ white, black }) => ({
+					white: String(white._id),
+					black: String(black._id),
+				})),
+				leftovers: remaining.map((player) => String(player._id)),
+				settleMs: this.settleMs,
+			});
+		}
 
 		await this.#sleep(remaining.length > 0 ? 50 : 0);
 	}
