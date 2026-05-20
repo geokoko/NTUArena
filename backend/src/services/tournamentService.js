@@ -37,6 +37,22 @@ const buildDisplayName = (user, tempName = null) => {
 
 const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});
 
+const rollbackLatestPairingHistory = (player, opponentId, expectedColor) => {
+	if (!player) return;
+	const opponents = [...(player.recentOpponents ?? [])];
+	const colors = [...(player.colorHistory ?? [])];
+	if (!opponents.length || !colors.length) return;
+
+	const latestOpponent = opponents.at(-1);
+	const latestColor = colors.at(-1);
+	if (String(latestOpponent) !== String(opponentId) || latestColor !== expectedColor) {
+		return;
+	}
+
+	player.recentOpponents = opponents.slice(0, -1);
+	player.colorHistory = colors.slice(0, -1);
+};
+
 const summarizePlayer = (player) => {
 	if (!player) return null;
 	const base = toPlain(player);
@@ -63,6 +79,8 @@ const summarizePlayer = (player) => {
 		status: base.status || 'active',
 		entryRating: base.entryRating ?? user?.globalElo ?? 0,
 		lastResultAt: base.lastResultAt ?? null,
+		// Persisted rank within the tournament; null until the first game result is submitted.
+		standing: base.standing ?? null,
 	};
 };
 
@@ -120,6 +138,13 @@ async function cancelActiveGame(player, tournament) {
 		: game.playerWhite;
 
 	const opponent = await Player.findById(opponentId);
+
+	if (opponent) {
+		const playerColor = game.playerWhite.toString() === player._id.toString() ? 'white' : 'black';
+		const opponentColor = playerColor === 'white' ? 'black' : 'white';
+		rollbackLatestPairingHistory(player, opponent._id, playerColor);
+		rollbackLatestPairingHistory(opponent, player._id, opponentColor);
+	}
 
 	player.isPlaying = false;
 	if (opponent) opponent.isPlaying = false;
@@ -371,6 +396,8 @@ class TournamentService {
 		await ensureDocumentsPublicId(players, Player);
 		await ensurePlayerHierarchyIds(players);
 
+		// Rank from current score state. `standing` is a persisted cache and can
+		// briefly lag behind a just-submitted result.
 		players.sort((a, b) => {
 			const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
 			if (scoreDiff !== 0) return scoreDiff;

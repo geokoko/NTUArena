@@ -1,4 +1,5 @@
 const { PairingWorker } = require('./pairing/pairingWorker');
+const { parsePairingSettleMs } = require('./pairing/pairingConfig');
 const { redis, enqueue } = require('./queue/redisQueue');
 const Player = require('../models/Player');
 
@@ -7,7 +8,7 @@ class PairingService {
 		this.workers = new Map(); // tournamentId -> worker
 	}
 
-	async seedQueueOnStart(tournamentId) {
+	async seedQueueOnStart(tournamentId, { enqueuedAt = Date.now() } = {}) {
 		// Put all non-playing players into the queue (and set waitingSince)
 		const now = new Date();
 		const players = await Player.find({
@@ -33,7 +34,7 @@ class PairingService {
 				colorHistory: p.colorHistory ?? [],
 				status: p.status,
 				waitingSince: p.waitingSince ?? now,
-				enqueuedAt: Date.now(),
+				enqueuedAt,
 			});
 		}
 
@@ -54,11 +55,14 @@ class PairingService {
 			});
 		}
 
-		// seed queue with all non-playing players
-		await this.seedQueueOnStart(tournamentId);
+		const settleMs = parsePairingSettleMs();
+		// seed queue with all non-playing players. The initial pool is already
+		// complete, so mark it as settled instead of delaying round 1.
+		await this.seedQueueOnStart(tournamentId, { enqueuedAt: Date.now() - settleMs });
 
-		const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400 });
+		const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400, settleMs });
 		this.workers.set(String(tournamentId), worker);
+		console.log(`[pairing] Started worker for tournament ${tournamentId} with settleMs=${settleMs}.`);
 		// begin worker
 		worker.start(tournamentId);
 	}

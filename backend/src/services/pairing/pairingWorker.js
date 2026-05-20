@@ -1,16 +1,30 @@
 const mongoose = require('mongoose');
 const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending, removeSnapshotsFromPending } = require('../queue/redisQueue');
 const { evaluatePair } = require('./pairingScorer');
+const { DEFAULT_PAIRING_SETTLE_MS } = require('./pairingConfig');
+const { selectBatchPairings } = require('./selectBatchPairings');
 
 const gameService = require('../gameService');
 const Tournament = require('../../models/Tournament');
 const Player = require('../../models/Player');
 
 class PairingWorker {
-	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400 } = {}) {
+	/**
+	 * @param {object} opts
+	 * @param {string}  opts.workerId   - unique id for this worker instance
+	 * @param {number}  opts.batchSize  - max snapshots to dequeue per cycle
+	 * @param {number}  opts.idleMs     - sleep between empty cycles
+	 * @param {number}  opts.settleMs   - "quiet window": the worker WILL NOT pair
+	 *        until this many ms have passed since the newest player entered the
+	 *        queue.  This lets the admin finish inputting all game results before
+	 *        a new pairing round fires, maximising the available player pool.
+	 *        Set to 0 to disable.
+	 */
+	constructor({ workerId = 'w1', batchSize = 80, idleMs = 400, settleMs = DEFAULT_PAIRING_SETTLE_MS } = {}) {
 		this.workerId = workerId;
 		this.batchSize = batchSize;
 		this.idleMs = idleMs;
+		this.settleMs = settleMs;
 		this.running = false;
 	}
 
@@ -69,38 +83,46 @@ class PairingWorker {
 			return;
 		}
 
+		// WAITING FOR SETTLE WINDOW:
+		// Wait until `settleMs` has elapsed since the most recently
+		// enqueued player in the batch.  This ensures the admin has
+		// stopped inputting results, so the full available player pool
+		// is considered before any pairing decisions are made.
+		if (this.settleMs > 0) {
+			const newestEnqueue = Math.max(
+				...remaining.map((s) => Number(s.enqueuedAt) || 0),
+			);
+			const quietElapsed = Date.now() - newestEnqueue;
+
+			if (quietElapsed < this.settleMs) {
+				// Pool is still "hot" – put everyone back and wait
+				// for the remaining quiet gap.
+				await requeueLeftovers(tournamentId, this.workerId, remaining);
+				const sleepFor = this.settleMs - quietElapsed;
+				await this.#sleep(sleepFor);
+				return;
+			}
+		}
+
 		// 2. Try to pair them off
-		const pairedCount = { count: 0 };
+		const handledSnapshots = [];
+		const { pairings, leftovers, exhaustedNoLegalPairPool } = selectBatchPairings(remaining, evaluatePair);
+		remaining.length = 0;
+		remaining.push(...leftovers);
 
-		while (remaining.length >= 2) {
-			const anchor = remaining[0];
-			let bestIdx = -1;
-			let bestEval = null;
+		if (exhaustedNoLegalPairPool && remaining.length >= 2) {
+			console.warn('[PairingWorker] no legal pairings available in current pool; requeueing leftovers', {
+				tournamentId: String(tournamentId),
+				workerId: this.workerId,
+				poolSize: remaining.length,
+				pairingsCreated: pairings.length,
+				playerIds: remaining.map((player) => String(player._id)),
+			});
+		}
 
-			for (let i = 1; i < remaining.length; i++) {
-				const e = evaluatePair(anchor, remaining[i]);
-				if (!e.ok) continue;
-				if (!bestEval || e.score > bestEval.score) {
-					bestEval = e;
-					bestIdx = i;
-				}
-			}
+		for (const { white, black } of pairings) {
 
-			if (bestIdx === -1) {
-				// Couldn't pair anchor now; rotate once to give others a chance
-				remaining.push(remaining.shift());
-				if (remaining.length <= 3) break; // avoid tight loop when pool is tiny
-				continue;
-			}
-
-			const partner = remaining[bestIdx];
-			// remove partner (higher index) first, then anchor (index 0, intitial player pick)
-			remaining.splice(bestIdx, 1);
-			remaining.shift();
-
-			const { white, black } = bestEval.colors;
-
-			// 3) Create the game via GameService (atomic transaction inside)
+			// 3. Create the game via GameService (atomic transaction inside)
 			let gameDoc = null;
 			try {
 				gameDoc = await gameService.createGameFromPairing(white._id, black._id, tournamentId);
@@ -109,22 +131,24 @@ class PairingWorker {
 			}
 
 			if (!gameDoc) {
-				// if race or validation failed, then requeue both
+				// Pair creation failed: re-enqueue both to the main queue.
+				// They also need to be removed from pending below, otherwise
+				// they double-exist (in pending AND in main).
 				await enqueue(tournamentId, white);
 				await enqueue(tournamentId, black);
+				handledSnapshots.push(white, black);
 				continue;
 			}
 
-			pairedCount.count += 2;
+			handledSnapshots.push(white, black);
 		}
 
 		// Requeue leftovers from pending
 		await requeueLeftovers(tournamentId, this.workerId, remaining);
 
-		// Acknowledge the consumed (paired) items
-		if (pairedCount.count > 0) {
-			await ackFromPending(tournamentId, this.workerId, pairedCount.count);
-		}
+		// Remove handled (paired or failed) snapshots from pending by payload.
+		// Ack by count is wrong because pairings are not in pending-head order.
+		await ackFromPending(tournamentId, this.workerId, handledSnapshots);
 
 		await this.#sleep(remaining.length > 0 ? 50 : 0);
 	}
@@ -132,4 +156,4 @@ class PairingWorker {
 	#sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 }
 
-module.exports = { PairingWorker };
+module.exports = { PairingWorker, selectBatchPairings };

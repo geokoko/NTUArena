@@ -57,33 +57,48 @@ async function batchDequeueToPending(tournamentId, workerId, n = 50) {
 }
 
 /**
- * Acknowledge N items from pending (remove from head).
+ * Acknowledge handled snapshots from pending by removing each by exact
+ * payload. Removing by count from the head is wrong: pairings are not in
+ * head order (Blossom can pair head with tail), so popping N from head
+ * removes the wrong entries when some pairs succeed and others fail.
  */
-async function ackFromPending(tournamentId, workerId, n) {
+async function ackFromPending(tournamentId, workerId, snapshots) {
+	if (!snapshots.length) return;
 	const key = pendingKey(tournamentId, workerId);
-	// Trim from head by popping n items
-	const pipeline = redis.pipeline();
-	for (let i = 0; i < n; i++) pipeline.lpop(key);
-	await pipeline.exec();
+	const pipe = redis.pipeline();
+	for (const snap of snapshots) {
+		pipe.lrem(key, 1, JSON.stringify(snap));
+	}
+	await pipe.exec();
 }
 
 /**
  * Requeue the unpaired leftovers from pending back to the main queue (FIFO-safe).
- * We LREM those items from pending (by value) and RPUSH to main queue keeping order.
+ * Uses a Lua script so each LREM+RPUSH pair is atomic — pipelines are not.
+ * Only RPUSH if LREM actually removed an entry: if a concurrent
+ * removePlayerEverywhere already evicted the player (e.g. admin paused
+ * mid-cycle), don't resurrect them in the main queue.
  */
 async function requeueLeftovers(tournamentId, workerId, leftovers) {
 	if (!leftovers.length) return;
-	const key = pendingKey(tournamentId, workerId);
-	const main = qKey(tournamentId);
-	const pipe = redis.pipeline();
+	const src = pendingKey(tournamentId, workerId);
+	const dest = qKey(tournamentId);
 
-	// Remove by value (LREM count 1) for each leftover and then RPUSH to main queue
-	for (const p of leftovers) {
-		const payload = JSON.stringify(p);
-		pipe.lrem(key, 1, payload);
-		pipe.rpush(main, payload);
-	}
-	await pipe.exec();
+	const script = `
+		local src = KEYS[1]
+		local dest = KEYS[2]
+		local moved = 0
+		for i=1,#ARGV do
+			local removed = redis.call('LREM', src, 1, ARGV[i])
+			if removed > 0 then
+				redis.call('RPUSH', dest, ARGV[i])
+				moved = moved + 1
+			end
+		end
+		return moved
+	`;
+	const payloads = leftovers.map((p) => JSON.stringify(p));
+	await redis.eval(script, 2, src, dest, ...payloads);
 }
 
 async function removeFromListByPlayerId(listKey, playerId) {

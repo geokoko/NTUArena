@@ -9,6 +9,10 @@ const PlayerSchema = new mongoose.Schema({
 	score: { type: Number, required: true, default: 0 },
 	liveRating: { type: Number, required: true, default: 0 },
 	entryRating: { type: Number, default: 0 },
+	// Current rank within the tournament (1 = leader). Recomputed after every
+	// game result. Not used by the Arena pairing algorithm but stored for
+	// display purposes and future format support (e.g. Swiss).
+	standing: { type: Number, default: null },
 	isPlaying: { type: Boolean, default: false },
 	waitingSince: { type: Date, default: Date.now },
 	gameHistory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Game' }],

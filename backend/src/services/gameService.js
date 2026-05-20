@@ -7,6 +7,8 @@ const { enqueue } = require('./queue/redisQueue');
 const {
 	findByIdOrPublicId,
 	ensureDocumentPublicId,
+	isObjectId,
+	normalizeLookupId,
 } = require('../utils/identifiers');
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -87,6 +89,48 @@ function applyResultToPlayer({ player, opponentRating, resultColor, perspective,
 	});
 }
 
+/**
+ * Recomputes and persists the `standing` field for all players in a tournament.
+ * Ranked by score DESC, then liveRating DESC as tiebreaker.
+ * Called fire-and-forget after every game result so standings are always current.
+ */
+async function refreshStandings(tournamentId) {
+	const players = await Player.find({ tournament: tournamentId })
+		.select('_id score liveRating')
+		.sort({ score: -1, liveRating: -1 })
+		.lean();
+
+	if (!players.length) return;
+
+	const bulkOps = players.map((p, idx) => ({
+		updateOne: {
+			filter: { _id: p._id },
+			update: { $set: { standing: idx + 1 } },
+		},
+	}));
+
+	await Player.bulkWrite(bulkOps);
+}
+
+// Chain refreshes per tournament so concurrent result submissions cannot
+// interleave read/write phases and overwrite newer standings with stale
+// ones. Refreshes for different tournaments still run in parallel.
+const standingsChains = new Map();
+
+function scheduleStandingsRefresh(tournamentId) {
+	const key = String(tournamentId);
+	const prev = standingsChains.get(key) || Promise.resolve();
+	const next = prev
+		.catch(() => {})
+		.then(() => refreshStandings(tournamentId))
+		.catch((err) => console.error('[GameService] standings refresh failed:', err));
+	standingsChains.set(key, next);
+	next.finally(() => {
+		if (standingsChains.get(key) === next) standingsChains.delete(key);
+	});
+	return next;
+}
+
 class GameService {
 	async getGameById(id) {
 		const game = await findByIdOrPublicId(Game, id);
@@ -128,13 +172,19 @@ class GameService {
 		let createdGame;
 		try {
 			await session.withTransaction(async () => {
-				const [white, black] = await Promise.all([
-					Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session).exec(),
-					Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session).exec(),
-				]);
+				// Run reads sequentially. A ClientSession is not thread-safe, so
+				// parallel ops sharing one session collide on the active transaction
+				// number and yield MongoServerError 117 ConflictingOperationInProgress.
+				const white = await Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session).exec();
+				const black = await Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session).exec();
 
-				if (!white || !black || white.isPlaying || black.isPlaying) {
-					throw new Error('Players busy or not found');
+				// Reject paused/withdrawn players. Pairing decisions are made off
+				// stale Redis snapshots taken when the player was enqueued; by the
+				// time we land here, the admin may have flipped status to 'paused'
+				// or 'withdrawn'. isPlaying alone does not catch that.
+				const isInactive = (p) => p.status && p.status !== 'active';
+				if (!white || !black || white.isPlaying || black.isPlaying || isInactive(white) || isInactive(black)) {
+					throw new Error('Players unavailable (busy or inactive)');
 				}
 
 				const game = new Game({
@@ -156,11 +206,9 @@ class GameService {
 				white.waitingSince = null;
 				black.waitingSince = null;
 
-				await Promise.all([
-					white.save({ session }),
-					black.save({ session }),
-					game.save({ session }),
-				]);
+				await white.save({ session });
+				await black.save({ session });
+				await game.save({ session });
 
 				createdGame = game;
 			}, {
@@ -181,10 +229,6 @@ class GameService {
    * Marks game finished, applies result, frees both players, and re-enqueues them.
    */
 	async submitGameResult(gameId, result) {
-		const game = await findByIdOrPublicId(Game, gameId);
-		if (!game) throw new Error('Game not found');
-		if (game.isFinished) throw new Error(`Game with ID: ${gameId} already finished with result ${game.resultColor}`);
-
 		// Normalize incoming result to one of: 'white' | 'black' | 'draw'
 		const normalize = (r) => {
 			if (!r) return null;
@@ -198,10 +242,30 @@ class GameService {
 		const resultColor = normalize(result);
 		if (!resultColor) throw new Error('Invalid result value');
 
-		game.resultColor = resultColor;
-		game.isFinished = true;
-		game.finishedAt = new Date();
-		await game.save();
+		const lookupId = normalizeLookupId(gameId);
+		if (!lookupId) throw new Error('Game not found');
+
+		// Atomically claim the unfinished game. Without this, two concurrent
+		// submissions (admin double-click, retry, two tabs) can both pass an
+		// isFinished check and both apply player stats, double-counting score
+		// and win/loss totals.
+		const lookupFilter = isObjectId(lookupId)
+			? { $or: [{ _id: lookupId }, { publicId: lookupId }] }
+			: { publicId: lookupId };
+
+		const game = await Game.findOneAndUpdate(
+			{ ...lookupFilter, isFinished: false },
+			{ $set: { isFinished: true, resultColor, finishedAt: new Date() } },
+			{ new: true },
+		);
+
+		if (!game) {
+			// Distinguish "not found" from "already finished" for clearer errors.
+			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished');
+			if (!existing) throw new Error('Game not found');
+			throw new Error(`Game with ID: ${gameId} already finished with result ${existing.resultColor}`);
+		}
+
 		await ensureDocumentPublicId(game, Game);
 		console.log(`[GameService] Game ended with result: ${resultColor}`);
 
@@ -241,6 +305,10 @@ class GameService {
 			black.waitingSince = shouldWait ? new Date() : null;
 			await black.save();
 		}
+
+		// Refresh the persisted standing cache before returning. Refreshes are
+		// still serialized per tournament to avoid stale concurrent writes.
+		await scheduleStandingsRefresh(game.tournament);
 
 		if (!tournamentActive) {
 			return game;

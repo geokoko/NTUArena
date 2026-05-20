@@ -9,12 +9,16 @@
     "dev": "nodemon src/server.js",
     "test": "jest --forceExit --detectOpenHandles",
     "simulate:tournament": "node test-scripts/simulateTournament.js",
+    "simulate:arena-pairings": "node test-scripts/simulateArenaPairings.js",
+    "simulate:pairing-comparison": "node test-scripts/simulatePairingComparison.js",
+    "simulate:pairing-pareto": "node test-scripts/simulatePairingPareto.js",
     "audit:full": "npm audit && npx @socketsecurity/cli@latest ci"
   },
   "dependencies": {
     "bcryptjs": "3.0.3",
     "cors": "2.8.6",
     "dotenv": "17.4.2",
+    "edmonds-blossom-fixed": "^1.0.1",
     "express": "5.2.1",
     "express-mongo-sanitize": "2.2.0",
     "express-rate-limit": "8.5.2",
