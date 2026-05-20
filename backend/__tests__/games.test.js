@@ -40,8 +40,8 @@ const setupGameFixture = async () => {
 
 	const t = await tournamentService.createTournament({
 		name: 'Game Test Tournament',
-		startDate: tomorrow(),
-		endDate: dayAfter(),
+		scheduledStartDate: tomorrow(),
+		durationMs: 24 * 60 * 60 * 1000,
 	});
 
 	await tournamentService.joinTournament(user1.id, t.id);

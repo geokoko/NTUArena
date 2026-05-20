@@ -7,7 +7,8 @@ const initialState = {
 	name: '',
 	tournLocation: '',
 	startDate: '',
-	endDate: '',
+	durationHours: '1',
+	durationMinutes: '30',
 	timeControl: '',
 	description: '',
 	type: 'arena',
@@ -43,11 +44,24 @@ const AdminCreateTournament = () => {
 			if (maxPlayersValue !== undefined && (Number.isNaN(maxPlayersValue) || maxPlayersValue <= 0)) {
 				throw new Error('Max players must be a positive number');
 			}
+			const durationHours = Number(form.durationHours || 0);
+			const durationMinutes = Number(form.durationMinutes || 0);
+			if (!Number.isFinite(durationHours) || !Number.isFinite(durationMinutes) || durationHours < 0 || durationMinutes < 0) {
+				throw new Error('Duration must be a positive time');
+			}
+			const durationMs = ((durationHours * 60) + durationMinutes) * 60 * 1000;
+			if (durationMs <= 0) {
+				throw new Error('Duration is required');
+			}
+			const scheduledStartDate = toIso(form.startDate);
+			if (scheduledStartDate && new Date(scheduledStartDate) <= new Date()) {
+				throw new Error('Scheduled start must be in the future');
+			}
 			const payload = {
 				name: form.name,
 				tournLocation: form.tournLocation,
-				startDate: toIso(form.startDate),
-				endDate: toIso(form.endDate),
+				scheduledStartDate,
+				durationMs,
 				timeControl: form.timeControl,
 				description: form.description,
 				type: form.type,
@@ -105,24 +119,40 @@ const AdminCreateTournament = () => {
 							/>
 						</div>
 						<div className="col-md-6">
-							<label className="form-label">Start Date *</label>
+							<label className="form-label">Scheduled Start</label>
 							<input
 								type="datetime-local"
 								className="form-control"
 								value={form.startDate}
 								onChange={handleChange('startDate')}
-								required
 							/>
 						</div>
 						<div className="col-md-6">
-							<label className="form-label">End Date *</label>
-							<input
-								type="datetime-local"
-								className="form-control"
-								value={form.endDate}
-								onChange={handleChange('endDate')}
-								required
-							/>
+							<label className="form-label">Duration *</label>
+							<div className="row g-2">
+								<div className="col-6">
+									<input
+										type="number"
+										min="0"
+										className="form-control"
+										value={form.durationHours}
+										onChange={handleChange('durationHours')}
+										aria-label="Duration hours"
+									/>
+								</div>
+								<div className="col-6">
+									<input
+										type="number"
+										min="0"
+										max="59"
+										className="form-control"
+										value={form.durationMinutes}
+										onChange={handleChange('durationMinutes')}
+										aria-label="Duration minutes"
+									/>
+								</div>
+							</div>
+							<div className="form-text">Hours and minutes. Leave start empty to start manually.</div>
 						</div>
 						<div className="col-md-4">
 							<label className="form-label">Time Control</label>

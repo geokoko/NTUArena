@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { tournamentAPI, gameAPI, userAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { getDisplayName } from '../utils/tournamentDisplay';
 import CSVImport from '../components/CSVImport';
+import TournamentCountdown from '../components/TournamentCountdown';
+import UserMultiSelect from '../components/UserMultiSelect';
 import './TournamentDetail.css';
 
 const PLAYERS_PER_PAGE = 15;
@@ -33,7 +34,6 @@ const TournamentDetail = () => {
 	const [selectedHistoryPlayerId, setSelectedHistoryPlayerId] = useState('');
 	const [users, setUsers] = useState([]);
 	const [usersError, setUsersError] = useState('');
-	const [addSelection, setAddSelection] = useState('');
 	const [showCSVImport, setShowCSVImport] = useState(false);
 
 	const loadTournamentDetails = useCallback(async () => {
@@ -166,6 +166,8 @@ const TournamentDetail = () => {
 				return <span className="badge badge-warning">Upcoming</span>;
 			case 'in progress':
 				return <span className="badge badge-success">In Progress</span>;
+			case 'finishing':
+				return <span className="badge badge-warning">Finishing</span>;
 			case 'completed':
 				return <span className="badge badge-secondary">Completed</span>;
 			default:
@@ -231,11 +233,6 @@ const TournamentDetail = () => {
 		);
 	}, [completedGames, selectedHistoryPlayerId]);
 
-	const addableUsers = useMemo(() => {
-		const existingUserIds = new Set(players.map((p) => p.userId).filter(Boolean));
-		return users.filter((u) => !existingUserIds.has(u.id));
-	}, [players, users]);
-
 	const withAdminAction = useCallback(async (fn) => {
 		setActionLoading(true);
 		setActionError('');
@@ -280,12 +277,24 @@ const TournamentDetail = () => {
 		}
 	}, [refreshGames, refreshStandings, refreshPlayers]);
 
-	const handleAddPlayer = useCallback(() =>
+	const handleCancelGame = useCallback(async (gameId) => {
+		if (!gameId) return;
+		setSubmittingGameId(gameId);
+		try {
+			await gameAPI.cancelGame(gameId, 'manual');
+			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+		} catch (err) {
+			alert(err.message || 'Failed to cancel game');
+		} finally {
+			setSubmittingGameId(null);
+		}
+	}, [refreshGames, refreshStandings, refreshPlayers]);
+
+	const handleBulkAddPlayers = useCallback((userIds) =>
 		withAdminAction(async () => {
-			if (!addSelection) return;
-			await tournamentAPI.adminAddPlayer(id, addSelection);
-			setAddSelection('');
-		}), [withAdminAction, addSelection, id]);
+			if (!userIds.length) return;
+			await tournamentAPI.bulkAddPlayers(id, userIds);
+		}), [withAdminAction, id]);
 
 	const handleCSVImport = useCallback(async (csvText) => {
 		const res = await tournamentAPI.importPlayersCSV(id, csvText);
@@ -334,6 +343,14 @@ const TournamentDetail = () => {
 				<div>
 					<h1>{tournament.name}</h1>
 					{getStatusBadge(tournament.tournStatus)}
+					<div className="mt-2">
+						<TournamentCountdown
+							status={tournament.tournStatus}
+							endDate={tournament.endDate}
+							scheduledStartDate={tournament.scheduledStartDate}
+							durationMs={tournament.durationMs}
+						/>
+					</div>
 				</div>
 				<Link to="/tournaments" className="btn btn-secondary">
 					Back to Tournaments
@@ -599,6 +616,7 @@ const TournamentDetail = () => {
 							<table className="table table-sm align-middle tournament-active__table">
 								<thead>
 									<tr>
+										<th>Board</th>
 										<th>White</th>
 										<th>Black</th>
 										<th>Started</th>
@@ -609,6 +627,7 @@ const TournamentDetail = () => {
 								<tbody>
 									{activeGames.map((game) => (
 										<tr key={game.id}>
+											<td>{game.boardNumber ? `#${game.boardNumber}` : '—'}</td>
 											<td>{game.playerWhite?.name || game.playerWhite?.username || 'Unknown'}</td>
 											<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
 											<td>{formatDateTime(game.startedAt)}</td>
@@ -636,6 +655,13 @@ const TournamentDetail = () => {
 												disabled={!!submittingGameId}
 											>
 												Draw
+											</button>
+											<button
+												className="btn btn-sm btn-outline-danger tournament-active__result-btn"
+												onClick={() => handleCancelGame(game.id)}
+												disabled={!!submittingGameId}
+											>
+												Cancel
 											</button>
 										</div>
 												</td>
@@ -725,32 +751,13 @@ const TournamentDetail = () => {
 						</button>
 					</div>
 					<div className="tournament-admin__add-panel">
-						<div className="tournament-admin__add-row">
-							<div className="tournament-admin__add-field">
-								<label htmlFor="add-participant" className="form-label small mb-1">Add existing user</label>
-								<select
-									id="add-participant"
-									className="form-select form-select-sm"
-									value={addSelection}
-									onChange={(e) => setAddSelection(e.target.value)}
-								>
-									<option value="">Select user</option>
-									{addableUsers.map((candidate) => (
-										<option key={candidate.id} value={candidate.id}>
-											{getDisplayName(candidate)}
-										</option>
-									))}
-								</select>
-							</div>
-							<button
-								type="button"
-								className="btn btn-sm btn-primary tournament-admin__add-btn"
-								onClick={handleAddPlayer}
-								disabled={!addSelection || actionLoading}
-							>
-								Add participant
-							</button>
-						</div>
+						<label className="form-label small mb-2">Add existing users</label>
+						<UserMultiSelect
+							users={users}
+							registeredUserIds={players.filter((p) => p.status !== 'withdrawn').map((p) => p.userId).filter(Boolean)}
+							onAdd={handleBulkAddPlayers}
+							disabled={actionLoading}
+						/>
 						<div className="tournament-admin__import">
 							<button
 								type="button"

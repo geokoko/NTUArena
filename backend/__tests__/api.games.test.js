@@ -48,7 +48,7 @@ const setupGame = async (adminToken) => {
 	const tRes = await request(app)
 		.post('/api/admin/tournaments/create')
 		.set('Authorization', `Bearer ${adminToken}`)
-		.send({ name: 'Game Test', startDate: tomorrow(), endDate: dayAfter() });
+		.send({ name: 'Game Test', scheduledStartDate: tomorrow(), durationMs: 24 * 60 * 60 * 1000 });
 
 	const tournamentId = tRes.body.id;
 	const tournDoc = await Tournament.findOne({ publicId: tournamentId });

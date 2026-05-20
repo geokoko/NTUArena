@@ -40,8 +40,8 @@ const dayAfter = () => {
 const createTestTournament = async (overrides = {}) =>
 	tournamentService.createTournament({
 		name: 'Test Tournament',
-		startDate: tomorrow(),
-		endDate: dayAfter(),
+		scheduledStartDate: tomorrow(),
+		durationMs: 24 * 60 * 60 * 1000,
 		...overrides,
 	});
 
@@ -108,16 +108,16 @@ describe('createTournament', () => {
 		).rejects.toThrow('Tournament name is required');
 	});
 
-	test('rejects missing dates', async () => {
+	test('rejects missing duration', async () => {
 		await expect(
 			tournamentService.createTournament({ name: 'No Dates' })
-		).rejects.toThrow('startDate and endDate are required');
+		).rejects.toThrow('durationMs is required');
 	});
 
-	test('rejects startDate after endDate', async () => {
+	test('rejects endDate because it is derived', async () => {
 		await expect(
-			createTestTournament({ startDate: dayAfter(), endDate: tomorrow() })
-		).rejects.toThrow('startDate must be before endDate');
+			createTestTournament({ endDate: dayAfter() })
+		).rejects.toThrow('endDate is derived');
 	});
 
 	test('rejects invalid maxPlayers', async () => {
@@ -134,8 +134,8 @@ describe('createTournament', () => {
 	test('accepts title as alias for name', async () => {
 		const t = await tournamentService.createTournament({
 			title: 'Via Title',
-			startDate: tomorrow(),
-			endDate: dayAfter(),
+			scheduledStartDate: tomorrow(),
+			durationMs: 24 * 60 * 60 * 1000,
 		});
 		expect(t.name).toBe('Via Title');
 	});
@@ -205,14 +205,13 @@ describe('updateTournament', () => {
 		).rejects.toThrow('Tournament not found');
 	});
 
-	test('rejects startDate after endDate on update', async () => {
+	test('updates scheduled start on upcoming tournament', async () => {
 		const t = await createTestTournament();
 		const farFuture = new Date();
-		farFuture.setFullYear(farFuture.getFullYear() + 10);
+		farFuture.setDate(farFuture.getDate() + 3);
 
-		await expect(
-			tournamentService.updateTournament(t.id, { startDate: farFuture.toISOString() })
-		).rejects.toThrow('startDate must be before endDate');
+		const updated = await tournamentService.updateTournament(t.id, { scheduledStartDate: farFuture.toISOString() });
+		expect(new Date(updated.startDate).toISOString()).toBe(farFuture.toISOString());
 	});
 });
 
@@ -440,6 +439,23 @@ describe('resumePlayer', () => {
 		await expect(
 			tournamentService.resumePlayer(user.id, t.id)
 		).rejects.toThrow('Withdrawn players cannot be resumed');
+	});
+});
+
+describe('bulkAddPlayers', () => {
+	test('adds valid users and skips already-registered users', async () => {
+		const tournament = await createTestTournament();
+		const user1 = await createTestUser();
+		const user2 = await createTestUser();
+
+		await tournamentService.joinTournament(user1.id, tournament.id);
+		const result = await tournamentService.bulkAddPlayers(tournament.id, [user1.id, user2.id]);
+		const tournamentDoc = await Tournament.findOne({ publicId: tournament.id });
+
+		expect(result.added).toHaveLength(1);
+		expect(result.skipped).toHaveLength(1);
+		expect(result.added[0].userId).toBe(user2.id);
+		expect(await Player.countDocuments({ tournament: tournamentDoc._id })).toBe(2);
 	});
 });
 

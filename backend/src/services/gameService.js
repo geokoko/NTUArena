@@ -4,6 +4,7 @@ const Player = require('../models/Player');
 const User = require('../models/User');
 const Tournament = require('../models/Tournament');
 const { enqueue } = require('./queue/redisQueue');
+const { logEvent } = require('./tournamentLogger');
 const {
 	findByIdOrPublicId,
 	ensureDocumentPublicId,
@@ -121,7 +122,7 @@ function playerSnapshot(player) {
 
 async function enqueueIfEligible(player, tournament) {
 	if (!player || player.status !== 'active') return false;
-	if (!tournament || tournament.tournStatus !== 'in progress') return false;
+	if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return false;
 	player.waitingSince = new Date();
 	await player.save();
 	await enqueue(String(tournament._id), playerSnapshot(player));
@@ -157,6 +158,10 @@ async function completeIfNoActiveGames(tournamentId) {
 
 	tournament.tournStatus = 'completed';
 	await tournament.save();
+	await logEvent(tournament._id, 'tournament.completed', {
+		message: 'Tournament completed after all active games finished.',
+		payload: { completedAt: new Date() },
+	});
 	return tournament;
 }
 
@@ -344,7 +349,7 @@ class GameService {
 		console.log(`[GameService] Game ended with result: ${resultColor}`);
 
 		const [tournament, white, black] = await Promise.all([
-			Tournament.findById(game.tournament).select('tournStatus'),
+			Tournament.findById(game.tournament).select('tournStatus pairingClosedAt'),
 			Player.findById(game.playerWhite),
 			Player.findById(game.playerBlack),
 		]);
@@ -395,6 +400,7 @@ class GameService {
 			try {
 				for (const player of [white, black]) {
 					if (!player || (player.status && player.status !== 'active')) continue;
+					if (tournament?.pairingClosedAt) continue;
 					await enqueue(String(game.tournament), playerSnapshot(player));
 				}
 			} catch (err) {
@@ -458,7 +464,7 @@ class GameService {
 
 		await ensureDocumentPublicId(game, Game);
 		const [tournament, white, black] = await Promise.all([
-			Tournament.findById(game.tournament).select('tournStatus'),
+			Tournament.findById(game.tournament).select('tournStatus pairingClosedAt'),
 			Player.findById(game.playerWhite),
 			Player.findById(game.playerBlack),
 		]);
@@ -474,6 +480,19 @@ class GameService {
 			player.isPlaying = false;
 			player.waitingSince = null;
 			await player.save();
+		}
+
+		if (tournament) {
+			await logEvent(tournament._id, 'game.cancelled', {
+				message: `Game cancelled (${reason}).`,
+				payload: {
+					gameId: game.publicId || String(game._id),
+					boardNumber: game.boardNumber ?? null,
+					reason,
+					players: [white, black].filter(Boolean).map((player) => String(player._id)),
+				},
+				actor,
+			});
 		}
 
 		for (const player of [white, black]) {
