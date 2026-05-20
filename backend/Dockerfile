@@ -1,20 +1,24 @@
-FROM node:22-alpine AS base
+# Test stage: Debian-based because mongodb-memory-server (devDep) downloads
+# official mongod binaries built against glibc — Alpine/musl breaks it.
+# libcurl4 is a runtime dep of the downloaded mongod binary.
+FROM node:22-bookworm-slim AS test
 WORKDIR /app
-COPY package*.json ./
-
-# Test target: installs devDependencies and runs jest. Built explicitly via
-# `docker build --target test` from CI. Order matters — the default build
-# (no --target) uses the LAST stage, so prod must remain at the bottom to
-# keep docker-compose and existing prod builds unchanged.
-FROM base AS test
 ENV NODE_ENV=test
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libcurl4 ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY package*.json ./
 RUN npm ci
 COPY . .
 CMD ["npm", "test"]
 
-FROM base AS prod
+# Prod stage stays on Alpine. Must be LAST so the default build (no
+# --target) and docker-compose produce the prod image unchanged.
+FROM node:22-alpine AS prod
+WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5000
+COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
 
