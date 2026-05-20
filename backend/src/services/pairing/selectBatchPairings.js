@@ -79,7 +79,7 @@ function playerRank(player) {
 }
 
 function playerRating(player) {
-	return asFiniteNumber(player.liveRating ?? player.entryRating ?? player.rating, 1200);
+	return asFiniteNumber(player.entryRating ?? player.liveRating ?? player.rating, 1200);
 }
 
 function playerRatingDeviation(player) {

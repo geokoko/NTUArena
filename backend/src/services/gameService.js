@@ -20,9 +20,9 @@ function asNumber(value, fallback = 0) {
 
 function resolveOpponentRating(opponent) {
 	if (!opponent) return 0;
-	const rating = asNumber(opponent.liveRating);
+	const rating = asNumber(opponent.entryRating);
 	if (rating !== 0) return rating;
-	return asNumber(opponent.entryRating, 0);
+	return asNumber(opponent.liveRating, 0);
 }
 
 // FIDE-style performance rating calculation
@@ -82,7 +82,7 @@ function applyResultToPlayer({ player, opponentRating, resultColor, perspective,
 		player.losses = asNumber(player.losses) + 1;
 	}
 
-	player.liveRating = calculatePerformanceRating({
+	player.performanceRating = calculatePerformanceRating({
 		sumOpponentRatings: player.sumOpponentRatings,
 		gamesPlayed: player.gamesPlayed,
 		score: player.score,
@@ -91,13 +91,13 @@ function applyResultToPlayer({ player, opponentRating, resultColor, perspective,
 
 /**
  * Recomputes and persists the `standing` field for all players in a tournament.
- * Ranked by score DESC, then liveRating DESC as tiebreaker.
+ * Ranked by score DESC, then performance DESC, then entry rating DESC.
  * Called fire-and-forget after every game result so standings are always current.
  */
 async function refreshStandings(tournamentId) {
 	const players = await Player.find({ tournament: tournamentId })
-		.select('_id score liveRating')
-		.sort({ score: -1, liveRating: -1 })
+		.select('_id score performanceRating entryRating')
+		.sort({ score: -1, performanceRating: -1, entryRating: -1 })
 		.lean();
 
 	if (!players.length) return;
@@ -318,8 +318,9 @@ class GameService {
 			_id: String(player._id),
 			user: player.user,
 			score: player.score ?? 0,
-			liveRating: player.liveRating ?? 0,
+			liveRating: player.entryRating ?? player.liveRating ?? 0,
 			entryRating: player.entryRating ?? 0,
+			performanceRating: player.performanceRating ?? null,
 			recentOpponents: (player.recentOpponents ?? []).map(String),
 			colorHistory: player.colorHistory ?? [],
 			status: player.status,
@@ -387,7 +388,9 @@ const summarizeGamePlayer = (player) => {
 		name: buildDisplayName(user),
 		username: user.username || null,
 		score: base.score ?? 0,
-		liveRating: base.liveRating ?? base.entryRating ?? user.globalElo ?? 0,
+		liveRating: base.entryRating ?? base.liveRating ?? user.globalElo ?? 0,
+		entryRating: base.entryRating ?? user.globalElo ?? 0,
+		performanceRating: base.performanceRating ?? null,
 		status: base.status || 'active',
 	};
 };

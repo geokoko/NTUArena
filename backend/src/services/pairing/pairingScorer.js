@@ -137,7 +137,8 @@ function colorImbalancePenalty(player, assignColor, maxPenalty = 3) {
  */
 function proximityScore(a, b, weights = { score: 0.6, elo: 0.4, standing: 0 }) {
 	const scoreDiff = Math.abs((a.score ?? 0) - (b.score ?? 0));
-	const eloDiff   = Math.abs((a.liveRating ?? 1200) - (b.liveRating ?? 1200));
+	const ratingOf = (player) => player.entryRating ?? player.liveRating ?? 1200;
+	const eloDiff   = Math.abs(ratingOf(a) - ratingOf(b));
 	const aStanding = a.standing ?? null;
 	const bStanding = b.standing ?? null;
 	const standingDiff = (aStanding != null && bStanding != null)
