@@ -74,6 +74,7 @@ const setupActiveGameFixture = async () => {
 		playerWhite: whitePlayer._id,
 		playerBlack: blackPlayer._id,
 		tournament: tournamentDoc._id,
+		boardNumber: 1,
 		isFinished: false,
 	});
 

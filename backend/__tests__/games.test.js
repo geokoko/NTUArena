@@ -56,6 +56,7 @@ const setupGameFixture = async () => {
 		playerWhite: players[0]._id,
 		playerBlack: players[1]._id,
 		tournament: tournDoc._id,
+		boardNumber: 1,
 		isFinished: false,
 	});
 	await game.save();
@@ -145,10 +146,14 @@ describe('submitGameResult', () => {
 		expect(updatedWhite.gamesPlayed).toBe(1);
 		expect(updatedWhite.score).toBe(1);
 		expect(updatedWhite.isPlaying).toBe(false);
+		expect(updatedWhite.liveRating).toBe(updatedWhite.entryRating);
+		expect(updatedWhite.performanceRating).toBeGreaterThan(0);
 
 		expect(updatedBlack.losses).toBe(1);
 		expect(updatedBlack.gamesPlayed).toBe(1);
 		expect(updatedBlack.score).toBe(0);
+		expect(updatedBlack.liveRating).toBe(updatedBlack.entryRating);
+		expect(updatedBlack.performanceRating).toBeGreaterThanOrEqual(0);
 	});
 
 	test('updates player stats after draw', async () => {

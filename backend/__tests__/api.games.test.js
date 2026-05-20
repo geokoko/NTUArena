@@ -74,6 +74,7 @@ const setupGame = async (adminToken) => {
 		playerWhite: players[0]._id,
 		playerBlack: players[1]._id,
 		tournament: tournDoc._id,
+		boardNumber: 1,
 		isFinished: false,
 	});
 	await game.save();
