@@ -40,8 +40,8 @@ const dayAfter = () => {
 const createTestTournament = async (overrides = {}) =>
 	tournamentService.createTournament({
 		name: 'Test Tournament',
-		startDate: tomorrow(),
-		endDate: dayAfter(),
+		scheduledStartDate: tomorrow(),
+		durationMs: 24 * 60 * 60 * 1000,
 		...overrides,
 	});
 
@@ -74,6 +74,7 @@ const setupActiveGameFixture = async () => {
 		playerWhite: whitePlayer._id,
 		playerBlack: blackPlayer._id,
 		tournament: tournamentDoc._id,
+		boardNumber: 1,
 		isFinished: false,
 	});
 
@@ -107,16 +108,16 @@ describe('createTournament', () => {
 		).rejects.toThrow('Tournament name is required');
 	});
 
-	test('rejects missing dates', async () => {
+	test('rejects missing duration', async () => {
 		await expect(
 			tournamentService.createTournament({ name: 'No Dates' })
-		).rejects.toThrow('startDate and endDate are required');
+		).rejects.toThrow('durationMs is required');
 	});
 
-	test('rejects startDate after endDate', async () => {
+	test('rejects endDate because it is derived', async () => {
 		await expect(
-			createTestTournament({ startDate: dayAfter(), endDate: tomorrow() })
-		).rejects.toThrow('startDate must be before endDate');
+			createTestTournament({ endDate: dayAfter() })
+		).rejects.toThrow('endDate is derived');
 	});
 
 	test('rejects invalid maxPlayers', async () => {
@@ -133,8 +134,8 @@ describe('createTournament', () => {
 	test('accepts title as alias for name', async () => {
 		const t = await tournamentService.createTournament({
 			title: 'Via Title',
-			startDate: tomorrow(),
-			endDate: dayAfter(),
+			scheduledStartDate: tomorrow(),
+			durationMs: 24 * 60 * 60 * 1000,
 		});
 		expect(t.name).toBe('Via Title');
 	});
@@ -204,14 +205,13 @@ describe('updateTournament', () => {
 		).rejects.toThrow('Tournament not found');
 	});
 
-	test('rejects startDate after endDate on update', async () => {
+	test('updates scheduled start on upcoming tournament', async () => {
 		const t = await createTestTournament();
 		const farFuture = new Date();
-		farFuture.setFullYear(farFuture.getFullYear() + 10);
+		farFuture.setDate(farFuture.getDate() + 3);
 
-		await expect(
-			tournamentService.updateTournament(t.id, { startDate: farFuture.toISOString() })
-		).rejects.toThrow('startDate must be before endDate');
+		const updated = await tournamentService.updateTournament(t.id, { scheduledStartDate: farFuture.toISOString() });
+		expect(new Date(updated.startDate).toISOString()).toBe(farFuture.toISOString());
 	});
 });
 
@@ -296,7 +296,6 @@ describe('joinTournament', () => {
 
 		expect(player.userId).toBe(user.id);
 		expect(player.entryRating).toBe(1500);
-		expect(player.liveRating).toBe(1500);
 		expect(player.score).toBe(0);
 	});
 
@@ -442,6 +441,45 @@ describe('resumePlayer', () => {
 	});
 });
 
+describe('bulkAddPlayers', () => {
+	test('adds valid users and skips already-registered users', async () => {
+		const tournament = await createTestTournament();
+		const user1 = await createTestUser();
+		const user2 = await createTestUser();
+
+		await tournamentService.joinTournament(user1.id, tournament.id);
+		const result = await tournamentService.bulkAddPlayers(tournament.id, [user1.id, user2.id]);
+		const tournamentDoc = await Tournament.findOne({ publicId: tournament.id });
+
+		expect(result.added).toHaveLength(1);
+		expect(result.skipped).toHaveLength(1);
+		expect(result.added[0].userId).toBe(user2.id);
+		expect(await Player.countDocuments({ tournament: tournamentDoc._id })).toBe(2);
+	});
+});
+
+describe('bulkAddPlayersFromCSV', () => {
+	test('uses CSV rating as entry rating for linked and temp players', async () => {
+		const tournament = await createTestTournament();
+		const user = await createTestUser({ username: 'csv_user', email: 'csv@example.com', globalElo: 1200 });
+
+		const result = await tournamentService.bulkAddPlayersFromCSV(tournament.id, [
+			{ name: 'Linked Player', rating: '1750', identifier: user.email, _rowNumber: 2 },
+			{ name: 'Temp Player', rating: '1420', identifier: '', _rowNumber: 3 },
+		]);
+		const tournamentDoc = await Tournament.findOne({ publicId: tournament.id });
+		const userDoc = await User.findOne({ publicId: user.id });
+		const linkedPlayer = await Player.findOne({ tournament: tournamentDoc._id, user: userDoc._id });
+		const tempPlayer = await Player.findOne({ tournament: tournamentDoc._id, tempName: 'Temp Player' });
+
+		expect(result.added).toHaveLength(2);
+		expect(linkedPlayer.entryRating).toBe(1750);
+		expect(linkedPlayer.performanceRating).toBeNull();
+		expect(tempPlayer.entryRating).toBe(1420);
+		expect(tempPlayer.performanceRating).toBeNull();
+	});
+});
+
 // ─────────────────────────────────────────────
 // getTournamentPlayers / getTournamentStandings
 // ─────────────────────────────────────────────
@@ -456,8 +494,8 @@ describe('getTournamentPlayers', () => {
 
 		const players = await tournamentService.getTournamentPlayers(t.id);
 		expect(players).toHaveLength(2);
-		// sorted by score (both 0), then by liveRating desc (2000 first)
-		expect(players[0].liveRating).toBe(2000);
+		// sorted by score (both 0), then by entryRating desc (2000 first)
+		expect(players[0].entryRating).toBe(2000);
 	});
 
 	test('throws for non-existent tournament', async () => {

@@ -1,0 +1,56 @@
+.user-multi-select {
+	display: grid;
+	gap: 0.6rem;
+}
+
+.user-multi-select__toolbar,
+.user-multi-select__footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.user-multi-select__list {
+	max-height: 280px;
+	overflow: auto;
+	border: 1px solid rgba(15, 23, 42, 0.12);
+	border-radius: 6px;
+	background: #fff;
+}
+
+.user-multi-select__row {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.55rem 0.65rem;
+	border: 0;
+	border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+	background: transparent;
+	text-align: left;
+	color: #0f172a;
+}
+
+.user-multi-select__row:last-child {
+	border-bottom: 0;
+}
+
+.user-multi-select__row--selected {
+	background: #e8f1ff;
+}
+
+.user-multi-select__row:disabled {
+	color: #64748b;
+	background: #f8fafc;
+}
+
+.user-multi-select__pill {
+	flex: 0 0 auto;
+	padding: 0.1rem 0.35rem;
+	border-radius: 999px;
+	background: #e2e8f0;
+	font-size: 0.75rem;
+	color: #475569;
+}

@@ -4,6 +4,7 @@ const Player = require('../models/Player');
 const User = require('../models/User');
 const Tournament = require('../models/Tournament');
 const { enqueue } = require('./queue/redisQueue');
+const { logEvent } = require('./tournamentLogger');
 const {
 	findByIdOrPublicId,
 	ensureDocumentPublicId,
@@ -20,9 +21,7 @@ function asNumber(value, fallback = 0) {
 
 function resolveOpponentRating(opponent) {
 	if (!opponent) return 0;
-	const rating = asNumber(opponent.liveRating);
-	if (rating !== 0) return rating;
-	return asNumber(opponent.entryRating, 0);
+	return asNumber(opponent.entryRating);
 }
 
 // FIDE-style performance rating calculation
@@ -82,22 +81,96 @@ function applyResultToPlayer({ player, opponentRating, resultColor, perspective,
 		player.losses = asNumber(player.losses) + 1;
 	}
 
-	player.liveRating = calculatePerformanceRating({
+	player.performanceRating = calculatePerformanceRating({
 		sumOpponentRatings: player.sumOpponentRatings,
 		gamesPlayed: player.gamesPlayed,
 		score: player.score,
 	});
 }
 
+function rollbackLatestPairingHistory(player, opponentId, expectedColor) {
+	if (!player) return;
+	const opponents = [...(player.recentOpponents ?? [])];
+	const colors = [...(player.colorHistory ?? [])];
+	if (!opponents.length || !colors.length) return;
+
+	const latestOpponent = opponents.at(-1);
+	const latestColor = colors.at(-1);
+	if (String(latestOpponent) !== String(opponentId) || latestColor !== expectedColor) return;
+
+	player.recentOpponents = opponents.slice(0, -1);
+	player.colorHistory = colors.slice(0, -1);
+}
+
+function playerSnapshot(player) {
+	return {
+		_id: String(player._id),
+		user: player.user,
+		score: player.score ?? 0,
+		entryRating: player.entryRating ?? 0,
+		performanceRating: player.performanceRating ?? null,
+		recentOpponents: (player.recentOpponents ?? []).map(String),
+		colorHistory: player.colorHistory ?? [],
+		status: player.status,
+		waitingSince: player.waitingSince ?? null,
+		enqueuedAt: Date.now(),
+	};
+}
+
+async function enqueueIfEligible(player, tournament) {
+	if (!player || player.status !== 'active') return false;
+	if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return false;
+	player.waitingSince = new Date();
+	await player.save();
+	await enqueue(String(tournament._id), playerSnapshot(player));
+	return true;
+}
+
+async function lowestFreeBoardNumber(tournamentId, session) {
+	const activeGames = await Game.find({
+		tournament: tournamentId,
+		isFinished: false,
+		isCancelled: { $ne: true },
+		boardNumber: { $ne: null },
+	})
+		.select('boardNumber')
+		.session(session)
+		.lean();
+
+	const used = new Set(activeGames.map((game) => Number(game.boardNumber)).filter(Number.isFinite));
+	let boardNumber = 1;
+	while (used.has(boardNumber)) boardNumber += 1;
+	return boardNumber;
+}
+
+async function completeIfNoActiveGames(tournamentId) {
+	const tournament = await Tournament.findById(tournamentId);
+	if (!tournament || tournament.tournStatus !== 'finishing') return tournament;
+	const activeGames = await Game.countDocuments({
+		tournament: tournament._id,
+		isFinished: false,
+		isCancelled: { $ne: true },
+	});
+	if (activeGames > 0) return tournament;
+
+	tournament.tournStatus = 'completed';
+	await tournament.save();
+	await logEvent(tournament._id, 'tournament.completed', {
+		message: 'Tournament completed after all active games finished.',
+		payload: { completedAt: new Date() },
+	});
+	return tournament;
+}
+
 /**
  * Recomputes and persists the `standing` field for all players in a tournament.
- * Ranked by score DESC, then liveRating DESC as tiebreaker.
+ * Ranked by score DESC, then performance DESC, then entry rating DESC.
  * Called fire-and-forget after every game result so standings are always current.
  */
 async function refreshStandings(tournamentId) {
 	const players = await Player.find({ tournament: tournamentId })
-		.select('_id score liveRating')
-		.sort({ score: -1, liveRating: -1 })
+		.select('_id score performanceRating entryRating')
+		.sort({ score: -1, performanceRating: -1, entryRating: -1 })
 		.lean();
 
 	if (!players.length) return;
@@ -187,10 +260,12 @@ class GameService {
 					throw new Error('Players unavailable (busy or inactive)');
 				}
 
+				const boardNumber = await lowestFreeBoardNumber(tournamentId, session);
 				const game = new Game({
 					playerWhite: whitePlayerId,
 					playerBlack: blackPlayerId,
 					tournament: tournamentId,
+					boardNumber,
 					isFinished: false,
 				});
 
@@ -254,15 +329,16 @@ class GameService {
 			: { publicId: lookupId };
 
 		const game = await Game.findOneAndUpdate(
-			{ ...lookupFilter, isFinished: false },
+			{ ...lookupFilter, isFinished: false, isCancelled: { $ne: true } },
 			{ $set: { isFinished: true, resultColor, finishedAt: new Date() } },
-			{ new: true },
+			{ returnDocument: 'after' },
 		);
 
 		if (!game) {
 			// Distinguish "not found" from "already finished" for clearer errors.
-			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished');
+			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished isCancelled');
 			if (!existing) throw new Error('Game not found');
+			if (existing.isCancelled) throw new Error(`Game with ID: ${gameId} was cancelled`);
 			throw new Error(`Game with ID: ${gameId} already finished with result ${existing.resultColor}`);
 		}
 
@@ -270,7 +346,7 @@ class GameService {
 		console.log(`[GameService] Game ended with result: ${resultColor}`);
 
 		const [tournament, white, black] = await Promise.all([
-			Tournament.findById(game.tournament).select('tournStatus'),
+			Tournament.findById(game.tournament).select('tournStatus pairingClosedAt'),
 			Player.findById(game.playerWhite),
 			Player.findById(game.playerBlack),
 		]);
@@ -314,19 +390,6 @@ class GameService {
 			return game;
 		}
 
-		const buildSnapshot = (player) => ({
-			_id: String(player._id),
-			user: player.user,
-			score: player.score ?? 0,
-			liveRating: player.liveRating ?? 0,
-			entryRating: player.entryRating ?? 0,
-			recentOpponents: (player.recentOpponents ?? []).map(String),
-			colorHistory: player.colorHistory ?? [],
-			status: player.status,
-			waitingSince: player.waitingSince ?? null,
-			enqueuedAt: Date.now(),
-		});
-
 		// Small delay before re-enqueueing to prevent instant re-pairing
 		// when admin terminates multiple games quickly
 		const REQUEUE_DELAY_MS = 5000;
@@ -334,7 +397,8 @@ class GameService {
 			try {
 				for (const player of [white, black]) {
 					if (!player || (player.status && player.status !== 'active')) continue;
-					await enqueue(String(game.tournament), buildSnapshot(player));
+					if (tournament?.pairingClosedAt) continue;
+					await enqueue(String(game.tournament), playerSnapshot(player));
 				}
 			} catch (err) {
 				console.error('Failed to re-enqueue players after game termination:', err);
@@ -361,7 +425,117 @@ class GameService {
 			if (game.playerBlack.user) await ensureDocumentPublicId(game.playerBlack.user, User);
 		}
 
+		const serialized = serializeGame(game);
+		await completeIfNoActiveGames(game.tournament);
+		return serialized;
+	}
+
+	async cancelGame(gameId, { actor = null, reason = 'manual', excludePlayerIds = [] } = {}) {
+		const lookupId = normalizeLookupId(gameId);
+		if (!lookupId) throw new Error('Game not found');
+
+		const lookupFilter = isObjectId(lookupId)
+			? { $or: [{ _id: lookupId }, { publicId: lookupId }] }
+			: { publicId: lookupId };
+
+		const cancelledAt = new Date();
+		const game = await Game.findOneAndUpdate(
+			{ ...lookupFilter, isFinished: false, isCancelled: { $ne: true } },
+			{
+				$set: {
+					isFinished: true,
+					isCancelled: true,
+					cancelledAt,
+					finishedAt: cancelledAt,
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		if (!game) {
+			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished isCancelled');
+			if (!existing) throw new Error('Game not found');
+			if (existing.isCancelled) throw new Error(`Game with ID: ${gameId} already cancelled`);
+			throw new Error(`Game with ID: ${gameId} already finished with result ${existing.resultColor}`);
+		}
+
+		await ensureDocumentPublicId(game, Game);
+		const [tournament, white, black] = await Promise.all([
+			Tournament.findById(game.tournament).select('tournStatus pairingClosedAt'),
+			Player.findById(game.playerWhite),
+			Player.findById(game.playerBlack),
+		]);
+
+		if (white && black) {
+			rollbackLatestPairingHistory(white, black._id, 'white');
+			rollbackLatestPairingHistory(black, white._id, 'black');
+		}
+
+		const excluded = new Set(excludePlayerIds.map(String));
+		for (const player of [white, black]) {
+			if (!player) continue;
+			player.isPlaying = false;
+			player.waitingSince = null;
+			await player.save();
+		}
+
+		if (tournament) {
+			await logEvent(tournament._id, 'game.cancelled', {
+				message: `Game cancelled (${reason}).`,
+				payload: {
+					gameId: game.publicId || String(game._id),
+					boardNumber: game.boardNumber ?? null,
+					reason,
+					players: [white, black].filter(Boolean).map((player) => String(player._id)),
+				},
+				actor,
+			});
+		}
+
+		for (const player of [white, black]) {
+			if (!player || excluded.has(String(player._id))) continue;
+			await enqueueIfEligible(player, tournament);
+		}
+
+		await completeIfNoActiveGames(game.tournament);
+
+		await game.populate([
+			{
+				path: 'playerWhite',
+				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
+			},
+			{
+				path: 'playerBlack',
+				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
+			},
+		]);
+
 		return serializeGame(game);
+	}
+
+	async cancelActiveGameForPlayer(playerOrId, tournament, options = {}) {
+		const playerId = playerOrId?._id || playerOrId;
+		if (!playerId) return null;
+
+		const activeGame = await Game.findOne({
+			tournament: tournament?._id || tournament,
+			$or: [{ playerWhite: playerId }, { playerBlack: playerId }],
+			isFinished: false,
+			isCancelled: { $ne: true },
+		}).select('_id publicId');
+
+		if (!activeGame) {
+			if (playerOrId && typeof playerOrId.save === 'function') {
+				playerOrId.isPlaying = false;
+				await playerOrId.save();
+			}
+			return null;
+		}
+
+		return this.cancelGame(activeGame.publicId || activeGame._id, {
+			...options,
+			excludePlayerIds: [...(options.excludePlayerIds || []), playerId],
+		});
 	}
 }
 
@@ -387,7 +561,8 @@ const summarizeGamePlayer = (player) => {
 		name: buildDisplayName(user),
 		username: user.username || null,
 		score: base.score ?? 0,
-		liveRating: base.liveRating ?? base.entryRating ?? user.globalElo ?? 0,
+		entryRating: base.entryRating ?? user.globalElo ?? 0,
+		performanceRating: base.performanceRating ?? null,
 		status: base.status || 'active',
 	};
 };
@@ -399,6 +574,9 @@ const serializeGame = (game) => {
 		resultColor: base.resultColor || null,
 		finishedAt: base.finishedAt || null,
 		isFinished: !!base.isFinished,
+		isCancelled: !!base.isCancelled,
+		cancelledAt: base.cancelledAt || null,
+		boardNumber: base.boardNumber ?? null,
 		startedAt: base.createdAt || null,
 		playerWhite: summarizeGamePlayer(base.playerWhite),
 		playerBlack: summarizeGamePlayer(base.playerBlack),

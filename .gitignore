@@ -16,6 +16,7 @@ view/.env
 view/build/
 backend/dist/
 backend/test-output/
+backend/logs/
 
 # OS generated files
 .DS_Store

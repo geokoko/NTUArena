@@ -20,9 +20,11 @@ router.patch('/admin/tournaments/:id/update', requireAuth, requireRole('admin'),
 router.delete('/admin/tournaments/:id/delete', requireAuth, requireRole('admin'), tCtrl.deleteTournament);
 router.post('/admin/tournaments/:id/start', requireAuth, requireRole('admin'), tCtrl.startTournament);
 router.post('/admin/tournaments/:id/end', requireAuth, requireRole('admin'), tCtrl.endTournament);
+router.get('/admin/tournaments/:id/logs', requireAuth, requireRole('admin'), tCtrl.getTournamentLogs);
 
 // Admin participant management
 router.post('/admin/tournaments/:id/participants/add', requireAuth, requireRole('admin'), tCtrl.adminAddPlayer);
+router.post('/admin/tournaments/:id/participants/bulk-add', requireAuth, requireRole('admin'), tCtrl.bulkAddPlayers);
 router.delete('/admin/tournaments/:id/participants/remove', requireAuth, requireRole('admin'), tCtrl.adminRemovePlayer);
 router.post('/admin/tournaments/:id/participants/pause', requireAuth, requireRole('admin'), tCtrl.pausePlayer);
 router.post('/admin/tournaments/:id/participants/resume', requireAuth, requireRole('admin'), tCtrl.resumePlayer);

@@ -86,7 +86,7 @@ Important root backend files:
   - participants array references `Player`
 - `backend/src/models/Player.js`
   - tournament participant record (linked `user` or `tempName` for CSV temp players)
-  - arena stats: score, liveRating, entryRating, W/D/L, status, histories
+  - arena stats: score, entryRating, performanceRating, W/D/L, status, histories
 - `backend/src/models/Game.js`
   - white/black players, result state, timestamps, cancellation flags
 

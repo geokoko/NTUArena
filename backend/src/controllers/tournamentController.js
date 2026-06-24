@@ -3,7 +3,7 @@ const tournamentService = require('../services/tournamentService');
 const { parseCSV } = require('../utils/csvParser');
 
 exports.createTournament = asyncHandler(async (req, res) => {
-	const t = await tournamentService.createTournament(req.body);
+	const t = await tournamentService.createTournament(req.body, { actor: req.user });
 	res.status(201).json(t);
 });
 
@@ -13,22 +13,22 @@ exports.listTournaments = asyncHandler(async (req, res) => {
 });
 
 exports.deleteTournament = asyncHandler(async (req, res) => {
-	const result = await tournamentService.deleteTournament(req.params.id);
+	const result = await tournamentService.deleteTournament(req.params.id, { actor: req.user });
 	res.json(result);
 });
 
 exports.updateTournament = asyncHandler(async (req, res) => {
-	const t = await tournamentService.updateTournament(req.params.id, req.body);
+	const t = await tournamentService.updateTournament(req.params.id, req.body, { actor: req.user });
 	res.json(t);
 });
 
 exports.startTournament = asyncHandler(async (req, res) => {
-	const t = await tournamentService.startTournament(req.params.id);
+	const t = await tournamentService.startTournament(req.params.id, { actor: req.user, trigger: 'manual' });
 	res.json(t);
 });
 
 exports.endTournament = asyncHandler(async (req, res) => {
-	const t = await tournamentService.endTournament(req.params.id);
+	const t = await tournamentService.endTournament(req.params.id, { actor: req.user, trigger: 'manual' });
 	res.json(t);
 });
 
@@ -71,7 +71,7 @@ exports.leaveTournament = asyncHandler(async (req, res) => {
 		err.status = 400;
 		throw err;
 	}
-	const result = await tournamentService.leaveTournament(userId, req.params.id);
+	const result = await tournamentService.leaveTournament(userId, req.params.id, { actor: req.user });
 	res.json(result);
 });
 
@@ -83,8 +83,19 @@ exports.adminAddPlayer = asyncHandler(async (req, res) => {
 		err.status = 400;
 		throw err;
 	}
-	const player = await tournamentService.adminAddPlayerToTournament(userId, req.params.id);
+	const player = await tournamentService.adminAddPlayerToTournament(userId, req.params.id, { actor: req.user });
 	res.status(201).json(player);
+});
+
+exports.bulkAddPlayers = asyncHandler(async (req, res) => {
+	const { userIds } = req.body;
+	if (!Array.isArray(userIds)) {
+		const err = new Error('userIds must be an array');
+		err.status = 400;
+		throw err;
+	}
+	const result = await tournamentService.bulkAddPlayers(req.params.id, userIds, { actor: req.user });
+	res.json(result);
 });
 
 exports.adminRemovePlayer = asyncHandler(async (req, res) => {
@@ -94,7 +105,7 @@ exports.adminRemovePlayer = asyncHandler(async (req, res) => {
 		err.status = 400;
 		throw err;
 	}
-	const result = await tournamentService.adminRemovePlayerFromTournament(userId, req.params.id);
+	const result = await tournamentService.adminRemovePlayerFromTournament(userId, req.params.id, { actor: req.user });
 	res.json(result);
 });
 
@@ -105,7 +116,7 @@ exports.pausePlayer = asyncHandler(async (req, res) => {
 		err.status = 400;
 		throw err;
 	}
-	const player = await tournamentService.pausePlayer(userId, req.params.id);
+	const player = await tournamentService.pausePlayer(userId, req.params.id, { actor: req.user });
 	res.json(player);
 });
 
@@ -116,8 +127,13 @@ exports.resumePlayer = asyncHandler(async (req, res) => {
 		err.status = 400;
 		throw err;
 	}
-	const player = await tournamentService.resumePlayer(userId, req.params.id);
+	const player = await tournamentService.resumePlayer(userId, req.params.id, { actor: req.user });
 	res.json(player);
+});
+
+exports.getTournamentLogs = asyncHandler(async (req, res) => {
+	const logs = await tournamentService.getTournamentLogs(req.params.id, req.query);
+	res.json(logs);
 });
 
 exports.importPlayersFromCSV = asyncHandler(async (req, res) => {

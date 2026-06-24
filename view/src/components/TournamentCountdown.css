@@ -1,0 +1,22 @@
+.tournament-countdown {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.35rem 0.6rem;
+	border: 1px solid rgba(15, 23, 42, 0.12);
+	border-radius: 6px;
+	background: rgba(255, 255, 255, 0.82);
+	font-size: 0.9rem;
+	line-height: 1.2;
+}
+
+.tournament-countdown__label {
+	color: #475569;
+	font-weight: 600;
+}
+
+.tournament-countdown__value {
+	color: #0f172a;
+	font-variant-numeric: tabular-nums;
+	font-weight: 700;
+}

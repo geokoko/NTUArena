@@ -5,6 +5,8 @@ const { DEFAULT_PAIRING_SETTLE_MS } = require('./pairingConfig');
 const { selectBatchPairings } = require('./selectBatchPairings');
 
 const gameService = require('../gameService');
+const { logEvent } = require('../tournamentLogger');
+const { debugPairing } = require('./pairingDebugLogger');
 const Tournament = require('../../models/Tournament');
 const Player = require('../../models/Player');
 
@@ -36,8 +38,8 @@ class PairingWorker {
 		// Main loop
 		while (this.running) {
 			try {
-				const t = await Tournament.findById(tournamentId).select('tournStatus');
-				if (!t || t.tournStatus !== 'in progress') {
+				const t = await Tournament.findById(tournamentId).select('tournStatus pairingClosedAt');
+				if (!t || t.tournStatus !== 'in progress' || t.pairingClosedAt) {
 					await this.#sleep(this.idleMs);
 					continue;
 				}
@@ -53,6 +55,13 @@ class PairingWorker {
 	stop() { this.running = false; }
 
 	async #cycle(tournamentId) {
+		const tournament = await Tournament.findById(tournamentId).select('settleMs pairingClosedAt tournStatus');
+		if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) {
+			await this.#sleep(this.idleMs);
+			return;
+		}
+		const settleMs = tournament.settleMs ?? this.settleMs;
+
 		// 1. Fetch a batch from the queue
 		const batch = await batchDequeueToPending(tournamentId, this.workerId, this.batchSize);
 		if (batch.length === 0) {
@@ -88,17 +97,17 @@ class PairingWorker {
 		// enqueued player in the batch.  This ensures the admin has
 		// stopped inputting results, so the full available player pool
 		// is considered before any pairing decisions are made.
-		if (this.settleMs > 0) {
+		if (settleMs > 0) {
 			const newestEnqueue = Math.max(
 				...remaining.map((s) => Number(s.enqueuedAt) || 0),
 			);
 			const quietElapsed = Date.now() - newestEnqueue;
 
-			if (quietElapsed < this.settleMs) {
+			if (quietElapsed < settleMs) {
 				// Pool is still "hot" – put everyone back and wait
 				// for the remaining quiet gap.
 				await requeueLeftovers(tournamentId, this.workerId, remaining);
-				const sleepFor = this.settleMs - quietElapsed;
+				const sleepFor = settleMs - quietElapsed;
 				await this.#sleep(sleepFor);
 				return;
 			}
@@ -111,7 +120,7 @@ class PairingWorker {
 		remaining.push(...leftovers);
 
 		if (exhaustedNoLegalPairPool && remaining.length >= 2) {
-			console.warn('[PairingWorker] no legal pairings available in current pool; requeueing leftovers', {
+			await debugPairing(tournamentId, 'no_legal_pairings', {
 				tournamentId: String(tournamentId),
 				workerId: this.workerId,
 				poolSize: remaining.length,
@@ -149,6 +158,36 @@ class PairingWorker {
 		// Remove handled (paired or failed) snapshots from pending by payload.
 		// Ack by count is wrong because pairings are not in pending-head order.
 		await ackFromPending(tournamentId, this.workerId, handledSnapshots);
+
+		if (pairings.length || remaining.length) {
+			await logEvent(tournamentId, 'pairing.summary', {
+				message: `Pairing batch produced ${pairings.length} game(s).`,
+				payload: {
+					poolSize: batch.length,
+					pairsProduced: pairings.length,
+					byes: remaining.length === 1
+						? [{ playerId: String(remaining[0]._id), reason: 'odd-player-pool' }]
+						: [],
+					leftovers: remaining.map((player) => String(player._id)),
+					settleMs,
+					scoreState: batch.map((player) => ({
+						playerId: String(player._id),
+						score: player.score ?? 0,
+						entryRating: player.entryRating ?? 0,
+					})),
+				},
+			});
+			await debugPairing(tournamentId, 'pairing_summary', {
+				workerId: this.workerId,
+				poolSize: batch.length,
+				pairings: pairings.map(({ white, black }) => ({
+					white: String(white._id),
+					black: String(black._id),
+				})),
+				leftovers: remaining.map((player) => String(player._id)),
+				settleMs,
+			});
+		}
 
 		await this.#sleep(remaining.length > 0 ? 50 : 0);
 	}
