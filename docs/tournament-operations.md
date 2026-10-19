@@ -212,6 +212,10 @@ Operational notes:
 ## 5. Testing And Validation
 
 Use Node.js 22 for local installs, matching the Docker images and frontend CI.
+The backend test command enables Node's VM modules so Jest can execute the
+MongoDB driver's dynamic OS import. Without this, driver 7.6 can produce an
+empty handshake and fail replica-set startup with a misleading missing-driver
+metadata error ([upstream issue](https://jira.mongodb.org/browse/NODE-7832)).
 The dependency update includes ioredis 6, configured with `protocol: 2` to keep
 the existing Redis wire protocol. The frontend chessboard uses the v5 `options`
 API. Both manifests and lockfiles include the grouped dependency and security
