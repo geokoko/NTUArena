@@ -71,13 +71,15 @@ const TournamentManage = () => {
 	}, [detail]);
 
 	const withRefresh = useCallback(
-		async (fn) => {
+		async (fn, { rethrow = false } = {}) => {
 			setActionLoading(true);
 			setActionError('');
 			try {
-				await fn();
+				const result = await fn();
 				await loadTournamentData();
+				return result;
 			} catch (err) {
+				if (rethrow) throw err;
 				setActionError(err.message || 'Action failed');
 			} finally {
 				setActionLoading(false);
@@ -90,8 +92,9 @@ const TournamentManage = () => {
 		(userIds) =>
 			withRefresh(async () => {
 				if (!userIds.length) return;
-				await tournamentAPI.bulkAddPlayers(tournamentId, userIds);
-			}),
+				const { data } = await tournamentAPI.bulkAddPlayers(tournamentId, userIds);
+				return data;
+			}, { rethrow: true }),
 		[withRefresh, tournamentId]
 	);
 

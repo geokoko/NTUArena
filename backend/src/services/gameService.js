@@ -153,13 +153,17 @@ async function completeIfNoActiveGames(tournamentId) {
 	});
 	if (activeGames > 0) return tournament;
 
-	tournament.tournStatus = 'completed';
-	await tournament.save();
+	const completed = await Tournament.findOneAndUpdate(
+		{ _id: tournamentId, tournStatus: 'finishing' },
+		{ $set: { tournStatus: 'completed' } },
+		{ returnDocument: 'after' },
+	);
+	if (!completed) return Tournament.findById(tournamentId);
 	await logEvent(tournament._id, 'tournament.completed', {
 		message: 'Tournament completed after all active games finished.',
 		payload: { completedAt: new Date() },
 	});
-	return tournament;
+	return completed;
 }
 
 /**
@@ -205,6 +209,15 @@ function scheduleStandingsRefresh(tournamentId) {
 }
 
 class GameService {
+	async completeIfNoActiveGames(tournamentId) {
+		try {
+			return await completeIfNoActiveGames(tournamentId);
+		} catch (err) {
+			require('./tournamentScheduler').retryTournament(tournamentId);
+			throw err;
+		}
+	}
+
 	async getGameById(id) {
 		const game = await findByIdOrPublicId(Game, id);
 		if (!game) throw new Error('Game not found');
@@ -235,6 +248,9 @@ class GameService {
 	 * b. submitGameResult		-> called by the administrator (via controller) when submitting a game result
 	 */
 	async createGameFromPairing(whitePlayerId, blackPlayerId, tournamentId) {
+		if (String(whitePlayerId) === String(blackPlayerId)) {
+			throw new Error('A game requires two distinct players');
+		}
 		/**
 		* Called only by the pairing engine.
 		* Atomically creates a game and flips both players to isPlaying=true.
@@ -245,6 +261,15 @@ class GameService {
 		let createdGame;
 		try {
 			await session.withTransaction(async () => {
+				// Write the tournament inside the transaction so closure and
+				// concurrent board allocation cannot race an in-flight pairing.
+				const open = await Tournament.findOneAndUpdate(
+					{ _id: tournamentId, tournStatus: 'in progress', pairingClosedAt: null,
+						$or: [{ endDate: null }, { endDate: { $gt: new Date() } }] },
+					{ $inc: { pairingRevision: 1 } },
+					{ session, returnDocument: 'after' },
+				);
+				if (!open) throw new Error('Tournament pairing is closed');
 				// Run reads sequentially. A ClientSession is not thread-safe, so
 				// parallel ops sharing one session collide on the active transaction
 				// number and yield MongoServerError 117 ConflictingOperationInProgress.
@@ -386,24 +411,24 @@ class GameService {
 		// still serialized per tournament to avoid stale concurrent writes.
 		await scheduleStandingsRefresh(game.tournament);
 
-		if (!tournamentActive) {
-			return game;
-		}
-
 		// Small delay before re-enqueueing to prevent instant re-pairing
 		// when admin terminates multiple games quickly
 		const REQUEUE_DELAY_MS = 5000;
-		setTimeout(async () => {
+		if (tournamentActive) setTimeout(async () => {
 			try {
-				for (const player of [white, black]) {
-					if (!player || (player.status && player.status !== 'active')) continue;
-					if (tournament?.pairingClosedAt) continue;
-					await enqueue(String(game.tournament), playerSnapshot(player));
+				const currentTournament = await Tournament.findById(game.tournament);
+				if (!currentTournament || currentTournament.tournStatus !== 'in progress' || currentTournament.pairingClosedAt) return;
+				if (currentTournament.endDate && currentTournament.endDate <= new Date()) return;
+				for (const previous of [white, black]) {
+					if (!previous) continue;
+					const player = await Player.findById(previous._id);
+					if (!player || player.isPlaying) continue;
+					await enqueueIfEligible(player, currentTournament);
 				}
 			} catch (err) {
 				console.error('Failed to re-enqueue players after game termination:', err);
 			}
-		}, REQUEUE_DELAY_MS);
+		}, REQUEUE_DELAY_MS).unref?.();
 
 		await game.populate([
 			{
@@ -426,7 +451,7 @@ class GameService {
 		}
 
 		const serialized = serializeGame(game);
-		await completeIfNoActiveGames(game.tournament);
+		await this.completeIfNoActiveGames(game.tournament);
 		return serialized;
 	}
 
@@ -497,7 +522,7 @@ class GameService {
 			await enqueueIfEligible(player, tournament);
 		}
 
-		await completeIfNoActiveGames(game.tournament);
+		await this.completeIfNoActiveGames(game.tournament);
 
 		await game.populate([
 			{

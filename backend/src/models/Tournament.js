@@ -7,12 +7,15 @@ const tournamentSchema = new mongoose.Schema({
 	tournLocation: { type: String, default: '' },
 	startDate: { type: Date, default: null },
 	endDate: { type: Date, default: null },
-	durationMs: { type: Number, required: true },
+	durationMs: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
 	scheduledStartDate: { type: Date, default: null },
 	actualStartDate: { type: Date, default: null },
-	settleMs: { type: Number, default: null },
+	settleMs: { type: Number, default: null, min: 0, max: 600000, validate: (value) => value === null || Number.isInteger(value) },
 	pairingClosedAt: { type: Date, default: null },
 	pairingClosedReason: { type: String, default: null },
+	// Game transactions write this counter to serialize with lifecycle closure
+	// without changing Mongoose's version key for participant-array saves.
+	pairingRevision: { type: Number, default: 0 },
 	description: { type: String, default: '' },
 	timeControl: { type: String, default: '' },
 	type: { type: String, default: 'arena' },

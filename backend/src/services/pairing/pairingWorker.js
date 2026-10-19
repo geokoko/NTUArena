@@ -38,11 +38,8 @@ class PairingWorker {
 		// Main loop
 		while (this.running) {
 			try {
-				const t = await Tournament.findById(tournamentId).select('tournStatus pairingClosedAt');
-				if (!t || t.tournStatus !== 'in progress' || t.pairingClosedAt) {
-					await this.#sleep(this.idleMs);
-					continue;
-				}
+				const t = await Tournament.findById(tournamentId).select('tournStatus pairingClosedAt endDate');
+				if (!t || t.tournStatus !== 'in progress' || t.pairingClosedAt || (t.endDate && t.endDate <= new Date())) break;
 				await this.#cycle(tournamentId);
 			} catch (err) {
 				console.error('[PairingWorker] cycle error:', err);
@@ -50,6 +47,7 @@ class PairingWorker {
 				await this.#sleep(1000);
 			}
 		}
+		this.running = false;
 	}
 
 	stop() { this.running = false; }
@@ -71,22 +69,29 @@ class PairingWorker {
 
 		const ids = batch.map((item) => item?._id).filter(Boolean);
 		const statusDocs = ids.length
-			? await Player.find({ _id: { $in: ids } }).select('_id status').lean()
+			? await Player.find({ _id: { $in: ids }, tournament: tournamentId }).select('_id status isPlaying').lean()
 			: [];
-		const statusMap = new Map(statusDocs.map((doc) => [String(doc._id), doc.status]));
+		const eligibleIds = new Set(statusDocs.filter((doc) => doc.status === 'active' && !doc.isPlaying).map((doc) => String(doc._id)));
 
-		const inactiveSnapshots = batch.filter((snap) => {
-			const status = statusMap.get(String(snap._id));
-			return status && status !== 'active';
-		});
+		const inactiveSnapshots = batch.filter((snap) => !eligibleIds.has(String(snap._id)));
 		if (inactiveSnapshots.length) {
 			await removeSnapshotsFromPending(tournamentId, this.workerId, inactiveSnapshots);
 		}
 
-		const remaining = batch.filter((snap) => {
-			const status = statusMap.get(String(snap._id));
-			return !status || status === 'active';
+		const remaining = batch.filter((snap) => eligibleIds.has(String(snap._id)));
+		// Recovery or a delayed result callback may duplicate a snapshot. Keep
+		// one pending entry per player so matching cannot pair them with themself.
+		const seen = new Set();
+		const duplicates = [];
+		const unique = remaining.filter((snap) => {
+			const id = String(snap._id);
+			if (seen.has(id)) { duplicates.push(snap); return false; }
+			seen.add(id);
+			return true;
 		});
+		await ackFromPending(tournamentId, this.workerId, duplicates);
+		remaining.length = 0;
+		remaining.push(...unique);
 		if (remaining.length === 0) {
 			await this.#sleep(this.idleMs);
 			return;
@@ -115,6 +120,7 @@ class PairingWorker {
 
 		// 2. Try to pair them off
 		const handledSnapshots = [];
+		const createdPairings = [];
 		const { pairings, leftovers, exhaustedNoLegalPairPool } = selectBatchPairings(remaining, evaluatePair);
 		remaining.length = 0;
 		remaining.push(...leftovers);
@@ -149,6 +155,7 @@ class PairingWorker {
 				continue;
 			}
 
+			createdPairings.push({ white, black });
 			handledSnapshots.push(white, black);
 		}
 
@@ -159,12 +166,13 @@ class PairingWorker {
 		// Ack by count is wrong because pairings are not in pending-head order.
 		await ackFromPending(tournamentId, this.workerId, handledSnapshots);
 
-		if (pairings.length || remaining.length) {
+		// Idle or incompatible pools do not change the audit history on every poll.
+		if (createdPairings.length) {
 			await logEvent(tournamentId, 'pairing.summary', {
-				message: `Pairing batch produced ${pairings.length} game(s).`,
+				message: `Pairing batch produced ${createdPairings.length} game(s).`,
 				payload: {
 					poolSize: batch.length,
-					pairsProduced: pairings.length,
+					pairsProduced: createdPairings.length,
 					byes: remaining.length === 1
 						? [{ playerId: String(remaining[0]._id), reason: 'odd-player-pool' }]
 						: [],
@@ -180,7 +188,7 @@ class PairingWorker {
 			await debugPairing(tournamentId, 'pairing_summary', {
 				workerId: this.workerId,
 				poolSize: batch.length,
-				pairings: pairings.map(({ white, black }) => ({
+				pairings: createdPairings.map(({ white, black }) => ({
 					white: String(white._id),
 					black: String(black._id),
 				})),
@@ -189,7 +197,7 @@ class PairingWorker {
 			});
 		}
 
-		await this.#sleep(remaining.length > 0 ? 50 : 0);
+		await this.#sleep(createdPairings.length ? (remaining.length > 0 ? 50 : 0) : this.idleMs);
 	}
 
 	#sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

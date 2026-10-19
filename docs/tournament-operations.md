@@ -108,6 +108,11 @@ Example with `PAIRING_SETTLE_MS=30000`:
 
 The initial tournament pool is treated as already settled, so starting the tournament does not wait 30 seconds before first pairings.
 
+Admins can override the quiet window for a tournament in **Pairing Settings**.
+The value is `settleMs` in the API: `null` uses `PAIRING_SETTLE_MS`, `0` disables
+the wait, and integers through `600000` are accepted. Changing it takes effect
+on the next worker cycle.
+
 Tradeoff:
 
 | Settle value | Expected behavior |
@@ -144,6 +149,59 @@ A typical OTB Arena flow:
 10. Monitor standings, live games, and backend logs for pairing warnings.
 11. Stop/complete the tournament from the admin UI when the event is over.
 
+### Start, close pairing, and finish
+
+Create tournaments with a positive integer `durationMs` and an optional future
+`scheduledStartDate`. Leaving the scheduled start empty requires a manual start.
+`startDate` and `endDate` are derived; clients must not send `endDate`.
+The schedule and duration can only change while the tournament is `upcoming`.
+
+An automatic start keeps the scheduled end (`scheduledStartDate + durationMs`).
+A manual start gets the full duration from the time the admin starts it.
+`actualStartDate` records when the backend actually performed the transition.
+
+At the end time, or when an admin selects **End Tournament**, pairing closes.
+With active games the status becomes `finishing`; results and cancellations
+remain available. The last active game's result or cancellation completes the
+tournament. New registrations and deletion are rejected while it is finishing.
+Pausing or withdrawing a player cancels their active game without scoring it,
+rolls back its pairing history, and returns the eligible opponent to the queue.
+
+### Backend recovery
+
+On startup the backend rebuilds schedules, resumes pairing for active events,
+ends events whose deadlines have passed, and completes finishing events with
+no remaining games. A completely missed scheduled window is closed without
+creating pairings. Transient recovery failures are logged and retried after
+five seconds. Long schedules are rearmed in chunks to respect Node's timeout
+limit. Run a single backend instance: timer and worker ownership remain local
+to that process.
+
+### Existing tournaments from before lifecycle controls
+
+Before starting the updated backend against an existing database, back it up
+and preview the migration from `backend/`:
+
+```bash
+node scripts/migrateTournamentLifecycle.js
+# After reviewing the printed IDs and fields:
+node scripts/migrateTournamentLifecycle.js --apply
+```
+
+Set `MONGO_URI` and `MONGO_DB` for the intended database. The default is a dry
+run. The migration fills tournaments missing `durationMs`, derives it from
+their existing dates, and preserves existing lifecycle dates. For legacy active
+or completed events, their old start date supplies the historical actual start.
+It also copies legacy player `liveRating` values into missing or null
+`performanceRating` fields for players with completed games, including completed
+events and tournaments whose dates were already migrated. Existing performance
+ratings are preserved, and players with no games keep a null performance rating
+rather than copying their initial entry-rating seed. Legacy `liveRating` fields
+remain available for recovery. Invalid legacy windows or nonnumeric legacy
+performance values stop both plans before writes. Repeating the command skips
+already migrated documents; restoring the backup is the rollback for this data
+migration. No database migration runs automatically on backend startup.
+
 Operational notes:
 
 - Redis must be healthy before pairing can work.
@@ -152,6 +210,18 @@ Operational notes:
 - For a public deployment, do not leave `AUTH_ENABLED=false`, `CORS_ORIGIN=*`, or dummy secrets.
 
 ## 5. Testing And Validation
+
+Use Node.js 22 for local installs, matching the Docker images and frontend CI.
+The dependency update includes ioredis 6, configured with `protocol: 2` to keep
+the existing Redis wire protocol. The frontend chessboard uses the v5 `options`
+API. Both manifests and lockfiles include the grouped dependency and security
+updates; a fresh `npm ci` is required to replace older installed packages.
+
+Lifecycle unit tests cover timers, restart recovery and state transitions.
+`lifecycle.integration.test.js` exercises game creation, closure races, final
+results, and pause/cancel rollback against a temporary MongoDB replica set.
+The integration tests require permission to bind local sockets. Frontend CI
+also installs dependencies, runs component tests, and builds the production app.
 
 Run backend checks from `backend/`:
 

@@ -8,6 +8,8 @@ export const statusBadge = (status) => {
 			return <span className="badge bg-success">In Progress</span>;
 		case 'completed':
 			return <span className="badge bg-secondary">Completed</span>;
+		case 'finishing':
+			return <span className="badge bg-info text-dark">Finishing</span>;
 		default:
 			return <span className="badge bg-primary">{status || 'Unknown'}</span>;
 	}

@@ -233,13 +233,15 @@ const TournamentDetail = () => {
 		);
 	}, [completedGames, selectedHistoryPlayerId]);
 
-	const withAdminAction = useCallback(async (fn) => {
+	const withAdminAction = useCallback(async (fn, { rethrow = false } = {}) => {
 		setActionLoading(true);
 		setActionError('');
 		try {
-			await fn();
+			const result = await fn();
 			await Promise.all([refreshPlayers(), refreshGames(), refreshStandings(), refreshTournament()]);
+			return result;
 		} catch (err) {
+			if (rethrow) throw err;
 			setActionError(err.message || 'Action failed');
 		} finally {
 			setActionLoading(false);
@@ -293,8 +295,9 @@ const TournamentDetail = () => {
 	const handleBulkAddPlayers = useCallback((userIds) =>
 		withAdminAction(async () => {
 			if (!userIds.length) return;
-			await tournamentAPI.bulkAddPlayers(id, userIds);
-		}), [withAdminAction, id]);
+			const { data } = await tournamentAPI.bulkAddPlayers(id, userIds);
+			return data;
+		}, { rethrow: true }), [withAdminAction, id]);
 
 	const handleCSVImport = useCallback(async (csvText) => {
 		const res = await tournamentAPI.importPlayersCSV(id, csvText);

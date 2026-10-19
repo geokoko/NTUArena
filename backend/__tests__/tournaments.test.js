@@ -123,7 +123,7 @@ describe('createTournament', () => {
 	test('rejects invalid maxPlayers', async () => {
 		await expect(
 			createTestTournament({ maxPlayers: -5 })
-		).rejects.toThrow('maxPlayers must be a positive number');
+		).rejects.toThrow('maxPlayers must be a positive integer');
 	});
 
 	test('defaults maxPlayers to 100', async () => {

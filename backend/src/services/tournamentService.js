@@ -54,7 +54,7 @@ const parseOptionalDate = (value, fieldName) => {
 
 const parsePositiveDurationMs = (value) => {
 	const parsed = Number(value);
-	if (!Number.isInteger(parsed) || parsed <= 0) {
+	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
 		throw makeError('durationMs must be a positive integer');
 	}
 	return parsed;
@@ -76,6 +76,9 @@ const recomputeTournamentDates = (tournament) => {
 	tournament.endDate = baseStart && tournament.durationMs
 		? new Date(baseStart.getTime() + Number(tournament.durationMs))
 		: null;
+	if (tournament.endDate && !Number.isFinite(tournament.endDate.getTime())) {
+		throw makeError('durationMs exceeds the supported date range');
+	}
 };
 
 const normalizeSeedRating = (value) => {
@@ -236,8 +239,8 @@ class TournamentService {
 
 		if (filtered.maxPlayers !== undefined) {
 			const parsed = Number(filtered.maxPlayers);
-			if (!Number.isFinite(parsed) || parsed <= 0) {
-				throw makeError('maxPlayers must be a positive number');
+			if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+				throw makeError('maxPlayers must be a positive integer');
 			}
 			filtered.maxPlayers = parsed;
 		}
@@ -324,23 +327,28 @@ class TournamentService {
 
 		const previous = sanitizeTournamentSummary(tournament);
 		Object.assign(tournament, filtered);
-		recomputeTournamentDates(tournament);
-		await tournament.save();
-		await ensureDocumentPublicId(tournament, Tournament);
-		const next = sanitizeTournamentSummary(tournament);
+		if (tournament.tournStatus === 'upcoming') recomputeTournamentDates(tournament);
+		const updated = await Tournament.findOneAndUpdate(
+			{ _id: tournament._id, tournStatus: previous.tournStatus,
+				scheduledStartDate: previous.scheduledStartDate, durationMs: previous.durationMs },
+			{ $set: { ...filtered, startDate: tournament.startDate, endDate: tournament.endDate } },
+			{ returnDocument: 'after', runValidators: true },
+		);
+		if (!updated) throw makeError('Tournament changed; reload before updating', 409);
+		await ensureDocumentPublicId(updated, Tournament);
+		const next = sanitizeTournamentSummary(updated);
 		await logEvent(tournament._id, 'tournament.updated', {
 			message: 'Tournament settings updated.',
 			payload: { before: previous, after: next },
 			actor,
 		});
-		getScheduler().scheduleTournament(tournament);
-		return sanitizeTournamentSummary(tournament);
+		getScheduler().scheduleTournament(updated);
+		return next;
 	}
 
 	async getTournamentById(id) {
 		const tournamentDoc = await findByIdOrPublicId(Tournament, id);
 		if (!tournamentDoc) throw makeError('Tournament not found', 404);
-		await ensureDocumentPublicId(tournamentDoc, Tournament);
 		await ensureDocumentPublicId(tournamentDoc, Tournament);
 
 		await tournamentDoc.populate({
@@ -465,83 +473,83 @@ class TournamentService {
 		});
 	}
 
-	async startTournament(id, { actor = null, trigger = 'manual', actualStartDate = null } = {}) {
-		const tournament = await findByIdOrPublicId(Tournament, id);
-		if (!tournament) throw makeError('Tournament not found', 404);
-		if (tournament.tournStatus !== 'upcoming') {
+	async startTournament(id, { actor = null, trigger = 'manual' } = {}) {
+		const existing = await findByIdOrPublicId(Tournament, id);
+		if (!existing) throw makeError('Tournament not found', 404);
+		if (existing.tournStatus !== 'upcoming') {
+			if (trigger === 'auto') return null;
 			throw makeError('Tournament already started or completed');
 		}
-
-		const startAt = actualStartDate || new Date();
-		tournament.tournStatus = 'in progress';
-		tournament.actualStartDate = startAt;
-		tournament.pairingClosedAt = null;
-		tournament.pairingClosedReason = null;
-		recomputeTournamentDates(tournament);
-		await tournament.save();
-		await ensureDocumentPublicId(tournament, Tournament);
-
+		const now = new Date();
+		if (trigger === 'auto' && (!existing.scheduledStartDate || existing.scheduledStartDate > now)) return null;
+		const startAt = trigger === 'auto' ? existing.scheduledStartDate : now;
+		const endDate = new Date(startAt.getTime() + existing.durationMs);
+		if (!Number.isFinite(endDate.getTime())) throw makeError('Invalid tournament duration');
+		const tournament = await Tournament.findOneAndUpdate(
+			{ _id: existing._id, tournStatus: 'upcoming',
+				scheduledStartDate: existing.scheduledStartDate, durationMs: existing.durationMs },
+			{ $set: { tournStatus: 'in progress', actualStartDate: now,
+				startDate: startAt, endDate, pairingClosedAt: null, pairingClosedReason: null } },
+			{ returnDocument: 'after', runValidators: true },
+		);
+		if (!tournament) {
+			if (trigger === 'auto') return null;
+			throw makeError('Tournament already started or completed, or its schedule changed', 409);
+		}
 		await logEvent(tournament._id, 'tournament.started', {
 			message: `Tournament started (${trigger}).`,
-			payload: {
-				trigger,
-				actualStartDate: tournament.actualStartDate,
-				endDate: tournament.endDate,
-				durationMs: tournament.durationMs,
-			},
+			payload: { trigger, actualStartDate: now, endDate, durationMs: tournament.durationMs },
 			actor,
 		});
+		// An elapsed scheduled window must never briefly open a pairing worker.
+		if (endDate <= now) return this.endTournament(tournament._id, { trigger: 'auto' });
 		getScheduler().scheduleTournament(tournament);
-		pairingService.startPairingLoop(String(tournament._id));
+		try {
+			await pairingService.startPairingLoop(String(tournament._id));
+		} catch (err) {
+			getScheduler().retryTournament(tournament._id);
+			throw err;
+		}
 		return sanitizeTournamentSummary(tournament);
 	}
 
 	async startTournamentAuto(id) {
 		const tournament = await findByIdOrPublicId(Tournament, id);
-		if (!tournament || tournament.tournStatus !== 'upcoming' || !tournament.scheduledStartDate) {
-			return null;
-		}
-		return this.startTournament(tournament.publicId || tournament._id, {
-			trigger: 'auto',
-			actualStartDate: tournament.scheduledStartDate,
-		});
+		if (!tournament || tournament.tournStatus !== 'upcoming') return null;
+		return this.startTournament(tournament._id, { trigger: 'auto' });
 	}
 
 	async endTournament(id, { actor = null, trigger = 'manual' } = {}) {
-		const tournament = await findByIdOrPublicId(Tournament, id);
-		if (!tournament) throw makeError('Tournament not found', 404);
-		if (!['in progress', 'finishing'].includes(tournament.tournStatus)) {
+		const existing = await findByIdOrPublicId(Tournament, id);
+		if (!existing) throw makeError('Tournament not found', 404);
+		if (!['in progress', 'finishing', 'completed'].includes(existing.tournStatus)) {
 			throw makeError('Tournament not in progress');
 		}
-
-		const activeGames = await Game.countDocuments({
-			tournament: tournament._id,
-			isFinished: false,
-			isCancelled: { $ne: true },
-		});
-		tournament.tournStatus = activeGames > 0 ? 'finishing' : 'completed';
-		tournament.pairingClosedAt = new Date();
-		tournament.pairingClosedReason = trigger;
-		await tournament.save();
-		await ensureDocumentPublicId(tournament, Tournament);
-
-		pairingService.stopPairingLoop(String(tournament._id));
-		getScheduler().clearTournament(String(tournament._id));
-		await logEvent(tournament._id, 'tournament.ended', {
-			message: activeGames > 0
-				? 'Tournament pairing ended; waiting for active games to finish.'
-				: 'Tournament ended.',
-			payload: { trigger, activeGames, status: tournament.tournStatus },
-			actor,
-		});
+		// Close pairing before counting games. Game creation writes this same
+		// document transactionally, so it either commits first or is rejected.
+		const closed = await Tournament.findOneAndUpdate(
+			{ _id: existing._id, tournStatus: 'in progress' },
+			{ $set: { tournStatus: 'finishing', pairingClosedAt: new Date(), pairingClosedReason: trigger } },
+			{ returnDocument: 'after' },
+		);
+		pairingService.stopPairingLoop(String(existing._id));
+		getScheduler().clearTournament(existing._id);
+		if (closed) {
+			await logEvent(closed._id, 'tournament.ended', {
+				message: 'Tournament pairing closed; remaining games may finish.',
+				payload: { trigger },
+				actor,
+			});
+		}
+		const tournament = await gameService.completeIfNoActiveGames(existing._id);
 		return sanitizeTournamentSummary(tournament);
 	}
 
 	async deleteTournament(id, { actor = null } = {}) {
 		const tournament = await findByIdOrPublicId(Tournament, id);
 		if (!tournament) throw makeError('Tournament not found', 404);
-		if (tournament.tournStatus === 'in progress') {
-			throw makeError('Cannot delete an in-progress tournament; end it first.');
+		if (['in progress', 'finishing'].includes(tournament.tournStatus)) {
+			throw makeError('Cannot delete an in-progress tournament; finish its games first.');
 		}
 
 		await Promise.all([
@@ -567,8 +575,8 @@ class TournamentService {
 
 		if (!tournament) throw makeError('Tournament not found', 404);
 		if (!user) throw makeError('User not found', 404);
-		if (tournament.tournStatus === 'completed') {
-			throw makeError('Tournament already completed');
+		if (['finishing', 'completed'].includes(tournament.tournStatus)) {
+			throw makeError('Tournament already completed or finishing');
 		}
 
 		if (
@@ -618,6 +626,9 @@ class TournamentService {
 
 		const player = await resolvePlayerInTournament(userId, tournament._id);
 		if (!player) throw makeError('Player not found in tournament', 404);
+
+		player.status = 'withdrawn';
+		await player.save();
 
 		if (player.isPlaying) {
 			await gameService.cancelActiveGameForPlayer(player, tournament, {
@@ -680,6 +691,9 @@ class TournamentService {
 			throw makeError('Player already withdrawn from the tournament');
 		}
 
+		player.status = 'paused';
+		await player.save();
+
 		if (player.isPlaying) {
 			await gameService.cancelActiveGameForPlayer(player, tournament, {
 				reason: 'player.paused',
@@ -687,6 +701,7 @@ class TournamentService {
 			});
 		}
 
+		player.isPlaying = false;
 		player.status = 'paused';
 		player.pausedAt = new Date();
 		player.waitingSince = null;
@@ -957,6 +972,10 @@ class TournamentService {
 		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
 		if (!tournament) {
 			throw makeError('Tournament not found', 404);
+		}
+
+		if (['finishing', 'completed'].includes(tournament.tournStatus)) {
+			throw makeError('Tournament already completed or finishing');
 		}
 
 		// Check tournament capacity

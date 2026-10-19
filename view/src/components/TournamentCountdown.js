@@ -32,6 +32,9 @@ const TournamentCountdown = ({ endDate, status, scheduledStartDate, durationMs }
 		if (normalizedStatus === 'completed') {
 			return { label: 'Ended', value: null };
 		}
+		if (normalizedStatus === 'finishing') {
+			return { label: 'Pairing closed', value: 'Waiting for remaining games' };
+		}
 		if (normalizedStatus === 'upcoming') {
 			if (!scheduledStartDate) {
 				return { label: 'Waiting for admin to start', value: `duration: ${formatPlannedDuration(durationMs)}` };
@@ -39,10 +42,10 @@ const TournamentCountdown = ({ endDate, status, scheduledStartDate, durationMs }
 			const startMs = new Date(scheduledStartDate).getTime();
 			return { label: 'Starts in', value: formatDuration(startMs - now) };
 		}
-		if (normalizedStatus === 'in progress' || normalizedStatus === 'finishing') {
+		if (normalizedStatus === 'in progress') {
 			if (!endDate) return { label: 'Ends in', value: 'pending' };
 			const endMs = new Date(endDate).getTime();
-			return { label: normalizedStatus === 'finishing' ? 'Pairing closed' : 'Ends in', value: formatDuration(endMs - now) };
+			return { label: 'Ends in', value: formatDuration(endMs - now) };
 		}
 		return { label: 'Schedule', value: formatPlannedDuration(durationMs) };
 	}, [durationMs, endDate, now, scheduledStartDate, status]);

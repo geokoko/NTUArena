@@ -62,7 +62,7 @@ const ChessboardComponent = forwardRef(({
 					onMove({
 						from: move.from,
 						to: move.to,
-						piece: move.piece,
+						piece: result.piece,
 						san: result.san,
 						fen: gameCopy.fen()
 					});
@@ -76,8 +76,8 @@ const ChessboardComponent = forwardRef(({
 		}, [game, onMove, onGameUpdate, getGameStatus]);
 
 		// Handle piece drop
-		const onDrop = useCallback((sourceSquare, targetSquare) => {
-			if (!isInteractive) return false;
+		const onDrop = useCallback(({ sourceSquare, targetSquare }) => {
+			if (!isInteractive || !targetSquare) return false;
 
 			return makeAMove({
 				from: sourceSquare,
@@ -126,11 +126,6 @@ const ChessboardComponent = forwardRef(({
 			}
 		}, [game, onGameUpdate, getGameStatus]);
 
-		// Check if piece is draggable
-		const isDraggablePiece = useCallback(({ piece }) => {
-			return isInteractive;
-		}, [isInteractive]);
-
 		// Expose methods to parent
 		useImperativeHandle(ref, () => ({
 			resetGame,
@@ -143,21 +138,21 @@ const ChessboardComponent = forwardRef(({
 
 		return (
 			<Chessboard
-				position={game.fen()}
-				onPieceDrop={onDrop}
-				boardWidth={boardWidth}
-				isDraggablePiece={isDraggablePiece}
-				customBoardStyle={{
-					borderRadius: '8px',
-					boxShadow: '0 8px 25px rgba(139, 69, 19, 0.3)'
+				options={{
+					position: game.fen(),
+					onPieceDrop: onDrop,
+					allowDragging: isInteractive,
+					allowDragOffBoard: false,
+					allowDrawingArrows: false,
+					boardStyle: {
+						width: boardWidth,
+						borderRadius: '8px',
+						boxShadow: '0 8px 25px rgba(139, 69, 19, 0.3)'
+					},
+					darkSquareStyle: { backgroundColor: '#8B4513' },
+					lightSquareStyle: { backgroundColor: '#F5DEB3' },
+					dropSquareStyle: { boxShadow: 'inset 0 0 1px 6px rgba(255,255,0,0.75)' }
 				}}
-				customDarkSquareStyle={{ backgroundColor: '#8B4513' }}
-				customLightSquareStyle={{ backgroundColor: '#F5DEB3' }}
-				customDropSquareStyle={{
-					boxShadow: 'inset 0 0 1px 6px rgba(255,255,0,0.75)'
-				}}
-				areArrowsAllowed={false}
-				arePremovesAllowed={false}
 			/>
 		);
 	});
