@@ -9,7 +9,7 @@ services:
       retries: 10
 
   mongo:
-    image: mongo:latest
+    image: mongo:8.2
     hostname: mongo
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--quiet"]
     networks:
@@ -30,7 +30,7 @@ services:
 
   # One-shot container: waits for mongod, initiates replica set, then exits
   mongo-init:
-    image: mongo:latest
+    image: mongo:8.2
     depends_on:
       mongo:
         condition: service_started
