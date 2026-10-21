@@ -25,7 +25,7 @@ afterEach(() => {
 test('schedules beyond the Node timeout limit do not start early', async () => {
 	const scheduledStartDate = new Date(+now + 35 * 86400000);
 	Tournament.findById.mockResolvedValue(tournament('upcoming', { scheduledStartDate }));
-	scheduler.scheduleTournament(tournament('upcoming', { scheduledStartDate }));
+	await scheduler.scheduleTournament(tournament('upcoming', { scheduledStartDate }));
 	await jest.advanceTimersByTimeAsync(2 ** 31 - 1);
 	expect(tournamentService.startTournamentAuto).not.toHaveBeenCalled();
 	await jest.advanceTimersByTimeAsync(scheduledStartDate - Date.now());
@@ -33,8 +33,11 @@ test('schedules beyond the Node timeout limit do not start early', async () => {
 });
 
 test('replacing and clearing schedules cancels their callbacks', async () => {
-	scheduler.scheduleTournament(tournament('upcoming', { scheduledStartDate: new Date(+now + 1000) }));
-	scheduler.scheduleTournament(tournament('upcoming', { scheduledStartDate: new Date(+now + 5000) }));
+	Tournament.findById.mockResolvedValueOnce(tournament('upcoming', { scheduledStartDate: new Date(+now + 1000) }))
+		.mockResolvedValueOnce(tournament('upcoming', { scheduledStartDate: new Date(+now + 5000) }));
+	await scheduler.scheduleTournament(tournament('upcoming'));
+	await scheduler.scheduleTournament(tournament('upcoming'));
+	Tournament.findById.mockClear();
 	await jest.advanceTimersByTimeAsync(1000);
 	expect(Tournament.findById).not.toHaveBeenCalled();
 	scheduler.clearTournament('tournament');
@@ -68,7 +71,36 @@ test('restart reconciles finishing tournaments', async () => {
 test('transient timer failures are retried', async () => {
 	jest.spyOn(console, 'error').mockImplementation(() => {});
 	Tournament.findById.mockRejectedValueOnce(new Error('database unavailable')).mockResolvedValue(tournament('finishing'));
-	scheduler.scheduleTournament(tournament('upcoming', { scheduledStartDate: new Date(+now + 1000) }));
+	await scheduler.scheduleTournament(tournament('upcoming', { scheduledStartDate: new Date(+now + 1000) }));
 	await jest.advanceTimersByTimeAsync(6000);
 	expect(gameService.completeIfNoActiveGames).toHaveBeenCalledTimes(1);
+});
+
+test.each(['in progress', 'finishing'])('settings saves preserve a pending %s recovery retry', async (status) => {
+	const current = tournament(status, { endDate: new Date(+now + 60000) });
+	Tournament.findById.mockResolvedValue(current);
+	scheduler.retryTournament('tournament');
+	await scheduler.scheduleTournament(current);
+	await jest.advanceTimersByTimeAsync(5000);
+	if (status === 'in progress') expect(pairingService.startPairingLoop).toHaveBeenCalledTimes(1);
+	else expect(gameService.completeIfNoActiveGames).toHaveBeenCalledTimes(1);
+});
+
+test('a late upcoming snapshot cannot replace the current automatic end', async () => {
+	Tournament.findById.mockResolvedValue(tournament('in progress', { endDate: new Date(+now + 1000) }));
+	await scheduler.scheduleTournament(tournament('upcoming', { scheduledStartDate: null }));
+	await jest.advanceTimersByTimeAsync(1000);
+	expect(tournamentService.endTournament).toHaveBeenCalledTimes(1);
+});
+
+test('a slower scheduling read cannot overwrite a newer read', async () => {
+	let release;
+	Tournament.findById.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }))
+		.mockResolvedValue(tournament('in progress', { endDate: new Date(+now + 1000) }));
+	const old = scheduler.scheduleTournament(tournament('upcoming'));
+	await scheduler.scheduleTournament(tournament('in progress'));
+	release(tournament('upcoming', { scheduledStartDate: null }));
+	await old;
+	await jest.advanceTimersByTimeAsync(1000);
+	expect(tournamentService.endTournament).toHaveBeenCalledTimes(1);
 });

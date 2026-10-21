@@ -1,8 +1,9 @@
 const { PairingWorker } = require('./pairing/pairingWorker');
 const { parsePairingSettleMs } = require('./pairing/pairingConfig');
-const { redis, enqueue, removePlayerEverywhere } = require('./queue/redisQueue');
+const { redis, enqueueMany, removePlayersEverywhere } = require('./queue/redisQueue');
 const Player = require('../models/Player');
 const Tournament = require('../models/Tournament');
+const playerSnapshot = require('./queue/playerSnapshot');
 
 class PairingService {
 	constructor() {
@@ -11,35 +12,17 @@ class PairingService {
 	}
 
 	async seedQueueOnStart(tournamentId, { enqueuedAt = Date.now() } = {}) {
-		// Put all non-playing players into the queue (and set waitingSince)
 		const now = new Date();
-		const players = await Player.find({
-			tournament: tournamentId,
-			isPlaying: false,
-			status: { $nin: ['paused', 'withdrawn'] },
-		})
-			.select('_id user score entryRating performanceRating recentOpponents colorHistory waitingSince status');
+		const eligible = { tournament: tournamentId, isPlaying: false, status: 'active' };
+		// Recovery preserves the time already spent waiting.
 		await Player.updateMany(
-			{ tournament: tournamentId, isPlaying: false, status: { $nin: ['paused', 'withdrawn'] } },
-			{ $set: { waitingSince: now } }
+			{ ...eligible, waitingSince: null },
+			{ $set: { waitingSince: now } },
 		);
-
-		for (const p of players) {
-			await removePlayerEverywhere(tournamentId, p._id);
-			await enqueue(tournamentId, {
-				_id: String(p._id),
-				user: p.user,
-				score: p.score ?? 0,
-				entryRating: p.entryRating ?? 0,
-				performanceRating: p.performanceRating ?? null,
-				// store as strings for fast compare in scorer
-				recentOpponents: (p.recentOpponents ?? []).map(String),
-				colorHistory: p.colorHistory ?? [],
-				status: p.status,
-				waitingSince: p.waitingSince ?? now,
-				enqueuedAt,
-			});
-		}
+		const players = await Player.find(eligible)
+			.select('_id user tempName score entryRating performanceRating recentOpponents colorHistory waitingSince status');
+		await removePlayersEverywhere(tournamentId, players.map((player) => player._id));
+		await enqueueMany(tournamentId, players.map((player) => playerSnapshot(player, { enqueuedAt })));
 
 		console.log(`[pairing] Seeded queue with ${players.length} non-playing players for tournament ${tournamentId}.`);
 	}

@@ -89,3 +89,171 @@ test('legacy performances survive migration and preserve completed standings on 
 	expect(performances).toEqual({ Alice: 1820, Bob: 1750, Unplayed: null, Current: 1900, Zero: 0 });
 	expect((await Player.collection.findOne({ _id: players[0]._id })).liveRating).toBe(1820);
 });
+
+test('withdrawal preserves a participant registered after the initial read', async () => {
+	const { tournament, players } = await playingTournament();
+	await Tournament.updateOne({ _id: tournament._id }, { $set: { participants: players.map((p) => p._id) } });
+	const newcomer = await require('../src/models/User').create({ username: 'newcomer', email: 'new@example.com' });
+	const cancel = gameService.cancelActiveGameForPlayer.bind(gameService);
+	const spy = jest.spyOn(gameService, 'cancelActiveGameForPlayer').mockImplementationOnce(async (...args) => {
+		await tournamentService.joinTournament(newcomer._id, tournament._id);
+		return cancel(...args);
+	});
+	try {
+		await tournamentService.leaveTournament(players[0]._id, tournament._id);
+		const saved = await Tournament.findById(tournament._id);
+		const joined = await Player.findOne({ user: newcomer._id, tournament: tournament._id });
+		expect(saved.participants.map(String)).toEqual(expect.arrayContaining([String(joined._id), String(players[1]._id)]));
+		expect(saved.participants).toHaveLength(2);
+	} finally { spy.mockRestore(); }
+});
+
+test.each(['pausePlayer', 'leaveTournament'])('%s cancels a pairing committed after the player was read', async (action) => {
+	const tournament = await Tournament.create({ name: 'Race', durationMs: 60000, tournStatus: 'in progress' });
+	const players = await Player.create([{ tournament: tournament._id }, { tournament: tournament._id }]);
+	await Game.init();
+	const save = Player.prototype.save;
+	let inserted = false;
+	const spy = jest.spyOn(Player.prototype, 'save').mockImplementation(async function (...args) {
+		if (!inserted && String(this._id) === String(players[0]._id) && this.isModified('status')) {
+			inserted = true;
+			await gameService.createGameFromPairing(players[0]._id, players[1]._id, tournament._id);
+		}
+		return save.apply(this, args);
+	});
+	try {
+		await tournamentService[action](players[0]._id, tournament._id);
+		expect(inserted).toBe(true);
+		expect(await Game.countDocuments({ tournament: tournament._id, isFinished: false })).toBe(0);
+		for (const player of await Player.find({ tournament: tournament._id })) {
+			expect(player.isPlaying).toBe(false);
+			expect(player.recentOpponents).toHaveLength(0);
+		}
+	} finally { spy.mockRestore(); }
+});
+
+test.each(['user', 'csv'])('%s registration across automatic start is queued', async (kind) => {
+	const tournament = await Tournament.create({ name: 'Kickoff', durationMs: 60000 });
+	const user = await require('../src/models/User').create({ username: 'late', email: 'late@example.com' });
+	const save = Player.prototype.save;
+	const queue = require('../src/services/queue/redisQueue');
+	queue.enqueue.mockClear();
+	const spy = jest.spyOn(Player.prototype, 'save').mockImplementationOnce(async function (...args) {
+		await tournamentService.startTournament(tournament._id);
+		return save.apply(this, args);
+	});
+	try {
+		if (kind === 'user') await tournamentService.joinTournament(user._id, tournament._id);
+		else expect((await tournamentService.bulkAddPlayersFromCSV(tournament._id, [{ name: 'Guest', rating: 1400 }])).errors).toEqual([]);
+		expect(queue.enqueue).toHaveBeenCalledWith(String(tournament._id), expect.objectContaining({ status: 'active', waitingSince: expect.any(Date) }));
+	} finally { spy.mockRestore(); }
+});
+
+test.each(['result', 'cancel'])('%s rolls back the game claim and both players after a save failure', async (operation) => {
+	const { game, players } = await playingTournament();
+	const save = Player.prototype.save;
+	const spy = jest.spyOn(Player.prototype, 'save').mockImplementation(function (...args) {
+		if (String(this._id) === String(players[1]._id)) throw new Error('injected save failure');
+		return save.apply(this, args);
+	});
+	const settle = () => operation === 'result' ? gameService.submitGameResult(game._id, 'white') : gameService.cancelGame(game._id);
+	try { await expect(settle()).rejects.toThrow('injected save failure'); }
+	finally { spy.mockRestore(); }
+	expect((await Game.findById(game._id)).isFinished).toBe(false);
+	for (const player of await Player.find({ tournament: game.tournament })) {
+		expect(player.score).toBe(0);
+		expect(player.isPlaying).toBe(true);
+		expect(player.colorHistory).toHaveLength(1);
+	}
+	await expect(settle()).resolves.toMatchObject({ isFinished: true });
+});
+
+test('manual cancellations preserve the rejected encounter in pairing history', async () => {
+	const { game, players } = await playingTournament();
+	await gameService.cancelGame(game._id);
+	const white = await Player.findById(players[0]._id);
+	expect(white.recentOpponents.map(String)).toEqual([String(players[1]._id)]);
+	expect(white.colorHistory).toEqual(['white']);
+	expect(white.gamesPlayed).toBe(0);
+});
+
+test.each(['pausePlayer', 'leaveTournament'])('%s continues cleanup when a concurrent result wins the cancellation', async (action) => {
+	const { tournament, game, players } = await playingTournament();
+	const cancel = gameService.cancelGame.bind(gameService);
+	const spy = jest.spyOn(gameService, 'cancelGame').mockImplementationOnce(async (...args) => {
+		await gameService.submitGameResult(game._id, 'draw');
+		return cancel(...args);
+	});
+	try {
+		await tournamentService[action](players[0]._id, tournament._id);
+		const player = await Player.findById(players[0]._id);
+		expect(player[action === 'pausePlayer' ? 'pausedAt' : 'withdrawnAt']).toBeInstanceOf(Date);
+		expect(player.isPlaying).toBe(false);
+		expect(player.score).toBe(0.5);
+	} finally { spy.mockRestore(); }
+});
+
+test('a scheduled start that wins the deletion race preserves the tournament and players', async () => {
+	const tournament = await Tournament.create({ name: 'Delete race', durationMs: 60000 });
+	await Player.create({ tournament: tournament._id });
+	const deletion = Tournament.findOneAndDelete.bind(Tournament);
+	const spy = jest.spyOn(Tournament, 'findOneAndDelete').mockImplementationOnce(async (...args) => {
+		await tournamentService.startTournament(tournament._id);
+		return deletion(...args);
+	});
+	try {
+		await expect(tournamentService.deleteTournament(tournament._id)).rejects.toMatchObject({ status: 409 });
+		expect((await Tournament.findById(tournament._id)).tournStatus).toBe('in progress');
+		expect(await Player.countDocuments({ tournament: tournament._id })).toBe(1);
+	} finally { spy.mockRestore(); }
+});
+
+test('deletion removes every tournament log without writing an orphan deletion event', async () => {
+	const tournament = await Tournament.create({ name: 'Delete', durationMs: 60000 });
+	await require('../src/services/tournamentLogger').logEvent(tournament._id, 'tournament.created');
+	await tournamentService.deleteTournament(tournament._id);
+	expect(await require('../src/models/TournamentLog').countDocuments({ tournamentId: tournament._id })).toBe(0);
+});
+
+test.each(['result', 'cancel'])('%s remains successful when completion must be retried', async (operation) => {
+	const { tournament, game } = await playingTournament();
+	await tournamentService.endTournament(tournament._id);
+	const count = jest.spyOn(Game, 'countDocuments').mockRejectedValueOnce(new Error('completion unavailable'));
+	const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+	try {
+		const result = operation === 'result' ? await gameService.submitGameResult(game._id, 'white') : await gameService.cancelGame(game._id);
+		expect(result.isFinished).toBe(true);
+		expect(require('../src/services/tournamentScheduler').retries.has(String(tournament._id))).toBe(true);
+		await gameService.completeIfNoActiveGames(tournament._id);
+		expect((await Tournament.findById(tournament._id)).tournStatus).toBe('completed');
+	} finally { count.mockRestore(); error.mockRestore(); }
+});
+
+test('start succeeds after committing its transition even if pairing startup needs a retry', async () => {
+	const tournament = await Tournament.create({ name: 'Retry pairing', durationMs: 60000 });
+	const spy = require('../src/services/pairingService').startPairingLoop.mockRejectedValueOnce(new Error('Redis unavailable'));
+	const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+	try {
+		expect(await tournamentService.startTournament(tournament._id)).toMatchObject({ tournStatus: 'in progress' });
+		expect(require('../src/services/tournamentScheduler').retries.has(String(tournament._id))).toBe(true);
+	} finally { spy.mockReset(); error.mockRestore(); }
+});
+
+test('cancellation requeues players even while their consumed pairing snapshots await acknowledgement', async () => {
+	const { game, players } = await playingTournament();
+	const queue = require('../src/services/queue/redisQueue');
+	const pending = new Set(players.map((player) => String(player._id)));
+	const queued = new Set();
+	const enqueue = queue.enqueue.getMockImplementation();
+	const remove = queue.removePlayerEverywhere.getMockImplementation();
+	queue.enqueue.mockImplementation(async (_, snapshot) => { if (!pending.has(snapshot._id)) queued.add(snapshot._id); });
+	queue.removePlayerEverywhere.mockImplementation(async (_, id) => { pending.delete(String(id)); });
+	try {
+		await gameService.cancelGame(game._id);
+		expect(queued).toEqual(new Set(players.map((player) => String(player._id))));
+		expect(pending.size).toBe(0);
+	} finally {
+		queue.enqueue.mockImplementation(enqueue);
+		queue.removePlayerEverywhere.mockImplementation(remove);
+	}
+});

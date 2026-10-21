@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { tournamentAPI } from '../services/api';
 import './AdminCreateTournament.css';
@@ -20,6 +20,10 @@ const AdminCreateTournament = () => {
 	const [form, setForm] = useState(initialState);
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState('');
+	const errorRef = useRef(null);
+	useEffect(() => {
+		if (error) errorRef.current?.focus();
+	}, [error]);
 
 	const handleChange = (field) => (event) => {
 		const value = event.target.value;
@@ -95,7 +99,7 @@ const AdminCreateTournament = () => {
 				</div>
 				<div className="card-body admin-create-tournament__card-body">
 					<p className="text-muted">Provide the core details below. Required fields are marked with *.</p>
-					{error && <div className="alert alert-danger">{error}</div>}
+					{error && <div className="alert alert-danger" role="alert" tabIndex={-1} ref={errorRef}>{error}</div>}
 					<form onSubmit={handleSubmit} className="row g-3 admin-create-tournament__form">
 						<div className="col-md-6">
 							<label className="form-label">Name *</label>

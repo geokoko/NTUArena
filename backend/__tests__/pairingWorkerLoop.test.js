@@ -66,7 +66,9 @@ test('failed game creation is requeued without reporting a produced game', async
 	gameService.createGameFromPairing.mockRejectedValue(new Error('transaction failed'));
 	running = worker.start('tournament');
 	await jest.advanceTimersByTimeAsync(1000);
-	expect(queue.enqueue).toHaveBeenCalledTimes(2);
+	expect(queue.requeueLeftovers).toHaveBeenCalledWith('tournament', worker.workerId, expect.arrayContaining([
+		expect.objectContaining({ _id: 'player-0' }), expect.objectContaining({ _id: 'player-1' }),
+	]));
 	expect(logEvent).not.toHaveBeenCalled();
 });
 

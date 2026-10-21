@@ -7,6 +7,7 @@ const pairingService = require('./pairingService');
 const gameService = require('./gameService');
 const { logEvent } = require('./tournamentLogger');
 const { enqueue, removePlayerEverywhere } = require('./queue/redisQueue');
+const playerQueueSnapshot = require('./queue/playerSnapshot');
 const {
 	ensureDocumentPublicId,
 	ensureDocumentsPublicId,
@@ -108,19 +109,17 @@ const buildInitialPlayerData = ({ tournamentId, user = null, tempName = null, se
 	};
 };
 
-const playerQueueSnapshot = (player, { enqueuedAt = Date.now() } = {}) => ({
-	_id: String(player._id),
-	user: player.user || null,
-	tempName: player.tempName || null,
-	score: player.score ?? 0,
-	entryRating: player.entryRating ?? 0,
-	performanceRating: player.performanceRating ?? null,
-	recentOpponents: (player.recentOpponents ?? []).map(String),
-	colorHistory: player.colorHistory ?? [],
-	status: player.status,
-	waitingSince: player.waitingSince ?? null,
-	enqueuedAt,
-});
+async function enqueueRegisteredPlayer(player) {
+	const tournament = await Tournament.findById(player.tournament);
+	if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return;
+	if (tournament.endDate && tournament.endDate <= new Date()) return;
+	const waiting = await Player.findOneAndUpdate(
+		{ _id: player._id, status: 'active', isPlaying: false },
+		{ $set: { waitingSince: player.waitingSince || new Date() } },
+		{ returnDocument: 'after' },
+	);
+	if (waiting) await enqueue(String(tournament._id), playerQueueSnapshot(waiting));
+}
 
 const summarizePlayer = (player) => {
 	if (!player) return null;
@@ -291,7 +290,7 @@ class TournamentService {
 			payload: sanitizeTournamentSummary(tournament),
 			actor,
 		});
-		getScheduler().scheduleTournament(tournament);
+		await getScheduler().scheduleTournament(tournament);
 		return sanitizeTournamentSummary(tournament);
 	}
 
@@ -342,7 +341,7 @@ class TournamentService {
 			payload: { before: previous, after: next },
 			actor,
 		});
-		getScheduler().scheduleTournament(updated);
+		await getScheduler().scheduleTournament(updated);
 		return next;
 	}
 
@@ -475,7 +474,10 @@ class TournamentService {
 
 	async startTournament(id, { actor = null, trigger = 'manual' } = {}) {
 		const existing = await findByIdOrPublicId(Tournament, id);
-		if (!existing) throw makeError('Tournament not found', 404);
+		if (!existing) {
+			if (trigger === 'auto') return null;
+			throw makeError('Tournament not found', 404);
+		}
 		if (existing.tournStatus !== 'upcoming') {
 			if (trigger === 'auto') return null;
 			throw makeError('Tournament already started or completed');
@@ -503,20 +505,18 @@ class TournamentService {
 		});
 		// An elapsed scheduled window must never briefly open a pairing worker.
 		if (endDate <= now) return this.endTournament(tournament._id, { trigger: 'auto' });
-		getScheduler().scheduleTournament(tournament);
+		await getScheduler().scheduleTournament(tournament);
 		try {
 			await pairingService.startPairingLoop(String(tournament._id));
 		} catch (err) {
+			console.error(`[tournament] pairing startup failed for ${tournament._id}:`, err.message);
 			getScheduler().retryTournament(tournament._id);
-			throw err;
 		}
 		return sanitizeTournamentSummary(tournament);
 	}
 
 	async startTournamentAuto(id) {
-		const tournament = await findByIdOrPublicId(Tournament, id);
-		if (!tournament || tournament.tournStatus !== 'upcoming') return null;
-		return this.startTournament(tournament._id, { trigger: 'auto' });
+		return this.startTournament(id, { trigger: 'auto' });
 	}
 
 	async endTournament(id, { actor = null, trigger = 'manual' } = {}) {
@@ -552,18 +552,17 @@ class TournamentService {
 			throw makeError('Cannot delete an in-progress tournament; finish its games first.');
 		}
 
+		const deleted = await Tournament.findOneAndDelete({
+			_id: tournament._id, tournStatus: { $in: ['upcoming', 'completed'] },
+		});
+		if (!deleted) throw makeError('Tournament changed; reload before deleting', 409);
+		pairingService.stopPairingLoop(String(tournament._id));
+		getScheduler().clearTournament(tournament._id);
 		await Promise.all([
 			Player.deleteMany({ tournament: tournament._id }),
 			Game.deleteMany({ tournament: tournament._id }),
 			TournamentLog.deleteMany({ tournamentId: tournament._id }),
 		]);
-		await tournament.deleteOne();
-		getScheduler().clearTournament(String(tournament._id));
-		await logEvent(tournament._id, 'tournament.deleted', {
-			message: 'Tournament deleted.',
-			payload: { id: tournament.publicId || String(tournament._id), name: tournament.name },
-			actor,
-		});
 		return { message: 'Tournament deleted' };
 	}
 
@@ -612,9 +611,7 @@ class TournamentService {
 			{ $addToSet: { participants: player._id } }
 		);
 
-		if (isActiveTournament) {
-			await enqueue(String(tournament._id), playerQueueSnapshot(player));
-		}
+		await enqueueRegisteredPlayer(player);
 
 		await ensureDocumentPublicId(player, Player);
 		return summarizePlayer(await player.populate('user', 'publicId username email profile.firstName profile.lastName globalElo'));
@@ -630,12 +627,10 @@ class TournamentService {
 		player.status = 'withdrawn';
 		await player.save();
 
-		if (player.isPlaying) {
-			await gameService.cancelActiveGameForPlayer(player, tournament, {
-				reason: 'player.withdrawn',
-				actor,
-			});
-		}
+		await gameService.cancelActiveGameForPlayer(player, tournament, {
+			reason: 'player.withdrawn',
+			actor,
+		});
 
 		player.status = 'withdrawn';
 		player.withdrawnAt = new Date();
@@ -643,10 +638,10 @@ class TournamentService {
 		player.isPlaying = false;
 		await player.save();
 
-		tournament.participants = (tournament.participants || []).filter(
-			(id) => id.toString() !== player._id.toString()
+		await Tournament.updateOne(
+			{ _id: tournament._id },
+			{ $pull: { participants: player._id } },
 		);
-		await tournament.save();
 
 		await removePlayerEverywhere(String(tournament._id), player._id);
 		await ensureDocumentPublicId(player, Player);
@@ -694,12 +689,10 @@ class TournamentService {
 		player.status = 'paused';
 		await player.save();
 
-		if (player.isPlaying) {
-			await gameService.cancelActiveGameForPlayer(player, tournament, {
-				reason: 'player.paused',
-				actor,
-			});
-		}
+		await gameService.cancelActiveGameForPlayer(player, tournament, {
+			reason: 'player.paused',
+			actor,
+		});
 
 		player.isPlaying = false;
 		player.status = 'paused';
@@ -1085,9 +1078,7 @@ class TournamentService {
 						{ $addToSet: { participants: player._id } }
 					);
 
-					if (isActiveTournament) {
-						await enqueue(String(tournament._id), playerQueueSnapshot(player));
-					}
+					await enqueueRegisteredPlayer(player);
 
 					await ensureDocumentPublicId(player, Player);
 					results.added.push({

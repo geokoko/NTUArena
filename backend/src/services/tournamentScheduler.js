@@ -8,52 +8,98 @@ const RETRY_MS = 5000;
 class TournamentScheduler {
 	constructor() {
 		this.timers = new Map();
+		this.retries = new Map();
+		this.scheduling = new Map();
+		this.allRetry = null;
 	}
 
 	clearTournament(tournamentId) {
 		const key = String(tournamentId);
-		clearTimeout(this.timers.get(key));
-		this.timers.delete(key);
+		for (const timers of [this.timers, this.retries]) {
+			clearTimeout(timers.get(key));
+			timers.delete(key);
+		}
+		this.scheduling.delete(key);
 	}
 
 	clearAll() {
-		for (const key of this.timers.keys()) this.clearTournament(key);
+		clearTimeout(this.allRetry);
+		this.allRetry = null;
+		for (const key of new Set([...this.timers.keys(), ...this.retries.keys(), ...this.scheduling.keys()])) {
+			this.clearTournament(key);
+		}
+	}
+
+	retryAll() {
+		if (this.allRetry) return;
+		this.allRetry = setTimeout(() => {
+			this.allRetry = null;
+			this.scheduleAll().catch((err) => {
+				console.error('[scheduler] recovery scan failed:', err.message);
+				this.retryAll();
+			});
+		}, RETRY_MS);
+		this.allRetry.unref?.();
 	}
 
 	retryTournament(tournamentId) {
-		this.#schedule(tournamentId, RETRY_MS);
+		// Settings/deadline changes must not postpone or discard recovery.
+		if (!this.retries.has(String(tournamentId))) this.#schedule(tournamentId, RETRY_MS, this.retries);
 	}
 
-	#schedule(tournamentId, delay) {
+	#schedule(tournamentId, delay, timers = this.timers) {
 		const key = String(tournamentId);
-		this.clearTournament(key);
+		clearTimeout(timers.get(key));
 		const timer = setTimeout(async () => {
-			if (this.timers.get(key) !== timer) return;
-			this.timers.delete(key);
+			if (timers.get(key) !== timer) return;
+			timers.delete(key);
 			try {
 				await this.recoverTournament(key);
 			} catch (err) {
 				console.error(`[scheduler] recovery failed for ${key}:`, err.message);
-				if (!this.timers.has(key)) this.#schedule(key, RETRY_MS);
+				this.retryTournament(key);
 			}
 		}, Math.min(Math.max(delay, 0), MAX_TIMEOUT_MS));
 		timer.unref?.();
-		this.timers.set(key, timer);
+		timers.set(key, timer);
 	}
 
-	scheduleTournament(tournament) {
-		if (!tournament?._id) return;
-		this.clearTournament(tournament._id);
-		const deadline = tournament.tournStatus === 'upcoming'
-			? tournament.scheduledStartDate
-			: tournament.tournStatus === 'in progress' ? tournament.endDate : null;
-		if (deadline) this.#schedule(tournament._id, new Date(deadline).getTime() - Date.now());
+	async scheduleTournament(snapshot) {
+		if (!snapshot?._id) return;
+		const key = String(snapshot._id);
+		const request = Symbol();
+		this.scheduling.set(key, request);
+		try {
+			// Callers can have awaited logging after their write. Never arm from
+			// that older snapshot, or let a slower read replace a newer schedule.
+			const tournament = await Tournament.findById(key);
+			if (this.scheduling.get(key) !== request) return;
+			this.scheduling.delete(key);
+			if (!tournament || tournament.tournStatus === 'completed') {
+				this.clearTournament(key);
+				return;
+			}
+			clearTimeout(this.timers.get(key));
+			this.timers.delete(key);
+			const deadline = tournament.tournStatus === 'upcoming'
+				? tournament.scheduledStartDate
+				: tournament.tournStatus === 'in progress' ? tournament.endDate : null;
+			if (deadline) this.#schedule(key, new Date(deadline).getTime() - Date.now());
+		} catch (err) {
+			if (this.scheduling.get(key) !== request) return;
+			this.scheduling.delete(key);
+			console.error(`[scheduler] scheduling failed for ${key}:`, err.message);
+			this.retryTournament(key);
+		}
 	}
 
 	async recoverTournament(tournamentId) {
 		const tournamentService = require('./tournamentService');
 		let tournament = await Tournament.findById(tournamentId);
-		if (!tournament) return;
+		if (!tournament) {
+			this.clearTournament(tournamentId);
+			return;
+		}
 		if (tournament.tournStatus === 'upcoming' && tournament.scheduledStartDate && tournament.scheduledStartDate <= new Date()) {
 			await tournamentService.startTournamentAuto(tournamentId);
 			tournament = await Tournament.findById(tournamentId);
@@ -68,9 +114,10 @@ class TournamentScheduler {
 		}
 		if (tournament.tournStatus === 'finishing') {
 			await require('./gameService').completeIfNoActiveGames(tournament._id);
-			return;
 		}
-		this.scheduleTournament(tournament);
+		clearTimeout(this.retries.get(String(tournamentId)));
+		this.retries.delete(String(tournamentId));
+		await this.scheduleTournament(tournament);
 	}
 
 	async scheduleAll() {
@@ -81,7 +128,7 @@ class TournamentScheduler {
 				await this.recoverTournament(String(tournament._id));
 			} catch (err) {
 				console.error(`[scheduler] recovery failed for ${tournament._id}:`, err.message);
-				this.#schedule(tournament._id, RETRY_MS);
+				this.retryTournament(tournament._id);
 			}
 		}
 	}

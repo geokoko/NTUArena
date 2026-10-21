@@ -5,8 +5,8 @@ const legacy = {
 	startDate: new Date('2026-11-01T10:00:00Z'), endDate: new Date('2026-11-01T11:30:00Z'),
 };
 
-test('legacy upcoming tournaments keep their scheduled window', () => {
-	expect(lifecycleFields(legacy)).toEqual({ durationMs: 5400000, scheduledStartDate: legacy.startDate, actualStartDate: null });
+test('legacy upcoming tournaments remain manual regardless of their informational dates', () => {
+	expect(lifecycleFields(legacy)).toEqual({ durationMs: 5400000, scheduledStartDate: null, actualStartDate: null });
 });
 
 test('legacy active tournaments keep their dates without inventing a new schedule', () => {

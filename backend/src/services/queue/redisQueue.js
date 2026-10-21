@@ -24,9 +24,44 @@ const pendingKey = (tid, workerId) => `tq:${tid}:pending:${workerId}`;
  * Enqueue a player snapshot needed for pairing (minimal fields to avoid DB reads).
  * We use RPUSH -> item goes to tail; the head is the longest-waiting.
  */
+async function queueKeys(tournamentId) {
+	const keys = new Set([qKey(tournamentId), pendingKey(tournamentId, `pair-${tournamentId}`)]);
+	let cursor = '0';
+	do {
+		const [next, pending] = await redis.scan(cursor, 'match', `${qKey(tournamentId)}:pending:*`, 'count', 50);
+		cursor = next;
+		for (const key of pending) keys.add(key);
+	} while (cursor !== '0');
+	return [...keys];
+}
+
+async function enqueueMany(tournamentId, snapshots) {
+	if (!snapshots.length) return;
+	const keys = await queueKeys(tournamentId);
+	// Deduplicate the whole batch in one pass, including worker pending lists.
+	const script = `
+		local seen = {}
+		for _, key in ipairs(KEYS) do
+			for _, entry in ipairs(redis.call('LRANGE', key, 0, -1)) do
+				local ok, player = pcall(cjson.decode, entry)
+				if ok and type(player) == 'table' and player._id then seen[tostring(player._id)] = true end
+			end
+		end
+		for _, entry in ipairs(ARGV) do
+			local player = cjson.decode(entry)
+			local id = tostring(player._id)
+			if not seen[id] then
+				redis.call('RPUSH', KEYS[1], entry)
+				seen[id] = true
+			end
+		end
+		return 1
+	`;
+	await redis.eval(script, keys.length, ...keys, ...snapshots.map((snapshot) => JSON.stringify(snapshot)));
+}
+
 async function enqueue(tournamentId, playerSnapshot) {
-	const payload = JSON.stringify(playerSnapshot);
-	await redis.rpush(qKey(tournamentId), payload);
+	await enqueueMany(tournamentId, [playerSnapshot]);
 }
 
 /**
@@ -102,40 +137,29 @@ async function requeueLeftovers(tournamentId, workerId, leftovers) {
 	await redis.eval(script, 2, src, dest, ...payloads);
 }
 
-async function removeFromListByPlayerId(listKey, playerId) {
-	const entries = await redis.lrange(listKey, 0, -1);
-	if (!entries.length) return 0;
-	const id = String(playerId);
-	let removed = 0;
-	const pipe = redis.pipeline();
-	for (const entry of entries) {
-		let parsed;
-		try {
-			parsed = JSON.parse(entry);
-		} catch (err) {
-			continue;
-		}
-		if (String(parsed._id) === id) {
-			pipe.lrem(listKey, 0, entry);
-			removed += 1;
-		}
-	}
-	if (removed > 0) await pipe.exec();
-	return removed;
+async function removePlayersEverywhere(tournamentId, playerIds) {
+	if (!playerIds.length) return;
+	const keys = await queueKeys(tournamentId);
+	const script = `
+		local ids = {}
+		for _, id in ipairs(ARGV) do ids[id] = true end
+		for _, key in ipairs(KEYS) do
+			local length = redis.call('LLEN', key)
+			for i=1,length do
+				local entry = redis.call('LPOP', key)
+				local ok, player = pcall(cjson.decode, entry)
+				if not (ok and type(player) == 'table' and ids[tostring(player._id)]) then
+					redis.call('RPUSH', key, entry)
+				end
+			end
+		end
+		return 1
+	`;
+	await redis.eval(script, keys.length, ...keys, ...playerIds.map(String));
 }
 
 async function removePlayerEverywhere(tournamentId, playerId) {
-	await removeFromListByPlayerId(qKey(tournamentId), playerId);
-
-	const pattern = `${qKey(tournamentId)}:pending:*`;
-	let cursor = '0';
-	do {
-		const [nextCursor, keys] = await redis.scan(cursor, 'match', pattern, 'count', 50);
-		cursor = nextCursor;
-		for (const key of keys) {
-			await removeFromListByPlayerId(key, playerId);
-		}
-	} while (cursor !== '0');
+	await removePlayersEverywhere(tournamentId, [playerId]);
 }
 
 async function removeSnapshotsFromPending(tournamentId, workerId, snapshots) {
@@ -173,6 +197,8 @@ async function reclaimPending(tournamentId, workerId) {
 module.exports = {
 	redis,
 	enqueue,
+	enqueueMany,
+	removePlayersEverywhere,
 	batchDequeueToPending,
 	ackFromPending,
 	requeueLeftovers,

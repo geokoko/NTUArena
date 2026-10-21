@@ -38,7 +38,8 @@
 }
 
 .user-multi-select__row--selected {
-	background: #e8f1ff;
+	background: #c7dcff;
+	font-weight: 700;
 }
 
 .user-multi-select__row:disabled {

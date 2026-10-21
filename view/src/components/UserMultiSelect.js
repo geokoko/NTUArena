@@ -75,6 +75,7 @@ const UserMultiSelect = ({ users, registeredUserIds, onAdd, disabled }) => {
 							aria-selected={selected}
 						>
 							<span>{getDisplayName(user)}</span>
+							{selected && <span className="user-multi-select__pill" aria-hidden="true">selected</span>}
 							{isRegistered && <span className="user-multi-select__pill">registered</span>}
 						</button>
 					);

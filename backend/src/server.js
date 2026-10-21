@@ -8,10 +8,13 @@ const PORT = process.env.PORT || 5000;
 
 // Start server after DB connection
 connectDB()
-	.then(async () => {
-		await tournamentScheduler.scheduleAll();
+	.then(() => {
 		app.listen(PORT, () => {
 			console.log(`Arena Monolith running on ${PORT}`);
+			tournamentScheduler.scheduleAll().catch((err) => {
+				console.error('Tournament recovery failed:', err);
+				tournamentScheduler.retryAll();
+			});
 		});
 	})
 	.catch(err => {

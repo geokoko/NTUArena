@@ -15,7 +15,10 @@ const makeTournament = (fields = {}) => ({
 	_id: new mongoose.Types.ObjectId(), publicId: 'tournament', name: 'Arena',
 	tournStatus: 'upcoming', durationMs: 60000, scheduledStartDate: null, participants: [], ...fields,
 });
-beforeEach(() => jest.useFakeTimers({ now }));
+beforeEach(() => {
+	jest.useFakeTimers({ now });
+	jest.spyOn(scheduler, 'scheduleTournament').mockResolvedValue();
+});
 afterEach(() => {
 	scheduler.clearAll();
 	jest.restoreAllMocks();
@@ -84,8 +87,9 @@ test('the final result completes a finishing tournament and returns the API game
 	const game = { _id: new mongoose.Types.ObjectId(), publicId: 'game', tournament: finishing._id,
 		isFinished: true, resultColor: 'white', populate: jest.fn().mockResolvedValue() };
 	jest.spyOn(Game, 'findOneAndUpdate').mockResolvedValue(game);
-	jest.spyOn(Tournament, 'findById').mockReturnValueOnce({ select: () => Promise.resolve(finishing) }).mockResolvedValue(finishing);
-	jest.spyOn(Player, 'findById').mockResolvedValue(null);
+	jest.spyOn(Tournament, 'findById').mockReturnValueOnce({ session: () => Promise.resolve(finishing) }).mockResolvedValue(finishing);
+	jest.spyOn(Player, 'findById').mockReturnValue({ session: async () => null });
+	jest.spyOn(mongoose, 'startSession').mockResolvedValue({ withTransaction: async (fn) => fn(), endSession: jest.fn() });
 	jest.spyOn(Player, 'find').mockReturnValue({ select: () => ({ sort: () => ({ lean: async () => [] }) }) });
 	jest.spyOn(Game, 'countDocuments').mockResolvedValue(0);
 	jest.spyOn(Tournament, 'findOneAndUpdate').mockResolvedValue({ ...finishing, tournStatus: 'completed' });

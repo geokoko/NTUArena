@@ -3,7 +3,8 @@ const Game = require('../models/Game');
 const Player = require('../models/Player');
 const User = require('../models/User');
 const Tournament = require('../models/Tournament');
-const { enqueue } = require('./queue/redisQueue');
+const { enqueue, removePlayerEverywhere } = require('./queue/redisQueue');
+const playerSnapshot = require('./queue/playerSnapshot');
 const { logEvent } = require('./tournamentLogger');
 const {
 	findByIdOrPublicId,
@@ -102,28 +103,58 @@ function rollbackLatestPairingHistory(player, opponentId, expectedColor) {
 	player.colorHistory = colors.slice(0, -1);
 }
 
-function playerSnapshot(player) {
-	return {
-		_id: String(player._id),
-		user: player.user,
-		score: player.score ?? 0,
-		entryRating: player.entryRating ?? 0,
-		performanceRating: player.performanceRating ?? null,
-		recentOpponents: (player.recentOpponents ?? []).map(String),
-		colorHistory: player.colorHistory ?? [],
-		status: player.status,
-		waitingSince: player.waitingSince ?? null,
-		enqueuedAt: Date.now(),
-	};
-}
-
 async function enqueueIfEligible(player, tournament) {
 	if (!player || player.status !== 'active') return false;
 	if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return false;
-	player.waitingSince = new Date();
+	player.waitingSince = player.waitingSince || new Date();
 	await player.save();
+	// A just-created game's consumed snapshot may still await worker ACK.
+	// Replace that old state before idempotent enqueue of the freed player.
+	await removePlayerEverywhere(String(tournament._id), player._id);
 	await enqueue(String(tournament._id), playerSnapshot(player));
 	return true;
+}
+
+const gameError = (message, status, code) => Object.assign(new Error(message), { status, code });
+
+async function changeGame(gameId, changes, updatePlayers) {
+	const lookupId = normalizeLookupId(gameId);
+	if (!lookupId) throw gameError('Game not found', 404, 'GAME_NOT_FOUND');
+	const lookupFilter = isObjectId(lookupId)
+		? { $or: [{ _id: lookupId }, { publicId: lookupId }] }
+		: { publicId: lookupId };
+	const session = await mongoose.startSession();
+	let changed;
+	try {
+		await session.withTransaction(async () => {
+			const game = await Game.findOneAndUpdate(
+				{ ...lookupFilter, isFinished: false, isCancelled: { $ne: true } },
+				{ $set: changes },
+				{ session, returnDocument: 'after' },
+			);
+			if (!game) {
+				const existing = await Game.findOne(lookupFilter).select('resultColor isFinished isCancelled').session(session);
+				if (!existing) throw gameError('Game not found', 404, 'GAME_NOT_FOUND');
+				const message = existing.isCancelled
+					? `Game with ID: ${gameId} already cancelled`
+					: `Game with ID: ${gameId} already finished with result ${existing.resultColor}`;
+				throw gameError(message, 409, 'GAME_ALREADY_SETTLED');
+			}
+			// A session cannot run parallel operations. Commit the game and both
+			// player updates together so a failed save leaves the game retryable.
+			const tournament = await Tournament.findById(game.tournament).session(session);
+			const white = await Player.findById(game.playerWhite).session(session);
+			const black = await Player.findById(game.playerBlack).session(session);
+			updatePlayers({ game, tournament, white, black });
+			for (const player of [white, black]) {
+				if (player) await player.save({ session });
+			}
+			changed = { game, tournament, white, black };
+		}, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+		return changed;
+	} finally {
+		await session.endSession();
+	}
 }
 
 async function lowestFreeBoardNumber(tournamentId, session) {
@@ -209,6 +240,14 @@ function scheduleStandingsRefresh(tournamentId) {
 }
 
 class GameService {
+	async completeAfterGame(tournamentId) {
+		try {
+			await this.completeIfNoActiveGames(tournamentId);
+		} catch (err) {
+			console.error('[GameService] completion deferred after committed game:', err.message);
+		}
+	}
+
 	async completeIfNoActiveGames(tournamentId) {
 		try {
 			return await completeIfNoActiveGames(tournamentId);
@@ -342,70 +381,18 @@ class GameService {
 		const resultColor = normalize(result);
 		if (!resultColor) throw new Error('Invalid result value');
 
-		const lookupId = normalizeLookupId(gameId);
-		if (!lookupId) throw new Error('Game not found');
-
-		// Atomically claim the unfinished game. Without this, two concurrent
-		// submissions (admin double-click, retry, two tabs) can both pass an
-		// isFinished check and both apply player stats, double-counting score
-		// and win/loss totals.
-		const lookupFilter = isObjectId(lookupId)
-			? { $or: [{ _id: lookupId }, { publicId: lookupId }] }
-			: { publicId: lookupId };
-
-		const game = await Game.findOneAndUpdate(
-			{ ...lookupFilter, isFinished: false, isCancelled: { $ne: true } },
-			{ $set: { isFinished: true, resultColor, finishedAt: new Date() } },
-			{ returnDocument: 'after' },
+		const { game, tournament, white, black } = await changeGame(
+			gameId, { isFinished: true, resultColor, finishedAt: new Date() },
+			({ game, tournament, white, black }) => {
+				for (const [player, opponent, perspective] of [[white, black, 'white'], [black, white, 'black']]) {
+					if (!player) continue;
+					applyResultToPlayer({ player, opponentRating: resolveOpponentRating(opponent), resultColor, perspective, gameId: game._id });
+					player.waitingSince = tournament?.tournStatus === 'in progress' && player.status === 'active' ? new Date() : null;
+				}
+			},
 		);
-
-		if (!game) {
-			// Distinguish "not found" from "already finished" for clearer errors.
-			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished isCancelled');
-			if (!existing) throw new Error('Game not found');
-			if (existing.isCancelled) throw new Error(`Game with ID: ${gameId} was cancelled`);
-			throw new Error(`Game with ID: ${gameId} already finished with result ${existing.resultColor}`);
-		}
-
 		await ensureDocumentPublicId(game, Game);
-		console.log(`[GameService] Game ended with result: ${resultColor}`);
-
-		const [tournament, white, black] = await Promise.all([
-			Tournament.findById(game.tournament).select('tournStatus pairingClosedAt'),
-			Player.findById(game.playerWhite),
-			Player.findById(game.playerBlack),
-		]);
-
 		const tournamentActive = tournament?.tournStatus === 'in progress';
-		const opponentRatings = {
-			white: resolveOpponentRating(black),
-			black: resolveOpponentRating(white),
-		};
-
-		if (white) {
-			applyResultToPlayer({
-				player: white,
-				opponentRating: opponentRatings.white,
-				resultColor,
-				perspective: 'white',
-				gameId: game._id,
-			});
-			const shouldWait = tournamentActive && (!white.status || white.status === 'active');
-			white.waitingSince = shouldWait ? new Date() : null;
-			await white.save();
-		}
-		if (black) {
-			applyResultToPlayer({
-				player: black,
-				opponentRating: opponentRatings.black,
-				resultColor,
-				perspective: 'black',
-				gameId: game._id,
-			});
-			const shouldWait = tournamentActive && (!black.status || black.status === 'active');
-			black.waitingSince = shouldWait ? new Date() : null;
-			await black.save();
-		}
 
 		// Refresh the persisted standing cache before returning. Refreshes are
 		// still serialized per tournament to avoid stale concurrent writes.
@@ -451,58 +438,31 @@ class GameService {
 		}
 
 		const serialized = serializeGame(game);
-		await this.completeIfNoActiveGames(game.tournament);
+		await this.completeAfterGame(game.tournament);
 		return serialized;
 	}
 
 	async cancelGame(gameId, { actor = null, reason = 'manual', excludePlayerIds = [] } = {}) {
-		const lookupId = normalizeLookupId(gameId);
-		if (!lookupId) throw new Error('Game not found');
-
-		const lookupFilter = isObjectId(lookupId)
-			? { $or: [{ _id: lookupId }, { publicId: lookupId }] }
-			: { publicId: lookupId };
-
 		const cancelledAt = new Date();
-		const game = await Game.findOneAndUpdate(
-			{ ...lookupFilter, isFinished: false, isCancelled: { $ne: true } },
-			{
-				$set: {
-					isFinished: true,
-					isCancelled: true,
-					cancelledAt,
-					finishedAt: cancelledAt,
-				},
-			},
-			{ returnDocument: 'after' },
-		);
-
-		if (!game) {
-			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished isCancelled');
-			if (!existing) throw new Error('Game not found');
-			if (existing.isCancelled) throw new Error(`Game with ID: ${gameId} already cancelled`);
-			throw new Error(`Game with ID: ${gameId} already finished with result ${existing.resultColor}`);
-		}
-
-		await ensureDocumentPublicId(game, Game);
-		const [tournament, white, black] = await Promise.all([
-			Tournament.findById(game.tournament).select('tournStatus pairingClosedAt'),
-			Player.findById(game.playerWhite),
-			Player.findById(game.playerBlack),
-		]);
-
-		if (white && black) {
-			rollbackLatestPairingHistory(white, black._id, 'white');
-			rollbackLatestPairingHistory(black, white._id, 'black');
-		}
-
 		const excluded = new Set(excludePlayerIds.map(String));
-		for (const player of [white, black]) {
-			if (!player) continue;
-			player.isPlaying = false;
-			player.waitingSince = null;
-			await player.save();
-		}
+		const { game, tournament, white, black } = await changeGame(
+			gameId, { isFinished: true, isCancelled: true, cancelledAt, finishedAt: cancelledAt },
+			({ tournament, white, black }) => {
+				// A manual cancellation keeps the encounter in pairing history to
+				// prevent immediately proposing the same rejected pairing again.
+				if (white && black && ['player.paused', 'player.withdrawn'].includes(reason)) {
+					rollbackLatestPairingHistory(white, black._id, 'white');
+					rollbackLatestPairingHistory(black, white._id, 'black');
+				}
+				for (const player of [white, black]) {
+					if (!player) continue;
+					player.isPlaying = false;
+					player.waitingSince = !excluded.has(String(player._id)) && player.status === 'active'
+						&& tournament?.tournStatus === 'in progress' ? cancelledAt : null;
+				}
+			},
+		);
+		await ensureDocumentPublicId(game, Game);
 
 		if (tournament) {
 			await logEvent(tournament._id, 'game.cancelled', {
@@ -519,10 +479,17 @@ class GameService {
 
 		for (const player of [white, black]) {
 			if (!player || excluded.has(String(player._id))) continue;
-			await enqueueIfEligible(player, tournament);
+			try {
+				const current = await Player.findById(player._id);
+				const currentTournament = await Tournament.findById(game.tournament);
+				if (current && !current.isPlaying) await enqueueIfEligible(current, currentTournament);
+			} catch (err) {
+				console.error('[GameService] cancelled player requeue failed:', err.message);
+				require('./tournamentScheduler').retryTournament(game.tournament);
+			}
 		}
 
-		await this.completeIfNoActiveGames(game.tournament);
+		await this.completeAfterGame(game.tournament);
 
 		await game.populate([
 			{
@@ -557,10 +524,17 @@ class GameService {
 			return null;
 		}
 
-		return this.cancelGame(activeGame.publicId || activeGame._id, {
-			...options,
-			excludePlayerIds: [...(options.excludePlayerIds || []), playerId],
-		});
+		try {
+			return await this.cancelGame(activeGame.publicId || activeGame._id, {
+				...options,
+				excludePlayerIds: [...(options.excludePlayerIds || []), playerId],
+			});
+		} catch (err) {
+			// A concurrent result/cancel has already freed the player. Continue
+			// pause/withdraw cleanup, while propagating actual storage failures.
+			if (err.code === 'GAME_ALREADY_SETTLED') return null;
+			throw err;
+		}
 	}
 }
 

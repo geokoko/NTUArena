@@ -22,7 +22,6 @@ const useMultiSelect = (items, idKey = 'id') => {
 	const handleSelect = useCallback((id, event = {}) => {
 		const normalizedId = String(id);
 		const isRange = event.shiftKey && anchorId;
-		const isToggle = event.ctrlKey || event.metaKey;
 
 		setSelectedIds((prev) => {
 			if (isRange) {
@@ -33,12 +32,9 @@ const useMultiSelect = (items, idKey = 'id') => {
 					return Array.from(new Set([...prev, ...visibleIds.slice(from, to + 1)]));
 				}
 			}
-			if (isToggle) {
-				return prev.includes(normalizedId)
-					? prev.filter((selectedId) => selectedId !== normalizedId)
-					: [...prev, normalizedId];
-			}
-			return [normalizedId];
+			return prev.includes(normalizedId)
+				? prev.filter((selectedId) => selectedId !== normalizedId)
+				: [...prev, normalizedId];
 		});
 		setAnchorId(normalizedId);
 	}, [anchorId, visibleIds]);

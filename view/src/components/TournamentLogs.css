@@ -5,7 +5,7 @@
 
 .tournament-logs__filters {
 	display: grid;
-	grid-template-columns: minmax(180px, 1fr) 120px minmax(180px, 1fr);
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 0.5rem;
 }
 
@@ -23,6 +23,7 @@
 	border: 1px solid rgba(15, 23, 42, 0.1);
 	border-radius: 6px;
 	background: #fff;
+	color: #0f172a;
 }
 
 .tournament-logs__main {
@@ -71,4 +72,15 @@
 	.tournament-logs__filters {
 		grid-template-columns: 1fr;
 	}
+}
+
+.tournament-logs__row .btn-outline-secondary {
+	color: #475569;
+	border-color: #64748b;
+}
+
+.tournament-logs__row .btn-outline-secondary:hover,
+.tournament-logs__row .btn-outline-secondary:focus-visible {
+	background: #475569;
+	color: #fff;
 }

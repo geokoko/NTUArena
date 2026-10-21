@@ -127,12 +127,16 @@ const TournamentDetail = () => {
 	}, [loadTournamentDetails]);
 
 	useEffect(() => {
-		if (!autoRefresh || activeTab !== 'active-games') return;
-		const timer = setInterval(() => {
-			refreshGames();
-		}, AUTO_REFRESH_MS);
-		return () => clearInterval(timer);
-	}, [autoRefresh, activeTab, refreshGames]);
+		if (!autoRefresh || !['upcoming', 'in progress', 'finishing'].includes(tournament?.tournStatus)) return;
+		let cancelled = false;
+		let timer;
+		const poll = async () => {
+			await Promise.all([refreshTournament(), refreshGames(), refreshPlayers(), refreshStandings()]);
+			if (!cancelled) timer = setTimeout(poll, AUTO_REFRESH_MS);
+		};
+		timer = setTimeout(poll, AUTO_REFRESH_MS);
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [autoRefresh, tournament?.tournStatus, refreshTournament, refreshGames, refreshPlayers, refreshStandings]);
 
 	useEffect(() => {
 		if (!isAdmin || activeTab !== 'manage') return;
@@ -271,26 +275,26 @@ const TournamentDetail = () => {
 		setSubmittingGameId(gameId);
 		try {
 			await gameAPI.submitGameResult(gameId, result);
-			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers(), refreshTournament()]);
 		} catch (err) {
 			alert(err.message || 'Failed to submit result');
 		} finally {
 			setSubmittingGameId(null);
 		}
-	}, [refreshGames, refreshStandings, refreshPlayers]);
+	}, [refreshGames, refreshStandings, refreshPlayers, refreshTournament]);
 
 	const handleCancelGame = useCallback(async (gameId) => {
 		if (!gameId) return;
 		setSubmittingGameId(gameId);
 		try {
 			await gameAPI.cancelGame(gameId, 'manual');
-			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers(), refreshTournament()]);
 		} catch (err) {
 			alert(err.message || 'Failed to cancel game');
 		} finally {
 			setSubmittingGameId(null);
 		}
-	}, [refreshGames, refreshStandings, refreshPlayers]);
+	}, [refreshGames, refreshStandings, refreshPlayers, refreshTournament]);
 
 	const handleBulkAddPlayers = useCallback((userIds) =>
 		withAdminAction(async () => {
@@ -757,7 +761,7 @@ const TournamentDetail = () => {
 						<label className="form-label small mb-2">Add existing users</label>
 						<UserMultiSelect
 							users={users}
-							registeredUserIds={players.filter((p) => p.status !== 'withdrawn').map((p) => p.userId).filter(Boolean)}
+							registeredUserIds={players.map((p) => p.userId).filter(Boolean)}
 							onAdd={handleBulkAddPlayers}
 							disabled={actionLoading}
 						/>

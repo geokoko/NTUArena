@@ -7,33 +7,38 @@ const EVENT_TYPES = [
 	'tournament.updated',
 	'tournament.started',
 	'tournament.ended',
+	'tournament.completed',
 	'pairing.summary',
 	'intervention.manual',
 	'game.cancelled',
 ];
 
-const TournamentLogs = ({ tournamentId }) => {
+const TournamentLogs = ({ tournamentId, refreshKey = 0 }) => {
 	const [logs, setLogs] = useState([]);
 	const [eventType, setEventType] = useState('');
-	const [roundNumber, setRoundNumber] = useState('');
 	const [search, setSearch] = useState('');
 	const [expanded, setExpanded] = useState(null);
 	const [error, setError] = useState('');
 
 	useEffect(() => {
 		let cancelled = false;
-		setError('');
-		tournamentAPI.getLogs(tournamentId, { eventType, roundNumber, limit: 150 })
-			.then((res) => {
-				if (!cancelled) setLogs(Array.isArray(res.data) ? res.data : []);
-			})
-			.catch((err) => {
+		let timer;
+		const load = async () => {
+			try {
+				const res = await tournamentAPI.getLogs(tournamentId, { eventType, limit: 150 });
+				if (!cancelled) {
+					setLogs(Array.isArray(res.data) ? res.data : []);
+					setError('');
+				}
+			} catch (err) {
 				if (!cancelled) setError(err.message || 'Failed to load logs');
-			});
-		return () => {
-			cancelled = true;
+			} finally {
+				if (!cancelled) timer = setTimeout(load, 2000);
+			}
 		};
-	}, [eventType, roundNumber, tournamentId]);
+		load();
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [eventType, tournamentId, refreshKey]);
 
 	const filtered = useMemo(() => {
 		const q = search.trim().toLowerCase();
@@ -44,12 +49,11 @@ const TournamentLogs = ({ tournamentId }) => {
 	return (
 		<div className="tournament-logs">
 			<div className="tournament-logs__filters">
-				<select className="form-select form-select-sm" value={eventType} onChange={(event) => setEventType(event.target.value)}>
+				<select aria-label="Event type" className="form-select form-select-sm" value={eventType} onChange={(event) => setEventType(event.target.value)}>
 					<option value="">All events</option>
 					{EVENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
 				</select>
-				<input className="form-control form-control-sm" type="number" min="1" placeholder="Round" value={roundNumber} onChange={(event) => setRoundNumber(event.target.value)} />
-				<input className="form-control form-control-sm" type="search" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />
+				<input className="form-control form-control-sm" type="search" aria-label="Search logs" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />
 			</div>
 			{error && <div className="alert alert-warning">{error}</div>}
 			<div className="tournament-logs__list">

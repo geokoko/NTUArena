@@ -66,3 +66,13 @@ test('pending registration disables repeat submissions', async () => {
 	finish({ added: users.map((user) => ({ userId: user.id })), skipped: [], errors: [] });
 	await screen.findByRole('status');
 });
+
+test('plain clicks toggle multiple users without a modifier key', () => {
+	render(<UserMultiSelect users={users} registeredUserIds={[]} onAdd={jest.fn()} />);
+	fireEvent.click(screen.getByRole('option', { name: 'Alice' }));
+	fireEvent.click(screen.getByRole('option', { name: 'Bob' }));
+	expect(screen.getByText('2 selected')).toBeInTheDocument();
+	fireEvent.click(screen.getByRole('option', { name: 'Alice' }));
+	expect(screen.getByText('1 selected')).toBeInTheDocument();
+	expect(screen.getByRole('option', { name: 'Bob' })).toHaveAttribute('aria-selected', 'true');
+});

@@ -9,7 +9,7 @@ function lifecycleFields(tournament) {
 	}
 	return {
 		durationMs,
-		scheduledStartDate: tournament.scheduledStartDate ?? (tournament.tournStatus === 'upcoming' ? start : null),
+		scheduledStartDate: tournament.scheduledStartDate ?? null,
 		actualStartDate: tournament.actualStartDate ?? (tournament.tournStatus === 'upcoming' ? null : start),
 	};
 }

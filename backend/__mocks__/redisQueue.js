@@ -10,6 +10,8 @@ const removeSnapshotsFromPending = jest.fn().mockResolvedValue(undefined);
 module.exports = {
 	redis: { quit: jest.fn() },
 	enqueue,
+	enqueueMany: jest.fn().mockResolvedValue(undefined),
+	removePlayersEverywhere: jest.fn().mockResolvedValue(undefined),
 	batchDequeueToPending,
 	ackFromPending,
 	requeueLeftovers,

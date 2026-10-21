@@ -29,6 +29,7 @@ const TournamentManage = () => {
 	const [actionError, setActionError] = useState('');
 	const [showCSVImport, setShowCSVImport] = useState(false);
 	const [settleSeconds, setSettleSeconds] = useState('');
+	const [logsRevision, setLogsRevision] = useState(0);
 
 	const tournamentId = id;
 
@@ -43,9 +44,9 @@ const TournamentManage = () => {
 		}
 	}, []);
 
-	const loadTournamentData = useCallback(async () => {
+	const loadTournamentData = useCallback(async ({ background = false } = {}) => {
 		if (!tournamentId) return;
-		setError('');
+		if (!background) setError('');
 		try {
 			const [detailRes, playersRes, gamesRes] = await Promise.all([
 				tournamentAPI.getTournament(tournamentId),
@@ -56,7 +57,8 @@ const TournamentManage = () => {
 			setPlayers(Array.isArray(playersRes.data) ? playersRes.data : []);
 			setGames(Array.isArray(gamesRes.data) ? gamesRes.data : []);
 		} catch (err) {
-			setError(err.message || 'Failed to load tournament data');
+			if (!background) setError(err.message || 'Failed to load tournament data');
+			else console.error('Tournament refresh failed:', err);
 		}
 	}, [tournamentId]);
 
@@ -65,10 +67,22 @@ const TournamentManage = () => {
 		Promise.all([loadTournamentData(), fetchUsers()]).finally(() => setLoading(false));
 	}, [loadTournamentData, fetchUsers]);
 
+	const savedSettleMs = detail?.settleMs;
 	useEffect(() => {
-		if (!detail) return;
-		setSettleSeconds(detail.settleMs === null || detail.settleMs === undefined ? '' : String(Math.round(detail.settleMs / 1000)));
-	}, [detail]);
+		setSettleSeconds(savedSettleMs === null || savedSettleMs === undefined ? '' : String(Math.round(savedSettleMs / 1000)));
+	}, [savedSettleMs]);
+
+	useEffect(() => {
+		if (!['upcoming', 'in progress', 'finishing'].includes(detail?.tournStatus)) return;
+		let cancelled = false;
+		let timer;
+		const poll = async () => {
+			await loadTournamentData({ background: true });
+			if (!cancelled) timer = setTimeout(poll, 2000);
+		};
+		timer = setTimeout(poll, 2000);
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [detail?.tournStatus, loadTournamentData]);
 
 	const withRefresh = useCallback(
 		async (fn, { rethrow = false } = {}) => {
@@ -77,6 +91,7 @@ const TournamentManage = () => {
 			try {
 				const result = await fn();
 				await loadTournamentData();
+				setLogsRevision((previous) => previous + 1);
 				return result;
 			} catch (err) {
 				if (rethrow) throw err;
@@ -290,7 +305,7 @@ const TournamentManage = () => {
 							<label className="form-label small">Add players</label>
 							<UserMultiSelect
 								users={users}
-								registeredUserIds={players.filter((p) => p.status !== 'withdrawn').map((p) => p.userId).filter(Boolean)}
+								registeredUserIds={players.map((p) => p.userId).filter(Boolean)}
 								onAdd={handleBulkAddPlayers}
 								disabled={actionLoading}
 							/>
@@ -494,7 +509,7 @@ const TournamentManage = () => {
 
 				<div className="manage-section mt-3 tournament-manage__panel">
 					<h6 className="text-uppercase text-muted tournament-manage__section-title">Logs</h6>
-					<TournamentLogs tournamentId={tournamentId} />
+					<TournamentLogs tournamentId={tournamentId} refreshKey={logsRevision} />
 				</div>
 			</div>{/* /.container */}
 		</div> // .tournament-manage

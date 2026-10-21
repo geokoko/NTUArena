@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { enqueue, batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending, removeSnapshotsFromPending } = require('../queue/redisQueue');
+const { batchDequeueToPending, ackFromPending, requeueLeftovers, reclaimPending, removeSnapshotsFromPending } = require('../queue/redisQueue');
 const { evaluatePair } = require('./pairingScorer');
 const { DEFAULT_PAIRING_SETTLE_MS } = require('./pairingConfig');
 const { selectBatchPairings } = require('./selectBatchPairings');
@@ -38,9 +38,9 @@ class PairingWorker {
 		// Main loop
 		while (this.running) {
 			try {
-				const t = await Tournament.findById(tournamentId).select('tournStatus pairingClosedAt endDate');
+				const t = await Tournament.findById(tournamentId).select('tournStatus pairingClosedAt endDate settleMs');
 				if (!t || t.tournStatus !== 'in progress' || t.pairingClosedAt || (t.endDate && t.endDate <= new Date())) break;
-				await this.#cycle(tournamentId);
+				await this.#cycle(tournamentId, t);
 			} catch (err) {
 				console.error('[PairingWorker] cycle error:', err);
 				// wait a bit on error to avoid tight loop
@@ -52,12 +52,7 @@ class PairingWorker {
 
 	stop() { this.running = false; }
 
-	async #cycle(tournamentId) {
-		const tournament = await Tournament.findById(tournamentId).select('settleMs pairingClosedAt tournStatus');
-		if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) {
-			await this.#sleep(this.idleMs);
-			return;
-		}
+	async #cycle(tournamentId, tournament) {
 		const settleMs = tournament.settleMs ?? this.settleMs;
 
 		// 1. Fetch a batch from the queue
@@ -146,11 +141,9 @@ class PairingWorker {
 			}
 
 			if (!gameDoc) {
-				// Pair creation failed: re-enqueue both to the main queue.
-				// They also need to be removed from pending below, otherwise
-				// they double-exist (in pending AND in main).
-				await enqueue(tournamentId, white);
-				await enqueue(tournamentId, black);
+				// Move failed pairings out of pending atomically. Idempotent
+				// enqueue skips pending entries and cannot be used for this move.
+				await requeueLeftovers(tournamentId, this.workerId, [white, black]);
 				handledSnapshots.push(white, black);
 				continue;
 			}

@@ -153,3 +153,17 @@ describe('POST /api/games/:id/result', () => {
 		expect(res.status).toBe(403);
 	});
 });
+
+describe('POST /api/games/:id/cancel', () => {
+	test('returns 404 for a missing game and 409 for a duplicate cancellation', async () => {
+		const admin = await registerAndLogin('admin');
+		const missing = await request(app).post('/api/games/missing/cancel')
+			.set('Authorization', `Bearer ${admin.token}`).send({});
+		expect(missing.status).toBe(404);
+		const { game } = await setupGame(admin.token);
+		const cancel = () => request(app).post(`/api/games/${game._id}/cancel`)
+			.set('Authorization', `Bearer ${admin.token}`).send({});
+		expect((await cancel()).status).toBe(200);
+		expect((await cancel()).status).toBe(409);
+	});
+});

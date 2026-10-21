@@ -56,3 +56,23 @@ test('closed tournaments cannot resume pairing on recovery', async () => {
 	expect(pairingService.seedQueueOnStart).not.toHaveBeenCalled();
 	expect(PairingWorker).not.toHaveBeenCalled();
 });
+
+test('queue recovery preserves wait priority and removes old snapshots in one batch', async () => {
+	pairingService.seedQueueOnStart.mockRestore();
+	const Player = require('../src/models/Player');
+	const queue = require('../src/services/queue/redisQueue');
+	const waitingSince = new Date(Date.now() - 60000);
+	jest.spyOn(Player, 'updateMany').mockResolvedValue({ modifiedCount: 0 });
+	jest.spyOn(Player, 'find').mockReturnValue({ select: async () => [
+		{ _id: 'alice', tempName: 'Guest Alice', status: 'active', waitingSince },
+		{ _id: 'bob', status: 'active', waitingSince },
+	] });
+	await pairingService.seedQueueOnStart('tournament', { enqueuedAt: 123 });
+	expect(Player.updateMany).toHaveBeenCalledWith(expect.objectContaining({ waitingSince: null }), expect.any(Object));
+	expect(queue.removePlayersEverywhere).toHaveBeenCalledTimes(1);
+	expect(queue.removePlayersEverywhere).toHaveBeenCalledWith('tournament', ['alice', 'bob']);
+	expect(queue.enqueueMany).toHaveBeenCalledWith('tournament', [
+		expect.objectContaining({ _id: 'alice', tempName: 'Guest Alice', waitingSince, enqueuedAt: 123 }),
+		expect.objectContaining({ _id: 'bob', waitingSince, enqueuedAt: 123 }),
+	]);
+});
