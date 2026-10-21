@@ -39,11 +39,11 @@ test.each([TournamentDetail, TournamentManage])('%p picks up automatic lifecycle
 	render(<Page />);
 	await screen.findAllByText('Upcoming');
 	current.tournStatus = 'in progress';
-	await act(async () => { jest.advanceTimersByTime(2000); });
+	await act(async () => { jest.advanceTimersByTime(5000); });
 	expect(screen.queryByText('Upcoming')).not.toBeInTheDocument();
 	expect(screen.getAllByText('In Progress').length).toBeGreaterThan(0);
 	current.tournStatus = 'completed';
-	await act(async () => { jest.advanceTimersByTime(2000); });
+	await act(async () => { jest.advanceTimersByTime(5000); });
 	expect(screen.getAllByText('Completed').length).toBeGreaterThan(0);
 });
 
@@ -75,4 +75,20 @@ test.each([TournamentDetail, TournamentManage])('%p keeps withdrawn users unavai
 	render(<Page />);
 	if (Page === TournamentDetail) fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
 	expect(await screen.findByRole('option', { name: 'Alice registered' })).toBeDisabled();
+});
+
+test.each(['overview', 'active-games'])('the %s tab leaves API budget for tournament actions', async (tab) => {
+	jest.useFakeTimers();
+	current.tournStatus = 'in progress';
+	render(<TournamentDetail />);
+	await screen.findAllByText('In Progress');
+	if (tab === 'active-games') fireEvent.click(screen.getByRole('button', { name: /Active Games/ }));
+	for (let second = 0; second < 62; second++) {
+		await act(async () => { jest.advanceTimersByTime(1000); });
+	}
+	const reads = ['getTournament', 'getTournamentPlayers', 'getTournamentGames', 'getTournamentStandings']
+		.reduce((total, method) => total + tournamentAPI[method].mock.calls.length, 0);
+	// The production API allows 240 requests/minute. One open page must
+	// leave room for result submissions, actions, and their refreshes.
+	expect(reads).toBeLessThanOrEqual(120);
 });

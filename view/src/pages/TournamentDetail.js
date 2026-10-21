@@ -9,6 +9,7 @@ import './TournamentDetail.css';
 
 const PLAYERS_PER_PAGE = 15;
 const AUTO_REFRESH_MS = 1000;
+const LIFECYCLE_REFRESH_MS = 5000;
 const PLAYERS_CSV_TEMPLATE = `name,rating,identifier
 John Doe,1500,john@example.com
 Jane Smith,1600,
@@ -132,11 +133,23 @@ const TournamentDetail = () => {
 		let timer;
 		const poll = async () => {
 			await Promise.all([refreshTournament(), refreshGames(), refreshPlayers(), refreshStandings()]);
+			if (!cancelled) timer = setTimeout(poll, LIFECYCLE_REFRESH_MS);
+		};
+		timer = setTimeout(poll, LIFECYCLE_REFRESH_MS);
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [autoRefresh, tournament?.tournStatus, refreshTournament, refreshGames, refreshPlayers, refreshStandings]);
+
+	useEffect(() => {
+		if (!autoRefresh || activeTab !== 'active-games' || !['in progress', 'finishing'].includes(tournament?.tournStatus)) return;
+		let cancelled = false;
+		let timer;
+		const poll = async () => {
+			await refreshGames();
 			if (!cancelled) timer = setTimeout(poll, AUTO_REFRESH_MS);
 		};
 		timer = setTimeout(poll, AUTO_REFRESH_MS);
 		return () => { cancelled = true; clearTimeout(timer); };
-	}, [autoRefresh, tournament?.tournStatus, refreshTournament, refreshGames, refreshPlayers, refreshStandings]);
+	}, [autoRefresh, activeTab, tournament?.tournStatus, refreshGames]);
 
 	useEffect(() => {
 		if (!isAdmin || activeTab !== 'manage') return;
