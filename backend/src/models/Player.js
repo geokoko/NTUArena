@@ -7,8 +7,8 @@ const PlayerSchema = new mongoose.Schema({
 	tempName: { type: String, default: null }, // Display name for temp players without user accounts
 	tournament: { type: mongoose.Schema.Types.ObjectId, ref: 'Tournament', required: true },
 	score: { type: Number, required: true, default: 0 },
-	liveRating: { type: Number, required: true, default: 0 },
 	entryRating: { type: Number, default: 0 },
+	performanceRating: { type: Number, default: null },
 	// Current rank within the tournament (1 = leader). Recomputed after every
 	// game result. Not used by the Arena pairing algorithm but stored for
 	// display purposes and future format support (e.g. Swiss).
@@ -18,6 +18,10 @@ const PlayerSchema = new mongoose.Schema({
 	gameHistory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Game' }],
 	colorHistory: [{ type: String, enum: ['white', 'black'] }],
 	recentOpponents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
+	// Opponent of a manually cancelled game. Blocks re-proposing that pairing
+	// until this player's next game, without counting the unplayed game in
+	// colorHistory/recentOpponents.
+	lastCancelledOpponent: { type: mongoose.Schema.Types.ObjectId, ref: 'Player', default: null },
 	status: { type: String, enum: ['active', 'paused', 'withdrawn'], default: 'active' },
 	gamesPlayed: { type: Number, default: 0 },
 	wins: { type: Number, default: 0 },

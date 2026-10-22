@@ -2,17 +2,17 @@ const MAX_COLOR_STREAK    = 3; // Hard-block if a player would exceed this many 
 const MAX_COLOR_IMBALANCE = 3; // Hard-block if |whitesPlayed - blacksPlayed| would exceed this
 
 /**
- * Player snapshot shape we expect in the queue:
+ * Pairing candidate shape (see pairingCandidate.js):
  * {
  *   _id: string,
  *   user: string,
  *   score: number,             // tournament score so far
- *   liveRating: number,        // tournament live rating
  *   entryRating: number,       // rating at tournament start
  *   standing: number,          // lower = better rank
  *   recentOpponents: string[], // last K opponent player IDs (most recent at end of array)
+ *   lastCancelledOpponent: string|null, // opponent of a manually cancelled game, until the next game
  *   colorHistory: string[],    // last N colors played ('white'/'black', most recent at end)
- *   enqueuedAt: number
+ *   waitingSince: Date|null    // when the player last became available
  * }
  */
 
@@ -24,6 +24,11 @@ function justPlayedTogether(a, b) {
 	const aLastOpp = a.recentOpponents?.at(-1);
 	const bLastOpp = b.recentOpponents?.at(-1);
 	return String(aLastOpp) === bId || String(bLastOpp) === aId;
+}
+
+function wasJustCancelled(a, b) {
+	return (a.lastCancelledOpponent != null && String(a.lastCancelledOpponent) === String(b._id))
+		|| (b.lastCancelledOpponent != null && String(b.lastCancelledOpponent) === String(a._id));
 }
 
 /**
@@ -137,7 +142,8 @@ function colorImbalancePenalty(player, assignColor, maxPenalty = 3) {
  */
 function proximityScore(a, b, weights = { score: 0.6, elo: 0.4, standing: 0 }) {
 	const scoreDiff = Math.abs((a.score ?? 0) - (b.score ?? 0));
-	const eloDiff   = Math.abs((a.liveRating ?? 1200) - (b.liveRating ?? 1200));
+	const ratingOf = (player) => player.entryRating ?? 1200;
+	const eloDiff   = Math.abs(ratingOf(a) - ratingOf(b));
 	const aStanding = a.standing ?? null;
 	const bStanding = b.standing ?? null;
 	const standingDiff = (aStanding != null && bStanding != null)
@@ -183,6 +189,7 @@ function evaluatePair(a, b, opts = {}) {
 	} = opts;
 
 	if (justPlayedTogether(a, b)) return { ok: false, reason: 'recent_opponents' };
+	if (wasJustCancelled(a, b)) return { ok: false, reason: 'cancelled_pairing' };
 	if (tooManyHeadToHead(a, b, maxHeadToHead)) return { ok: false, reason: 'too_many_meetings' };
 
 	// Rematch color-swap enforcement:

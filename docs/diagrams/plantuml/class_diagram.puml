@@ -13,7 +13,8 @@ class Player {
   +User user
   +Tournament tournament
   +Number score
-  +Number liveRating
+  +Number entryRating
+  +Number performanceRating
   +Boolean isPlaying
   +Date waitingSince
   +Number rank

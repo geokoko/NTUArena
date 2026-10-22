@@ -20,3 +20,11 @@ exports.submitResult = asyncHandler(async (req, res) => {
 	const game = await gameService.submitGameResult(req.params.id, result);
 	res.json(game);
 });
+
+exports.cancelGame = asyncHandler(async (req, res) => {
+	const game = await gameService.cancelGame(req.params.id, {
+		actor: req.user,
+		reason: req.body?.reason || 'manual',
+	});
+	res.json(game);
+});

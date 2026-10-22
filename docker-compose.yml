@@ -1,15 +1,6 @@
 services:
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   mongo:
-    image: mongo:latest
+    image: mongo:8.2
     hostname: mongo
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--quiet"]
     networks:
@@ -30,7 +21,7 @@ services:
 
   # One-shot container: waits for mongod, initiates replica set, then exits
   mongo-init:
-    image: mongo:latest
+    image: mongo:8.2
     depends_on:
       mongo:
         condition: service_started
@@ -69,7 +60,6 @@ services:
       PORT: ${PORT}
       MONGO_URI: ${MONGO_URI}
       MONGO_DB: ${MONGO_DB}
-      REDIS_URL: ${REDIS_URL}
       NODE_ENV: ${NODE_ENV}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
@@ -82,8 +72,6 @@ services:
         condition: service_healthy
       mongo-init:
         condition: service_completed_successfully
-      redis:
-        condition: service_healthy
 
   frontend:
     build:

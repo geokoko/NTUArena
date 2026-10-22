@@ -2,8 +2,10 @@ const Tournament = require('../models/Tournament');
 const Player = require('../models/Player');
 const Game = require('../models/Game');
 const User = require('../models/User');
+const TournamentLog = require('../models/TournamentLog');
 const pairingService = require('./pairingService');
-const { enqueue, removePlayerEverywhere } = require('./queue/redisQueue');
+const gameService = require('./gameService');
+const { logEvent } = require('./tournamentLogger');
 const {
 	ensureDocumentPublicId,
 	ensureDocumentsPublicId,
@@ -11,6 +13,7 @@ const {
 	isObjectId,
 	normalizeLookupId,
 } = require('../utils/identifiers');
+const { exactCaseInsensitive } = require('../utils/escapeRegex');
 
 const makeError = (message, status = 400) => {
 	const err = new Error(message);
@@ -37,21 +40,95 @@ const buildDisplayName = (user, tempName = null) => {
 
 const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});
 
-const rollbackLatestPairingHistory = (player, opponentId, expectedColor) => {
-	if (!player) return;
-	const opponents = [...(player.recentOpponents ?? [])];
-	const colors = [...(player.colorHistory ?? [])];
-	if (!opponents.length || !colors.length) return;
+const getScheduler = () => require('./tournamentScheduler');
 
-	const latestOpponent = opponents.at(-1);
-	const latestColor = colors.at(-1);
-	if (String(latestOpponent) !== String(opponentId) || latestColor !== expectedColor) {
-		return;
+const parseOptionalDate = (value, fieldName) => {
+	if (value === undefined) return undefined;
+	if (value === null || value === '') return null;
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) {
+		throw makeError(`Invalid ${fieldName}`);
 	}
-
-	player.recentOpponents = opponents.slice(0, -1);
-	player.colorHistory = colors.slice(0, -1);
+	return parsed;
 };
+
+const parsePositiveDurationMs = (value) => {
+	const parsed = Number(value);
+	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+		throw makeError('durationMs must be a positive integer');
+	}
+	return parsed;
+};
+
+const parseSettleMs = (value) => {
+	if (value === undefined) return undefined;
+	if (value === null || value === '') return null;
+	const parsed = Number(value);
+	if (!Number.isInteger(parsed) || parsed < 0 || parsed > 600000) {
+		throw makeError('settleMs must be an integer between 0 and 600000');
+	}
+	return parsed;
+};
+
+const recomputeTournamentDates = (tournament) => {
+	const baseStart = tournament.actualStartDate || tournament.scheduledStartDate || null;
+	tournament.startDate = baseStart;
+	tournament.endDate = baseStart && tournament.durationMs
+		? new Date(baseStart.getTime() + Number(tournament.durationMs))
+		: null;
+	if (tournament.endDate && !Number.isFinite(tournament.endDate.getTime())) {
+		throw makeError('durationMs exceeds the supported date range');
+	}
+};
+
+const normalizeSeedRating = (value) => {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+};
+
+const buildInitialPlayerData = ({ tournamentId, user = null, tempName = null, seedRating = 0, isActiveTournament = false, now = new Date() }) => {
+	const rating = normalizeSeedRating(seedRating);
+	return {
+		user: user?._id || null,
+		tempName,
+		tournament: tournamentId,
+		isPlaying: false,
+		waitingSince: isActiveTournament ? now : null,
+		entryRating: rating,
+		performanceRating: null,
+		standing: null,
+		score: 0,
+		gamesPlayed: 0,
+		wins: 0,
+		draws: 0,
+		losses: 0,
+		sumOpponentRatings: 0,
+		status: 'active',
+		enteredAt: now,
+	};
+};
+
+async function assertTournamentHasCapacity(tournament) {
+	if (typeof tournament.maxPlayers !== 'number' || tournament.maxPlayers <= 0) return;
+	const activeCount = await Player.countDocuments({ tournament: tournament._id, status: { $nin: ['withdrawn'] } });
+	if (activeCount >= tournament.maxPlayers) {
+		throw makeError('Tournament is full');
+	}
+}
+
+// A registration can race an automatic start: the player is built from an
+// 'upcoming' read but saved after the start stamped waitingSince on everyone
+// else. Re-read the tournament so late registrants also wait from now.
+async function markRegisteredPlayerWaiting(player) {
+	if (player.waitingSince) return;
+	const tournament = await Tournament.findById(player.tournament);
+	if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return;
+	if (tournament.endDate && tournament.endDate <= new Date()) return;
+	await Player.updateOne(
+		{ _id: player._id, status: 'active', isPlaying: false, waitingSince: null },
+		{ $set: { waitingSince: new Date() } },
+	);
+}
 
 const summarizePlayer = (player) => {
 	if (!player) return null;
@@ -68,7 +145,7 @@ const summarizePlayer = (player) => {
 		isTemp: !base.user, // Flag indicating this is a temp player with no linked account
 		name: buildDisplayName(user, base.tempName),
 		score: base.score ?? 0,
-		liveRating: base.liveRating ?? base.entryRating ?? user?.globalElo ?? 0,
+		performanceRating: base.performanceRating ?? null,
 		isPlaying: !!base.isPlaying,
 		waitingSince: base.waitingSince ?? null,
 		games: gamesPlayed,
@@ -108,70 +185,16 @@ const sanitizeTournamentSummary = (tournament) => {
 		description: base.description || '',
 		startDate: base.startDate,
 		endDate: base.endDate,
+		durationMs: base.durationMs ?? null,
+		scheduledStartDate: base.scheduledStartDate ?? null,
+		actualStartDate: base.actualStartDate ?? null,
+		settleMs: base.settleMs ?? null,
+		pairingClosedAt: base.pairingClosedAt ?? null,
+		pairingClosedReason: base.pairingClosedReason ?? null,
 		maxPlayers: base.maxPlayers ?? 100,
 		participantCount: Array.isArray(base.participants) ? base.participants.length : 0,
 	};
 };
-
-/**
- * Voids the active game for a player who is mid-game.
- * Marks the game as cancelled, clears isPlaying on both players,
- * and re-queues the opponent if the tournament is still in progress.
- */
-async function cancelActiveGame(player, tournament) {
-	const game = await Game.findOne({
-		$or: [{ playerWhite: player._id }, { playerBlack: player._id }],
-		isFinished: false,
-		isCancelled: { $ne: true },
-	});
-
-	if (!game) return;
-
-	game.isCancelled = true;
-	game.cancelledAt = new Date();
-	game.isFinished = true;
-	game.finishedAt = game.cancelledAt;
-	await game.save();
-
-	const opponentId = game.playerWhite.toString() === player._id.toString()
-		? game.playerBlack
-		: game.playerWhite;
-
-	const opponent = await Player.findById(opponentId);
-
-	if (opponent) {
-		const playerColor = game.playerWhite.toString() === player._id.toString() ? 'white' : 'black';
-		const opponentColor = playerColor === 'white' ? 'black' : 'white';
-		rollbackLatestPairingHistory(player, opponent._id, playerColor);
-		rollbackLatestPairingHistory(opponent, player._id, opponentColor);
-	}
-
-	player.isPlaying = false;
-	if (opponent) opponent.isPlaying = false;
-
-	await Promise.all([
-		player.save(),
-		opponent ? opponent.save() : Promise.resolve(),
-	]);
-
-	if (opponent && opponent.status === 'active' && tournament.tournStatus === 'in progress') {
-		const now = new Date();
-		opponent.waitingSince = now;
-		await opponent.save();
-		await enqueue(String(tournament._id), {
-			_id: String(opponent._id),
-			user: opponent.user,
-			score: opponent.score ?? 0,
-			liveRating: opponent.liveRating ?? 0,
-			entryRating: opponent.entryRating ?? 0,
-			recentOpponents: (opponent.recentOpponents ?? []).map(String),
-			colorHistory: opponent.colorHistory ?? [],
-			status: opponent.status,
-			waitingSince: opponent.waitingSince,
-			enqueuedAt: Date.now(),
-		});
-	}
-}
 
 /**
  * Resolve a Player document within a tournament from either a User id/publicId
@@ -201,10 +224,18 @@ async function resolvePlayerInTournament(idOrPublicId, tournamentObjectId) {
 
 class TournamentService {
 	filterSettings(settings = {}) {
-		const allowed = ['name', 'tournLocation', 'startDate', 'endDate', 'timeControl', 'description', 'type', 'maxPlayers'];
+		if (settings.endDate !== undefined) {
+			throw makeError('endDate is derived from scheduledStartDate/actualStartDate and durationMs');
+		}
+
+		const allowed = ['name', 'tournLocation', 'scheduledStartDate', 'durationMs', 'settleMs', 'timeControl', 'description', 'type', 'maxPlayers'];
 		const filtered = {};
 		for (const [key, value] of Object.entries(settings)) {
 			if (value === undefined) continue;
+			if (key === 'startDate' && settings.scheduledStartDate === undefined) {
+				filtered.scheduledStartDate = value;
+				continue;
+			}
 			if (key === 'title' && settings.name === undefined) {
 				filtered.name = value;
 				continue;
@@ -216,10 +247,18 @@ class TournamentService {
 
 		if (filtered.maxPlayers !== undefined) {
 			const parsed = Number(filtered.maxPlayers);
-			if (!Number.isFinite(parsed) || parsed <= 0) {
-				throw makeError('maxPlayers must be a positive number');
+			if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+				throw makeError('maxPlayers must be a positive integer');
 			}
 			filtered.maxPlayers = parsed;
+		}
+
+		if (filtered.durationMs !== undefined) {
+			filtered.durationMs = parsePositiveDurationMs(filtered.durationMs);
+		}
+
+		if (filtered.settleMs !== undefined) {
+			filtered.settleMs = parseSettleMs(filtered.settleMs);
 		}
 
 		return filtered;
@@ -231,37 +270,40 @@ class TournamentService {
 		return tournaments.map(sanitizeTournamentSummary);
 	}
 
-	async createTournament(data) {
+	async createTournament(data, { actor = null } = {}) {
 		const filtered = this.filterSettings(data);
 
 		if (!filtered.name) throw makeError('Tournament name is required');
-		if (!filtered.startDate || !filtered.endDate) {
-			throw makeError('Tournament startDate and endDate are required');
+		if (!filtered.durationMs) {
+			throw makeError('durationMs is required');
 		}
 
-		const startDate = new Date(filtered.startDate);
-		const endDate = new Date(filtered.endDate);
-		if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-			throw makeError('Invalid startDate or endDate');
-		}
-		if (startDate > endDate) {
-			throw makeError('startDate must be before endDate');
+		const scheduledStartDate = parseOptionalDate(filtered.scheduledStartDate, 'scheduledStartDate');
+		if (scheduledStartDate && scheduledStartDate <= new Date()) {
+			throw makeError('scheduledStartDate must be in the future');
 		}
 
 		const tournament = new Tournament({
 			...filtered,
-			startDate,
-			endDate,
+			scheduledStartDate: scheduledStartDate ?? null,
+			actualStartDate: null,
 			maxPlayers: filtered.maxPlayers ?? 100,
 			tournStatus: 'upcoming',
 		});
+		recomputeTournamentDates(tournament);
 
 		await tournament.save();
 		await ensureDocumentPublicId(tournament, Tournament);
+		await logEvent(tournament._id, 'tournament.created', {
+			message: 'Tournament created.',
+			payload: sanitizeTournamentSummary(tournament),
+			actor,
+		});
+		await getScheduler().scheduleTournament(tournament);
 		return sanitizeTournamentSummary(tournament);
 	}
 
-	async updateTournament(id, data) {
+	async updateTournament(id, data, { actor = null } = {}) {
 		const filtered = this.filterSettings(data);
 		if (Object.keys(filtered).length === 0) {
 			throw makeError('No valid fields provided to update');
@@ -277,37 +319,44 @@ class TournamentService {
 			throw makeError('maxPlayers cannot be lower than the current participants count');
 		}
 
-		if (filtered.startDate) {
-			const parsedStart = new Date(filtered.startDate);
-			if (Number.isNaN(parsedStart.getTime())) {
-				throw makeError('Invalid startDate');
+		if (filtered.scheduledStartDate !== undefined) {
+			filtered.scheduledStartDate = parseOptionalDate(filtered.scheduledStartDate, 'scheduledStartDate');
+			if (filtered.scheduledStartDate && tournament.tournStatus === 'upcoming' && filtered.scheduledStartDate <= new Date()) {
+				throw makeError('scheduledStartDate must be in the future');
 			}
-			filtered.startDate = parsedStart;
-		}
-		if (filtered.endDate) {
-			const parsedEnd = new Date(filtered.endDate);
-			if (Number.isNaN(parsedEnd.getTime())) {
-				throw makeError('Invalid endDate');
-			}
-			filtered.endDate = parsedEnd;
 		}
 
-		const startDate = filtered.startDate ?? tournament.startDate;
-		const endDate = filtered.endDate ?? tournament.endDate;
-		if (startDate && endDate && startDate > endDate) {
-			throw makeError('startDate must be before endDate');
+		if (filtered.durationMs !== undefined && tournament.tournStatus !== 'upcoming') {
+			throw makeError('durationMs can only be changed before the tournament starts');
+		}
+		if (filtered.scheduledStartDate !== undefined && tournament.tournStatus !== 'upcoming') {
+			throw makeError('scheduledStartDate can only be changed before the tournament starts');
 		}
 
+		const previous = sanitizeTournamentSummary(tournament);
 		Object.assign(tournament, filtered);
-		await tournament.save();
-		await ensureDocumentPublicId(tournament, Tournament);
-		return sanitizeTournamentSummary(tournament);
+		if (tournament.tournStatus === 'upcoming') recomputeTournamentDates(tournament);
+		const updated = await Tournament.findOneAndUpdate(
+			{ _id: tournament._id, tournStatus: previous.tournStatus,
+				scheduledStartDate: previous.scheduledStartDate, durationMs: previous.durationMs },
+			{ $set: { ...filtered, startDate: tournament.startDate, endDate: tournament.endDate } },
+			{ returnDocument: 'after', runValidators: true },
+		);
+		if (!updated) throw makeError('Tournament changed; reload before updating', 409);
+		await ensureDocumentPublicId(updated, Tournament);
+		const next = sanitizeTournamentSummary(updated);
+		await logEvent(tournament._id, 'tournament.updated', {
+			message: 'Tournament settings updated.',
+			payload: { before: previous, after: next },
+			actor,
+		});
+		await getScheduler().scheduleTournament(updated);
+		return next;
 	}
 
 	async getTournamentById(id) {
 		const tournamentDoc = await findByIdOrPublicId(Tournament, id);
 		if (!tournamentDoc) throw makeError('Tournament not found', 404);
-		await ensureDocumentPublicId(tournamentDoc, Tournament);
 		await ensureDocumentPublicId(tournamentDoc, Tournament);
 
 		await tournamentDoc.populate({
@@ -334,7 +383,7 @@ class TournamentService {
 
 		const players = await Player.find({ tournament: tournament._id })
 			.populate('user', 'publicId username email globalElo profile.firstName profile.lastName')
-			.sort({ score: -1, liveRating: -1 });
+			.sort({ score: -1, performanceRating: -1, entryRating: -1 });
 		await ensureDocumentsPublicId(players, Player);
 		await ensurePlayerHierarchyIds(players);
 
@@ -380,6 +429,9 @@ class TournamentService {
 				startedAt: game.createdAt,
 				finishedAt: game.finishedAt || null,
 				isFinished: !!game.isFinished,
+				isCancelled: !!game.isCancelled,
+				cancelledAt: game.cancelledAt || null,
+				boardNumber: game.boardNumber ?? null,
 				resultColor: game.resultColor || null,
 				playerWhite: summarizePlayer(game.playerWhite),
 				playerBlack: summarizePlayer(game.playerBlack),
@@ -401,7 +453,9 @@ class TournamentService {
 		players.sort((a, b) => {
 			const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
 			if (scoreDiff !== 0) return scoreDiff;
-			return (b.liveRating ?? 0) - (a.liveRating ?? 0);
+			const perfDiff = (b.performanceRating ?? -1) - (a.performanceRating ?? -1);
+			if (perfDiff !== 0) return perfDiff;
+			return (b.entryRating ?? 0) - (a.entryRating ?? 0);
 		});
 
 		return players.map((player, index) => {
@@ -417,7 +471,7 @@ class TournamentService {
 				},
 				score: summary?.score ?? 0,
 				games: summary?.games ?? 0,
-				liveRating: summary?.liveRating ?? 0,
+				performanceRating: summary?.performanceRating ?? null,
 				wins: summary?.wins ?? 0,
 				draws: summary?.draws ?? 0,
 				losses: summary?.losses ?? 0,
@@ -427,52 +481,101 @@ class TournamentService {
 		});
 	}
 
-	async startTournament(id) {
-		const tournament = await findByIdOrPublicId(Tournament, id);
-		if (!tournament) throw makeError('Tournament not found', 404);
-		if (tournament.tournStatus !== 'upcoming') {
+	async startTournament(id, { actor = null, trigger = 'manual' } = {}) {
+		const existing = await findByIdOrPublicId(Tournament, id);
+		if (!existing) {
+			if (trigger === 'auto') return null;
+			throw makeError('Tournament not found', 404);
+		}
+		if (existing.tournStatus !== 'upcoming') {
+			if (trigger === 'auto') return null;
 			throw makeError('Tournament already started or completed');
 		}
-
-		tournament.tournStatus = 'in progress';
-		await tournament.save();
-		await ensureDocumentPublicId(tournament, Tournament);
-
-		pairingService.startPairingLoop(String(tournament._id));
+		const now = new Date();
+		if (trigger === 'auto' && (!existing.scheduledStartDate || existing.scheduledStartDate > now)) return null;
+		const startAt = trigger === 'auto' ? existing.scheduledStartDate : now;
+		const endDate = new Date(startAt.getTime() + existing.durationMs);
+		if (!Number.isFinite(endDate.getTime())) throw makeError('Invalid tournament duration');
+		const tournament = await Tournament.findOneAndUpdate(
+			{ _id: existing._id, tournStatus: 'upcoming',
+				scheduledStartDate: existing.scheduledStartDate, durationMs: existing.durationMs },
+			{ $set: { tournStatus: 'in progress', actualStartDate: now,
+				startDate: startAt, endDate, pairingClosedAt: null, pairingClosedReason: null } },
+			{ returnDocument: 'after', runValidators: true },
+		);
+		if (!tournament) {
+			if (trigger === 'auto') return null;
+			throw makeError('Tournament already started or completed, or its schedule changed', 409);
+		}
+		await logEvent(tournament._id, 'tournament.started', {
+			message: `Tournament started (${trigger}).`,
+			payload: { trigger, actualStartDate: now, endDate, durationMs: tournament.durationMs },
+			actor,
+		});
+		// An elapsed scheduled window must never briefly open a pairing worker.
+		if (endDate <= now) return this.endTournament(tournament._id, { trigger: 'auto' });
+		await getScheduler().scheduleTournament(tournament);
+		try {
+			await pairingService.startPairingLoop(String(tournament._id));
+		} catch (err) {
+			console.error(`[tournament] pairing startup failed for ${tournament._id}:`, err.message);
+			getScheduler().retryTournament(tournament._id);
+		}
 		return sanitizeTournamentSummary(tournament);
 	}
 
-	async endTournament(id) {
-		const tournament = await findByIdOrPublicId(Tournament, id);
-		if (!tournament) throw makeError('Tournament not found', 404);
-		if (tournament.tournStatus !== 'in progress') {
+	async startTournamentAuto(id) {
+		return this.startTournament(id, { trigger: 'auto' });
+	}
+
+	async endTournament(id, { actor = null, trigger = 'manual' } = {}) {
+		const existing = await findByIdOrPublicId(Tournament, id);
+		if (!existing) throw makeError('Tournament not found', 404);
+		if (!['in progress', 'finishing', 'completed'].includes(existing.tournStatus)) {
 			throw makeError('Tournament not in progress');
 		}
-
-		tournament.tournStatus = 'completed';
-		await tournament.save();
-		await ensureDocumentPublicId(tournament, Tournament);
-
-		pairingService.stopPairingLoop(String(tournament._id));
+		// Close pairing before counting games. Game creation writes this same
+		// document transactionally, so it either commits first or is rejected.
+		const closed = await Tournament.findOneAndUpdate(
+			{ _id: existing._id, tournStatus: 'in progress' },
+			{ $set: { tournStatus: 'finishing', pairingClosedAt: new Date(), pairingClosedReason: trigger } },
+			{ returnDocument: 'after' },
+		);
+		pairingService.stopPairingLoop(String(existing._id));
+		getScheduler().clearTournament(existing._id);
+		if (closed) {
+			await logEvent(closed._id, 'tournament.ended', {
+				message: 'Tournament pairing closed; remaining games may finish.',
+				payload: { trigger },
+				actor,
+			});
+		}
+		const tournament = await gameService.completeIfNoActiveGames(existing._id);
 		return sanitizeTournamentSummary(tournament);
 	}
 
-	async deleteTournament(id) {
+	async deleteTournament(id, { actor = null } = {}) {
 		const tournament = await findByIdOrPublicId(Tournament, id);
 		if (!tournament) throw makeError('Tournament not found', 404);
-		if (tournament.tournStatus === 'in progress') {
-			throw makeError('Cannot delete an in-progress tournament; end it first.');
+		if (['in progress', 'finishing'].includes(tournament.tournStatus)) {
+			throw makeError('Cannot delete an in-progress tournament; finish its games first.');
 		}
 
+		const deleted = await Tournament.findOneAndDelete({
+			_id: tournament._id, tournStatus: { $in: ['upcoming', 'completed'] },
+		});
+		if (!deleted) throw makeError('Tournament changed; reload before deleting', 409);
+		pairingService.stopPairingLoop(String(tournament._id));
+		getScheduler().clearTournament(tournament._id);
 		await Promise.all([
 			Player.deleteMany({ tournament: tournament._id }),
 			Game.deleteMany({ tournament: tournament._id }),
+			TournamentLog.deleteMany({ tournamentId: tournament._id }),
 		]);
-		await tournament.deleteOne();
 		return { message: 'Tournament deleted' };
 	}
 
-	async joinTournament(userId, tournamentId) {
+	async joinTournament(userId, tournamentId, { seedRatingOverride = null } = {}) {
 		const [tournament, user] = await Promise.all([
 			findByIdOrPublicId(Tournament, tournamentId),
 			findByIdOrPublicId(User, userId),
@@ -480,79 +583,55 @@ class TournamentService {
 
 		if (!tournament) throw makeError('Tournament not found', 404);
 		if (!user) throw makeError('User not found', 404);
-		if (tournament.tournStatus === 'completed') {
-			throw makeError('Tournament already completed');
+		if (['finishing', 'completed'].includes(tournament.tournStatus)) {
+			throw makeError('Tournament already completed or finishing');
 		}
 
-		if (
-			typeof tournament.maxPlayers === 'number' &&
-			tournament.maxPlayers > 0
-		) {
-			const activeCount = await Player.countDocuments({ tournament: tournament._id, status: { $nin: ['withdrawn'] } });
-			if (activeCount >= tournament.maxPlayers) {
-				throw makeError('Tournament is full');
-			}
-		}
+		await assertTournamentHasCapacity(tournament);
 
 		const exists = await Player.findOne({ user: user._id, tournament: tournament._id });
 		if (exists) throw makeError('User already joined the tournament');
 
 		const now = new Date();
-		const seedRating = Number.isFinite(user.globalElo) ? Number(user.globalElo) : 0;
+		const seedRating = seedRatingOverride !== null && seedRatingOverride !== undefined
+			? seedRatingOverride
+			: user.globalElo;
 		const isActiveTournament = tournament.tournStatus === 'in progress';
 
-		const player = new Player({
-			user: user._id,
-			tournament: tournament._id,
-			isPlaying: false,
-			waitingSince: isActiveTournament ? now : null,
-			liveRating: seedRating,
-			entryRating: seedRating,
-			score: 0,
-			gamesPlayed: 0,
-			wins: 0,
-			draws: 0,
-			losses: 0,
-			sumOpponentRatings: 0,
-			status: 'active',
-			enteredAt: now,
-		});
+		const player = new Player(buildInitialPlayerData({
+			tournamentId: tournament._id,
+			user,
+			seedRating,
+			isActiveTournament,
+			now,
+		}));
 		await player.save();
 
-		tournament.participants = Array.isArray(tournament.participants)
-			? [...tournament.participants, player._id]
-			: [player._id];
-		await tournament.save();
+		await Tournament.updateOne(
+			{ _id: tournament._id },
+			{ $addToSet: { participants: player._id } }
+		);
 
-		if (isActiveTournament) {
-			await enqueue(String(tournament._id), {
-				_id: String(player._id),
-				user: player.user,
-				score: 0,
-				liveRating: player.liveRating,
-				entryRating: player.entryRating,
-				recentOpponents: [],
-				colorHistory: [],
-				status: player.status,
-				waitingSince: player.waitingSince,
-				enqueuedAt: Date.now(),
-			});
-		}
+		await markRegisteredPlayerWaiting(player);
 
 		await ensureDocumentPublicId(player, Player);
 		return summarizePlayer(await player.populate('user', 'publicId username email profile.firstName profile.lastName globalElo'));
 	}
 
-	async leaveTournament(userId, tournamentId) {
+	async leaveTournament(userId, tournamentId, { actor = null } = {}) {
 		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
 		if (!tournament) throw makeError('Tournament not found', 404);
 
 		const player = await resolvePlayerInTournament(userId, tournament._id);
 		if (!player) throw makeError('Player not found in tournament', 404);
 
-		if (player.isPlaying) {
-			await cancelActiveGame(player, tournament);
-		}
+		player.status = 'withdrawn';
+		await player.save();
+
+		await gameService.cancelActiveGameForPlayer(player, tournament, {
+			reason: 'player.withdrawn',
+			actor,
+		});
 
 		player.status = 'withdrawn';
 		player.withdrawnAt = new Date();
@@ -560,15 +639,19 @@ class TournamentService {
 		player.isPlaying = false;
 		await player.save();
 
-		tournament.participants = (tournament.participants || []).filter(
-			(id) => id.toString() !== player._id.toString()
+		await Tournament.updateOne(
+			{ _id: tournament._id },
+			{ $pull: { participants: player._id } },
 		);
-		await tournament.save();
 
-		await removePlayerEverywhere(String(tournament._id), player._id);
 		await ensureDocumentPublicId(player, Player);
 		await player.populate('user', 'publicId username email globalElo profile.firstName profile.lastName');
 		if (player.user) await ensureDocumentPublicId(player.user, User);
+		await logEvent(tournament._id, 'intervention.manual', {
+			message: 'Player withdrawn from tournament.',
+			payload: { playerId: player.publicId || String(player._id), userId },
+			actor,
+		});
 
 		return {
 			message: 'Player withdrawn from tournament successfully',
@@ -576,15 +659,24 @@ class TournamentService {
 		};
 	}
 
-	async adminAddPlayerToTournament(userId, tournamentId) {
-		return this.joinTournament(userId, tournamentId);
+	async adminAddPlayerToTournament(userId, tournamentId, { actor = null } = {}) {
+		const player = await this.joinTournament(userId, tournamentId);
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
+		if (tournament) {
+			await logEvent(tournament._id, 'intervention.manual', {
+				message: 'Player added to tournament.',
+				payload: { userId, playerId: player.id },
+				actor,
+			});
+		}
+		return player;
 	}
 
-	async adminRemovePlayerFromTournament(userId, tournamentId) {
-		return this.leaveTournament(userId, tournamentId);
+	async adminRemovePlayerFromTournament(userId, tournamentId, { actor = null } = {}) {
+		return this.leaveTournament(userId, tournamentId, { actor });
 	}
 
-	async pausePlayer(userId, tournamentId) {
+	async pausePlayer(userId, tournamentId, { actor = null } = {}) {
 		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
 		if (!tournament) throw makeError('Tournament not found', 404);
 
@@ -594,23 +686,32 @@ class TournamentService {
 			throw makeError('Player already withdrawn from the tournament');
 		}
 
-		if (player.isPlaying) {
-			await cancelActiveGame(player, tournament);
-		}
+		player.status = 'paused';
+		await player.save();
 
+		await gameService.cancelActiveGameForPlayer(player, tournament, {
+			reason: 'player.paused',
+			actor,
+		});
+
+		player.isPlaying = false;
 		player.status = 'paused';
 		player.pausedAt = new Date();
 		player.waitingSince = null;
 		await player.save();
 
-		await removePlayerEverywhere(String(tournament._id), player._id);
 		await ensureDocumentPublicId(player, Player);
 		await player.populate('user', 'publicId username email globalElo profile.firstName profile.lastName');
 		if (player.user) await ensureDocumentPublicId(player.user, User);
+		await logEvent(tournament._id, 'intervention.manual', {
+			message: 'Player paused.',
+			payload: { playerId: player.publicId || String(player._id), userId },
+			actor,
+		});
 		return summarizePlayer(player);
 	}
 
-	async resumePlayer(userId, tournamentId) {
+	async resumePlayer(userId, tournamentId, { actor = null } = {}) {
 		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
 		if (!tournament) throw makeError('Tournament not found', 404);
 
@@ -630,21 +731,11 @@ class TournamentService {
 		await player.populate('user', 'publicId username email globalElo profile.firstName profile.lastName');
 		if (player.user) await ensureDocumentPublicId(player.user, User);
 
-		if (inProgress) {
-			await enqueue(String(tournament._id), {
-				_id: String(player._id),
-				user: player.user,
-				score: player.score ?? 0,
-				liveRating: player.liveRating ?? 0,
-				entryRating: player.entryRating ?? 0,
-				recentOpponents: (player.recentOpponents ?? []).map(String),
-				colorHistory: player.colorHistory ?? [],
-				status: player.status,
-				waitingSince: player.waitingSince,
-				enqueuedAt: Date.now(),
-			});
-		}
-
+		await logEvent(tournament._id, 'intervention.manual', {
+			message: 'Player resumed.',
+			payload: { playerId: player.publicId || String(player._id), userId },
+			actor,
+		});
 		return summarizePlayer(player);
 	}
 
@@ -672,11 +763,12 @@ class TournamentService {
 
 		// Pre-fetch all users that match any identifier
 		const normalizedIdentifiers = identifiers.map((id) => id.trim().toLowerCase());
+		const identifierPatterns = identifiers.map(exactCaseInsensitive);
 		const matchingUsers = await User.find({
 			isDeleted: { $ne: true },
 			$or: [
-				{ username: { $in: identifiers.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) } },
-				{ email: { $in: identifiers.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) } },
+				{ username: { $in: identifierPatterns } },
+				{ email: { $in: identifierPatterns } },
 			],
 		});
 
@@ -690,7 +782,7 @@ class TournamentService {
 
 		// Get existing players in this tournament
 		const existingPlayers = await Player.find({ tournament: tournament._id }).select('user');
-		const existingUserIds = new Set(existingPlayers.map((p) => p.user.toString()));
+		const existingUserIds = new Set(existingPlayers.filter((p) => p.user).map((p) => p.user.toString()));
 
 		for (let i = 0; i < identifiers.length; i++) {
 			const identifier = identifiers[i].trim();
@@ -743,6 +835,111 @@ class TournamentService {
 		return results;
 	}
 
+	async bulkAddPlayers(tournamentId, userIds, { actor = null } = {}) {
+		const results = {
+			added: [],
+			skipped: [],
+			errors: [],
+		};
+
+		if (!Array.isArray(userIds) || userIds.length === 0) {
+			return results;
+		}
+
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
+		if (!tournament) throw makeError('Tournament not found', 404);
+
+		const uniqueIds = [...new Set(userIds.map((id) => String(id).trim()).filter(Boolean))];
+		if (!uniqueIds.length) return results;
+		const mongoIds = uniqueIds.filter(isObjectId);
+		const publicIds = uniqueIds.filter((id) => !isObjectId(id));
+		const users = await User.find({
+			isDeleted: { $ne: true },
+			$or: [
+				...(mongoIds.length ? [{ _id: { $in: mongoIds } }] : []),
+				...(publicIds.length ? [{ publicId: { $in: publicIds } }] : []),
+			],
+		});
+
+		const userByLookup = new Map();
+		for (const user of users) {
+			userByLookup.set(String(user._id), user);
+			if (user.publicId) userByLookup.set(String(user.publicId), user);
+		}
+
+		for (const userId of uniqueIds) {
+			const user = userByLookup.get(userId);
+			if (!user) {
+				results.errors.push({ userId, error: 'User not found' });
+				continue;
+			}
+
+			try {
+				const player = await this.joinTournament(user.publicId || String(user._id), tournament.publicId || String(tournament._id));
+				results.added.push({ userId: user.publicId || String(user._id), player });
+			} catch (err) {
+				const message = err.message || 'Unknown error';
+				if (/already joined|already in tournament/i.test(message)) {
+					results.skipped.push({ userId: user.publicId || String(user._id), reason: 'User already in tournament' });
+				} else if (/full/i.test(message)) {
+					results.skipped.push({ userId: user.publicId || String(user._id), reason: 'Tournament is full' });
+				} else {
+					results.errors.push({ userId: user.publicId || String(user._id), error: message });
+				}
+			}
+		}
+
+		await logEvent(tournament._id, 'intervention.manual', {
+			message: 'Bulk player add completed.',
+			payload: {
+				requested: uniqueIds.length,
+				added: results.added.length,
+				skipped: results.skipped.length,
+				errors: results.errors.length,
+			},
+			actor,
+		});
+
+		return results;
+	}
+
+	async getTournamentLogs(tournamentId, filters = {}) {
+		const tournament = await findByIdOrPublicId(Tournament, tournamentId);
+		if (!tournament) throw makeError('Tournament not found', 404);
+
+		const query = { tournamentId: tournament._id };
+		if (filters.eventType) {
+			const eventTypes = Array.isArray(filters.eventType)
+				? filters.eventType
+				: String(filters.eventType).split(',').map((type) => type.trim()).filter(Boolean);
+			if (eventTypes.length) query.eventType = { $in: eventTypes };
+		}
+		if (filters.roundNumber !== undefined && filters.roundNumber !== '') {
+			const roundNumber = Number(filters.roundNumber);
+			if (Number.isInteger(roundNumber) && roundNumber > 0) query.roundNumber = roundNumber;
+		}
+		if (filters.before) {
+			const before = new Date(filters.before);
+			if (!Number.isNaN(before.getTime())) query.createdAt = { $lt: before };
+		}
+
+		const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 250);
+		const logs = await TournamentLog.find(query)
+			.sort({ createdAt: -1 })
+			.limit(limit)
+			.lean();
+
+		return logs.map((log) => ({
+			id: String(log._id),
+			eventType: log.eventType,
+			message: log.message,
+			payload: log.payload,
+			actor: log.actor,
+			roundNumber: log.roundNumber ?? null,
+			createdAt: log.createdAt,
+		}));
+	}
+
 	/**
 	 * Bulk add players to a tournament from CSV data.
 	 * Creates temp players if no user account found, or links to existing user if identifier matches.
@@ -766,7 +963,10 @@ class TournamentService {
 			throw makeError('Tournament not found', 404);
 		}
 
-		// Check tournament capacity
+		if (['finishing', 'completed'].includes(tournament.tournStatus)) {
+			throw makeError('Tournament already completed or finishing');
+		}
+
 		const isActiveTournament = tournament.tournStatus === 'in progress';
 
 		// Collect all identifiers to pre-fetch matching users
@@ -778,11 +978,12 @@ class TournamentService {
 		let userByUsername = new Map();
 		let userByEmail = new Map();
 		if (identifiersToLookup.length > 0) {
+			const identifierPatterns = identifiersToLookup.map(exactCaseInsensitive);
 			const matchingUsers = await User.find({
 				isDeleted: { $ne: true },
 				$or: [
-					{ username: { $in: identifiersToLookup.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i')) } },
-					{ email: { $in: identifiersToLookup.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i')) } },
+					{ username: { $in: identifierPatterns } },
+					{ email: { $in: identifierPatterns } },
 				],
 			});
 			for (const user of matchingUsers) {
@@ -841,7 +1042,8 @@ class TournamentService {
 					// Add linked player via existing joinTournament method
 					const player = await this.joinTournament(
 						linkedUser.publicId || linkedUser._id.toString(),
-						tournamentId
+						tournamentId,
+						{ seedRatingOverride: rating }
 					);
 					results.added.push({ row: rowNum, name, player, linked: true });
 					existingUserIds.add(linkedUser._id.toString());
@@ -857,46 +1059,24 @@ class TournamentService {
 						continue;
 					}
 
+					await assertTournamentHasCapacity(tournament);
+
 					const now = new Date();
-					const player = new Player({
-						user: null,
+					const player = new Player(buildInitialPlayerData({
+						tournamentId: tournament._id,
 						tempName: name,
-						tournament: tournament._id,
-						isPlaying: false,
-						waitingSince: isActiveTournament ? now : null,
-						liveRating: rating,
-						entryRating: rating,
-						score: 0,
-						gamesPlayed: 0,
-						wins: 0,
-						draws: 0,
-						losses: 0,
-						sumOpponentRatings: 0,
-						status: 'active',
-						enteredAt: now,
-					});
+						seedRating: rating,
+						isActiveTournament,
+						now,
+					}));
 					await player.save();
 
-					tournament.participants = Array.isArray(tournament.participants)
-						? [...tournament.participants, player._id]
-						: [player._id];
-					await tournament.save();
+					await Tournament.updateOne(
+						{ _id: tournament._id },
+						{ $addToSet: { participants: player._id } }
+					);
 
-					if (isActiveTournament) {
-						await enqueue(String(tournament._id), {
-							_id: String(player._id),
-							user: null,
-							tempName: name,
-							score: 0,
-							liveRating: rating,
-							entryRating: rating,
-							recentOpponents: [],
-							colorHistory: [],
-							status: player.status,
-							waitingSince: player.waitingSince,
-							enqueuedAt: Date.now(),
-						});
-					}
+					await markRegisteredPlayerWaiting(player);
 
 					await ensureDocumentPublicId(player, Player);
 					results.added.push({

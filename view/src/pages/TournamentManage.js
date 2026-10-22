@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { tournamentAPI, userAPI, gameAPI } from '../services/api';
-import { statusBadge, formatDate, getDisplayName } from '../utils/tournamentDisplay';
+import { statusBadge, formatDate } from '../utils/tournamentDisplay';
 import CSVImport from '../components/CSVImport';
+import TournamentCountdown from '../components/TournamentCountdown';
+import TournamentLogs from '../components/TournamentLogs';
+import UserMultiSelect from '../components/UserMultiSelect';
 import './TournamentList.css';
 import './TournamentManage.css';
 
@@ -24,8 +27,9 @@ const TournamentManage = () => {
 	const [usersError, setUsersError] = useState('');
 	const [actionLoading, setActionLoading] = useState(false);
 	const [actionError, setActionError] = useState('');
-	const [addSelection, setAddSelection] = useState('');
 	const [showCSVImport, setShowCSVImport] = useState(false);
+	const [settleSeconds, setSettleSeconds] = useState('');
+	const [logsRevision, setLogsRevision] = useState(0);
 
 	const tournamentId = id;
 
@@ -40,9 +44,9 @@ const TournamentManage = () => {
 		}
 	}, []);
 
-	const loadTournamentData = useCallback(async () => {
+	const loadTournamentData = useCallback(async ({ background = false } = {}) => {
 		if (!tournamentId) return;
-		setError('');
+		if (!background) setError('');
 		try {
 			const [detailRes, playersRes, gamesRes] = await Promise.all([
 				tournamentAPI.getTournament(tournamentId),
@@ -53,7 +57,8 @@ const TournamentManage = () => {
 			setPlayers(Array.isArray(playersRes.data) ? playersRes.data : []);
 			setGames(Array.isArray(gamesRes.data) ? gamesRes.data : []);
 		} catch (err) {
-			setError(err.message || 'Failed to load tournament data');
+			if (!background) setError(err.message || 'Failed to load tournament data');
+			else console.error('Tournament refresh failed:', err);
 		}
 	}, [tournamentId]);
 
@@ -62,18 +67,34 @@ const TournamentManage = () => {
 		Promise.all([loadTournamentData(), fetchUsers()]).finally(() => setLoading(false));
 	}, [loadTournamentData, fetchUsers]);
 
-	const handleAddSelectionChange = useCallback((event) => {
-		setAddSelection(event.target.value);
-	}, []);
+	const savedSettleMs = detail?.settleMs;
+	useEffect(() => {
+		setSettleSeconds(savedSettleMs === null || savedSettleMs === undefined ? '' : String(Math.round(savedSettleMs / 1000)));
+	}, [savedSettleMs]);
+
+	useEffect(() => {
+		if (!['upcoming', 'in progress', 'finishing'].includes(detail?.tournStatus)) return;
+		let cancelled = false;
+		let timer;
+		const poll = async () => {
+			await loadTournamentData({ background: true });
+			if (!cancelled) timer = setTimeout(poll, 2000);
+		};
+		timer = setTimeout(poll, 2000);
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [detail?.tournStatus, loadTournamentData]);
 
 	const withRefresh = useCallback(
-		async (fn) => {
+		async (fn, { rethrow = false } = {}) => {
 			setActionLoading(true);
 			setActionError('');
 			try {
-				await fn();
+				const result = await fn();
 				await loadTournamentData();
+				setLogsRevision((previous) => previous + 1);
+				return result;
 			} catch (err) {
+				if (rethrow) throw err;
 				setActionError(err.message || 'Action failed');
 			} finally {
 				setActionLoading(false);
@@ -82,14 +103,22 @@ const TournamentManage = () => {
 		[loadTournamentData]
 	);
 
-	const handleAddPlayer = useCallback(
-		() =>
+	const handleBulkAddPlayers = useCallback(
+		(userIds) =>
 			withRefresh(async () => {
-				if (!addSelection) return;
-				await tournamentAPI.adminAddPlayer(tournamentId, addSelection);
-				setAddSelection('');
-			}),
-		[withRefresh, addSelection, tournamentId]
+				if (!userIds.length) return;
+				const { data } = await tournamentAPI.bulkAddPlayers(tournamentId, userIds);
+				return data;
+			}, { rethrow: true }),
+		[withRefresh, tournamentId]
+	);
+
+	const handleUpdatePairingSettings = useCallback(
+		() => withRefresh(async () => {
+			const settleMs = settleSeconds === '' ? null : Number(settleSeconds) * 1000;
+			await tournamentAPI.updateTournament(tournamentId, { settleMs });
+		}),
+		[settleSeconds, tournamentId, withRefresh]
 	);
 
 	const handlePausePlayer = useCallback(
@@ -124,6 +153,16 @@ const TournamentManage = () => {
 			withRefresh(async () => {
 				await gameAPI.submitGameResult(gameId, result);
 			}),
+		[withRefresh]
+	);
+
+	const handleCancelGame = useCallback(
+		(gameId) => {
+			if (!window.confirm('Cancel this game? It will not be scored, both players go back to waiting, and this cannot be undone.')) return;
+			return withRefresh(async () => {
+				await gameAPI.cancelGame(gameId, 'manual');
+			});
+		},
 		[withRefresh]
 	);
 
@@ -209,6 +248,12 @@ const TournamentManage = () => {
 						<p className="tournament-manage__meta">
 							Starts {formatDate(detail.startDate)} · Ends {formatDate(detail.endDate)}
 						</p>
+						<TournamentCountdown
+							status={detail.tournStatus}
+							endDate={detail.endDate}
+							scheduledStartDate={detail.scheduledStartDate}
+							durationMs={detail.durationMs}
+						/>
 					</div>
 					<div className="tournament-manage__hero-actions">
 						<Link to={`/tournament/${tournamentId}`} className="btn btn-outline-primary tournament-manage__hero-btn">
@@ -259,30 +304,13 @@ const TournamentManage = () => {
 							<h6 className="text-uppercase text-muted tournament-manage__section-title">Player Controls</h6>
 
 						<div className="tournament-manage__controls">
-							<label className="form-label small">Add player</label>
-								<div className="tournament-manage__add-control">
-									<select
-										className="form-select form-select-sm"
-										value={addSelection}
-										onChange={handleAddSelectionChange}
-									>
-										<option value="">Select user</option>
-										{users
-											.filter((user) => !players.some((p) => p.userId === user.id && p.status !== 'withdrawn'))
-											.map((user) => (
-												<option key={user.id} value={user.id}>
-													{getDisplayName(user)}
-												</option>
-											))}
-									</select>
-									<button
-									onClick={handleAddPlayer}
-									className="btn btn-sm btn-primary"
-									disabled={!addSelection || actionLoading}
-								>
-									Add
-								</button>
-							</div>
+							<label className="form-label small">Add players</label>
+							<UserMultiSelect
+								users={users}
+								registeredUserIds={players.map((p) => p.userId).filter(Boolean)}
+								onAdd={handleBulkAddPlayers}
+								disabled={actionLoading}
+							/>
 							<div className="mt-3">
 								<button
 									type="button"
@@ -308,6 +336,25 @@ const TournamentManage = () => {
 				</div>{/* /.row */}
 
 				<hr className="tournament-manage__divider" />
+
+				<div className="manage-section mt-3 tournament-manage__panel">
+					<h6 className="text-uppercase text-muted tournament-manage__section-title">Pairing Settings</h6>
+					<div className="tournament-manage__settings-row">
+						<label className="form-label small" htmlFor="settleSeconds">Pairing settle window (seconds)</label>
+						<input
+							id="settleSeconds"
+							type="number"
+							min="0"
+							className="form-control form-control-sm"
+							value={settleSeconds}
+							placeholder="env default"
+							onChange={(event) => setSettleSeconds(event.target.value)}
+						/>
+						<button className="btn btn-sm btn-primary" type="button" onClick={handleUpdatePairingSettings} disabled={actionLoading}>
+							Save
+						</button>
+					</div>
+				</div>
 
 				<h6 className="text-uppercase text-muted tournament-manage__section-title">Tournament Actions</h6>
 				<div className="tournament-manage__actions d-flex flex-wrap gap-2 mb-4">
@@ -412,6 +459,7 @@ const TournamentManage = () => {
 										<tr>
 											<th>White</th>
 											<th>Black</th>
+											<th>Board</th>
 											<th className="text-end">Result</th>
 										</tr>
 									</thead>
@@ -420,6 +468,7 @@ const TournamentManage = () => {
 											<tr key={game.id}>
 												<td>{game.playerWhite?.name || game.playerWhite?.username || 'Unknown'}</td>
 												<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
+												<td>{game.boardNumber ? `#${game.boardNumber}` : '—'}</td>
 												<td className="text-end">
 													<div className="btn-group btn-group-sm tournament-manage__result-group" role="group">
 														<button
@@ -443,6 +492,13 @@ const TournamentManage = () => {
 														>
 															Draw
 														</button>
+														<button
+															className="btn btn-outline-danger"
+															onClick={() => handleCancelGame(game.id)}
+															disabled={actionLoading}
+														>
+															Cancel
+														</button>
 													</div>
 												</td>
 											</tr>
@@ -451,6 +507,11 @@ const TournamentManage = () => {
 								</table>
 							</div>
 						)}
+				</div>
+
+				<div className="manage-section mt-3 tournament-manage__panel">
+					<h6 className="text-uppercase text-muted tournament-manage__section-title">Logs</h6>
+					<TournamentLogs tournamentId={tournamentId} refreshKey={logsRevision} />
 				</div>
 			</div>{/* /.container */}
 		</div> // .tournament-manage
