@@ -6,7 +6,6 @@ const User = require('../src/models/User');
 const Tournament = require('../src/models/Tournament');
 const Player = require('../src/models/Player');
 const Game = require('../src/models/Game');
-const redisQueue = require('../src/services/queue/redisQueue');
 
 beforeAll(async () => await connect());
 afterEach(async () => {
@@ -380,7 +379,6 @@ describe('pausePlayer', () => {
 
 	test('cancels an active game and rolls back the synthetic pairing history', async () => {
 		const fixture = await setupActiveGameFixture();
-		redisQueue.enqueue.mockClear();
 
 		const paused = await tournamentService.pausePlayer(fixture.whiteUser.id, fixture.tournament.id);
 
@@ -403,7 +401,10 @@ describe('pausePlayer', () => {
 		expect(updatedWhite.recentOpponents.map(String)).toEqual([String(fixture.oldWhiteOpponent)]);
 		expect(updatedBlack.recentOpponents.map(String)).toEqual([String(fixture.oldBlackOpponent)]);
 
-		expect(redisQueue.enqueue).toHaveBeenCalledTimes(1);
+		// Only the opponent returns to the waiting pool.
+		expect(updatedWhite.waitingSince).toBeNull();
+		expect(updatedBlack.status).toBe('active');
+		expect(updatedBlack.waitingSince).toBeInstanceOf(Date);
 	});
 
 	test('rejects pausing withdrawn player', async () => {

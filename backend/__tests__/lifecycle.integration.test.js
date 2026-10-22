@@ -132,12 +132,10 @@ test.each(['pausePlayer', 'leaveTournament'])('%s cancels a pairing committed af
 	} finally { spy.mockRestore(); }
 });
 
-test.each(['user', 'csv'])('%s registration across automatic start is queued', async (kind) => {
+test.each(['user', 'csv'])('%s registration across automatic start waits for pairing', async (kind) => {
 	const tournament = await Tournament.create({ name: 'Kickoff', durationMs: 60000 });
 	const user = await require('../src/models/User').create({ username: 'late', email: 'late@example.com' });
 	const save = Player.prototype.save;
-	const queue = require('../src/services/queue/redisQueue');
-	queue.enqueue.mockClear();
 	const spy = jest.spyOn(Player.prototype, 'save').mockImplementationOnce(async function (...args) {
 		await tournamentService.startTournament(tournament._id);
 		return save.apply(this, args);
@@ -145,7 +143,8 @@ test.each(['user', 'csv'])('%s registration across automatic start is queued', a
 	try {
 		if (kind === 'user') await tournamentService.joinTournament(user._id, tournament._id);
 		else expect((await tournamentService.bulkAddPlayersFromCSV(tournament._id, [{ name: 'Guest', rating: 1400 }])).errors).toEqual([]);
-		expect(queue.enqueue).toHaveBeenCalledWith(String(tournament._id), expect.objectContaining({ status: 'active', waitingSince: expect.any(Date) }));
+		const registered = await Player.findOne({ tournament: tournament._id });
+		expect(registered).toMatchObject({ status: 'active', isPlaying: false, waitingSince: expect.any(Date) });
 	} finally { spy.mockRestore(); }
 });
 
@@ -243,7 +242,7 @@ test.each(['result', 'cancel'])('%s remains successful when completion must be r
 
 test('start succeeds after committing its transition even if pairing startup needs a retry', async () => {
 	const tournament = await Tournament.create({ name: 'Retry pairing', durationMs: 60000 });
-	const spy = require('../src/services/pairingService').startPairingLoop.mockRejectedValueOnce(new Error('Redis unavailable'));
+	const spy = require('../src/services/pairingService').startPairingLoop.mockRejectedValueOnce(new Error('Pairing unavailable'));
 	const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 	try {
 		expect(await tournamentService.startTournament(tournament._id)).toMatchObject({ tournStatus: 'in progress' });
@@ -251,21 +250,10 @@ test('start succeeds after committing its transition even if pairing startup nee
 	} finally { spy.mockReset(); error.mockRestore(); }
 });
 
-test('cancellation requeues players even while their consumed pairing snapshots await acknowledgement', async () => {
+test('cancellation returns both players to the waiting pool', async () => {
 	const { game, players } = await playingTournament();
-	const queue = require('../src/services/queue/redisQueue');
-	const pending = new Set(players.map((player) => String(player._id)));
-	const queued = new Set();
-	const enqueue = queue.enqueue.getMockImplementation();
-	const remove = queue.removePlayerEverywhere.getMockImplementation();
-	queue.enqueue.mockImplementation(async (_, snapshot) => { if (!pending.has(snapshot._id)) queued.add(snapshot._id); });
-	queue.removePlayerEverywhere.mockImplementation(async (_, id) => { pending.delete(String(id)); });
-	try {
-		await gameService.cancelGame(game._id);
-		expect(queued).toEqual(new Set(players.map((player) => String(player._id))));
-		expect(pending.size).toBe(0);
-	} finally {
-		queue.enqueue.mockImplementation(enqueue);
-		queue.removePlayerEverywhere.mockImplementation(remove);
-	}
+	await gameService.cancelGame(game._id);
+	const waiting = await Player.find({ _id: { $in: players.map((player) => player._id) }, status: 'active', isPlaying: false });
+	expect(waiting).toHaveLength(2);
+	for (const player of waiting) expect(player.waitingSince).toBeInstanceOf(Date);
 });

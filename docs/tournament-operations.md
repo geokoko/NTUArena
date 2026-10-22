@@ -65,8 +65,6 @@ The most important toggles are in `.env`.
 | `AUTH_ENABLED` | `false` | `true` | `false` makes every request act as a mock admin. Useful locally, unsafe publicly. |
 | `CORS_ORIGIN` | `*` | your app origin | Example: `https://arena.example.com`. |
 | `JWT_SECRET` | dummy value | strong random secret | Generate with `openssl rand -base64 64`. |
-| `REDIS_PASSWORD` | dummy value | strong password | Must match `REDIS_URL`. |
-| `REDIS_URL` | compose default | password-protected Redis URL | Required for pairing queues. |
 | `MONGO_URI` | compose default | production Mongo URI | Mongo must support transactions; the compose setup uses a single-node replica set. |
 | `PAIRING_SETTLE_MS` | `30000` | tune per event | Main Arena pairing behavior toggle. See below. |
 
@@ -98,13 +96,16 @@ Soft scoring preferences:
 
 `PAIRING_SETTLE_MS` is the quiet window before the worker pairs the waiting pool.
 
+The waiting pool is read from MongoDB on every worker cycle: every player who is
+`active` and not playing is waiting, and `waitingSince` records when they became
+available (registration during the event, result, cancellation, or resume).
+
 Example with `PAIRING_SETTLE_MS=30000`:
 
-1. A game result is submitted.
-2. Finished players are re-enqueued after the result handling delay.
-3. The worker waits until 30 seconds have passed since the newest queued player.
-4. If another player enters the queue during that time, the quiet window moves forward.
-5. When the queue has been quiet for 30 seconds, graph matching runs on the available pool.
+1. A game result is submitted; both finished players start waiting.
+2. The worker waits until 30 seconds have passed since the newest `waitingSince` in the pool.
+3. If another player becomes available during that time, the quiet window moves forward.
+4. When no player has become available for 30 seconds, graph matching runs on the waiting pool.
 
 The initial tournament pool is treated as already settled, so starting the tournament does not wait 30 seconds before first pairings.
 
@@ -129,9 +130,8 @@ These are code defaults, not environment toggles today:
 
 | Parameter | Current value | Meaning |
 |---|---:|---|
-| `batchSize` | `80` | Max queued player snapshots the worker considers in one cycle. |
+| `batchSize` | `80` | Max waiting players (longest-waiting first) the worker considers in one cycle. |
 | `idleMs` | `400` | Sleep time when no pairing work is available. |
-| `REQUEUE_DELAY_MS` | `5000` | Delay after result submission before players return to the queue. |
 
 ## 4. Running A Tournament
 
@@ -142,10 +142,10 @@ A typical OTB Arena flow:
 3. Create the tournament as Arena format.
 4. Register players manually or import them by CSV.
 5. Confirm pairings settings, especially `PAIRING_SETTLE_MS`.
-6. Start the tournament from the admin UI. This seeds the Redis pairing queue and starts a tournament worker.
+6. Start the tournament from the admin UI. This marks registered players as waiting and starts a tournament worker.
 7. Pairings are created automatically as players become available.
 8. Enter game results as games finish. Players can finish asynchronously; they do not need to finish in rounds.
-9. Pause/withdraw players who leave early so they are removed from the pairing queue and any active game is handled.
+9. Pause/withdraw players who leave early so they leave the waiting pool and any active game is handled.
 10. Monitor standings, live games, and backend logs for pairing warnings.
 11. Stop/complete the tournament from the admin UI when the event is over.
 
@@ -165,7 +165,7 @@ With active games the status becomes `finishing`; results and cancellations
 remain available. The last active game's result or cancellation completes the
 tournament. New registrations and deletion are rejected while it is finishing.
 Pausing or withdrawing a player cancels their active game without scoring it,
-rolls back its pairing history, and returns the eligible opponent to the queue.
+rolls back its pairing history, and returns the eligible opponent to the waiting pool.
 
 ### Backend recovery
 
@@ -204,9 +204,8 @@ migration. No database migration runs automatically on backend startup.
 
 Operational notes:
 
-- Redis must be healthy before pairing can work.
 - MongoDB transactions require the replica-set setup; use the provided compose config unless you know your external Mongo supports transactions.
-- If the backend logs `no legal pairings available in current pool`, the worker requeues leftovers and waits for future players/results.
+- If the backend logs `no legal pairings available in current pool`, the leftovers stay in the waiting pool and the worker waits for future players/results.
 - For a public deployment, do not leave `AUTH_ENABLED=false`, `CORS_ORIGIN=*`, or dummy secrets.
 
 ## 5. Testing And Validation
@@ -216,8 +215,7 @@ The backend test command enables Node's VM modules so Jest can execute the
 MongoDB driver's dynamic OS import. Without this, driver 7.6 can produce an
 empty handshake and fail replica-set startup with a misleading missing-driver
 metadata error ([upstream issue](https://jira.mongodb.org/browse/NODE-7832)).
-The dependency update includes ioredis 6, configured with `protocol: 2` to keep
-the existing Redis wire protocol. The frontend chessboard uses the v5 `options`
+The frontend chessboard uses the v5 `options`
 API. Both manifests and lockfiles include the grouped dependency and security
 updates; a fresh `npm ci` is required to replace older installed packages.
 
