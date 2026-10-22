@@ -45,8 +45,8 @@ const createTournament = async (token, overrides = {}) => {
 		.set('Authorization', `Bearer ${token}`)
 		.send({
 			name: 'Test Tournament',
-			startDate: tomorrow(),
-			endDate: dayAfter(),
+			scheduledStartDate: tomorrow(),
+			durationMs: 24 * 60 * 60 * 1000,
 			...overrides,
 		});
 	return res;

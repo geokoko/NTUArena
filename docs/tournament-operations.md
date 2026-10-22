@@ -65,8 +65,6 @@ The most important toggles are in `.env`.
 | `AUTH_ENABLED` | `false` | `true` | `false` makes every request act as a mock admin. Useful locally, unsafe publicly. |
 | `CORS_ORIGIN` | `*` | your app origin | Example: `https://arena.example.com`. |
 | `JWT_SECRET` | dummy value | strong random secret | Generate with `openssl rand -base64 64`. |
-| `REDIS_PASSWORD` | dummy value | strong password | Must match `REDIS_URL`. |
-| `REDIS_URL` | compose default | password-protected Redis URL | Required for pairing queues. |
 | `MONGO_URI` | compose default | production Mongo URI | Mongo must support transactions; the compose setup uses a single-node replica set. |
 | `PAIRING_SETTLE_MS` | `30000` | tune per event | Main Arena pairing behavior toggle. See below. |
 
@@ -98,15 +96,23 @@ Soft scoring preferences:
 
 `PAIRING_SETTLE_MS` is the quiet window before the worker pairs the waiting pool.
 
+The waiting pool is read from MongoDB on every worker cycle: every player who is
+`active` and not playing is waiting, and `waitingSince` records when they became
+available (registration during the event, result, cancellation, or resume).
+
 Example with `PAIRING_SETTLE_MS=30000`:
 
-1. A game result is submitted.
-2. Finished players are re-enqueued after the result handling delay.
-3. The worker waits until 30 seconds have passed since the newest queued player.
-4. If another player enters the queue during that time, the quiet window moves forward.
-5. When the queue has been quiet for 30 seconds, graph matching runs on the available pool.
+1. A game result is submitted; both finished players start waiting.
+2. The worker waits until 30 seconds have passed since the newest `waitingSince` in the pool.
+3. If another player becomes available during that time, the quiet window moves forward.
+4. When no player has become available for 30 seconds, graph matching runs on the waiting pool.
 
 The initial tournament pool is treated as already settled, so starting the tournament does not wait 30 seconds before first pairings.
+
+Admins can override the quiet window for a tournament in **Pairing Settings**.
+The value is `settleMs` in the API: `null` uses `PAIRING_SETTLE_MS`, `0` disables
+the wait, and integers through `600000` are accepted. Changing it takes effect
+on the next worker cycle.
 
 Tradeoff:
 
@@ -124,9 +130,8 @@ These are code defaults, not environment toggles today:
 
 | Parameter | Current value | Meaning |
 |---|---:|---|
-| `batchSize` | `80` | Max queued player snapshots the worker considers in one cycle. |
+| `batchSize` | `80` | Max waiting players (longest-waiting first) the worker considers in one cycle. |
 | `idleMs` | `400` | Sleep time when no pairing work is available. |
-| `REQUEUE_DELAY_MS` | `5000` | Delay after result submission before players return to the queue. |
 
 ## 4. Running A Tournament
 
@@ -137,21 +142,88 @@ A typical OTB Arena flow:
 3. Create the tournament as Arena format.
 4. Register players manually or import them by CSV.
 5. Confirm pairings settings, especially `PAIRING_SETTLE_MS`.
-6. Start the tournament from the admin UI. This seeds the Redis pairing queue and starts a tournament worker.
+6. Start the tournament from the admin UI. This marks registered players as waiting and starts a tournament worker.
 7. Pairings are created automatically as players become available.
 8. Enter game results as games finish. Players can finish asynchronously; they do not need to finish in rounds.
-9. Pause/withdraw players who leave early so they are removed from the pairing queue and any active game is handled.
+9. Pause/withdraw players who leave early so they leave the waiting pool and any active game is handled.
 10. Monitor standings, live games, and backend logs for pairing warnings.
 11. Stop/complete the tournament from the admin UI when the event is over.
 
+### Start, close pairing, and finish
+
+Create tournaments with a positive integer `durationMs` and an optional future
+`scheduledStartDate`. Leaving the scheduled start empty requires a manual start.
+`startDate` and `endDate` are derived; clients must not send `endDate`.
+The schedule and duration can only change while the tournament is `upcoming`.
+
+An automatic start keeps the scheduled end (`scheduledStartDate + durationMs`).
+A manual start gets the full duration from the time the admin starts it.
+`actualStartDate` records when the backend actually performed the transition.
+
+At the end time, or when an admin selects **End Tournament**, pairing closes.
+With active games the status becomes `finishing`; results and cancellations
+remain available. The last active game's result or cancellation completes the
+tournament. New registrations and deletion are rejected while it is finishing.
+Pausing or withdrawing a player cancels their active game without scoring it,
+rolls back its pairing history, and returns the eligible opponent to the waiting pool.
+
+### Backend recovery
+
+On startup the backend rebuilds schedules, resumes pairing for active events,
+ends events whose deadlines have passed, and completes finishing events with
+no remaining games. A completely missed scheduled window is closed without
+creating pairings. Transient recovery failures are logged and retried after
+five seconds. Long schedules are rearmed in chunks to respect Node's timeout
+limit. Run a single backend instance: timer and worker ownership remain local
+to that process.
+
+### Existing tournaments from before lifecycle controls
+
+Before starting the updated backend against an existing database, back it up
+and preview the migration from `backend/`:
+
+```bash
+node scripts/migrateTournamentLifecycle.js
+# After reviewing the printed IDs and fields:
+node scripts/migrateTournamentLifecycle.js --apply
+```
+
+Set `MONGO_URI` and `MONGO_DB` for the intended database. The default is a dry
+run. The migration fills tournaments missing `durationMs`, derives it from
+their existing dates, and preserves existing lifecycle dates. For legacy active
+or completed events, their old start date supplies the historical actual start.
+It also copies legacy player `liveRating` values into missing or null
+`performanceRating` fields for players with completed games, including completed
+events and tournaments whose dates were already migrated. Existing performance
+ratings are preserved, and players with no games keep a null performance rating
+rather than copying their initial entry-rating seed. Legacy `liveRating` fields
+remain available for recovery. Invalid legacy windows or nonnumeric legacy
+performance values stop both plans before writes. Repeating the command skips
+already migrated documents; restoring the backup is the rollback for this data
+migration. No database migration runs automatically on backend startup.
+
 Operational notes:
 
-- Redis must be healthy before pairing can work.
 - MongoDB transactions require the replica-set setup; use the provided compose config unless you know your external Mongo supports transactions.
-- If the backend logs `no legal pairings available in current pool`, the worker requeues leftovers and waits for future players/results.
+- If the backend logs `no legal pairings available in current pool`, the leftovers stay in the waiting pool and the worker waits for future players/results.
 - For a public deployment, do not leave `AUTH_ENABLED=false`, `CORS_ORIGIN=*`, or dummy secrets.
 
 ## 5. Testing And Validation
+
+Use Node.js 22 for local installs, matching the Docker images and frontend CI.
+The backend test command enables Node's VM modules so Jest can execute the
+MongoDB driver's dynamic OS import. Without this, driver 7.6 can produce an
+empty handshake and fail replica-set startup with a misleading missing-driver
+metadata error ([upstream issue](https://jira.mongodb.org/browse/NODE-7832)).
+The frontend chessboard uses the v5 `options`
+API. Both manifests and lockfiles include the grouped dependency and security
+updates; a fresh `npm ci` is required to replace older installed packages.
+
+Lifecycle unit tests cover timers, restart recovery and state transitions.
+`lifecycle.integration.test.js` exercises game creation, closure races, final
+results, and pause/cancel rollback against a temporary MongoDB replica set.
+The integration tests require permission to bind local sockets. Frontend CI
+also installs dependencies, runs component tests, and builds the production app.
 
 Run backend checks from `backend/`:
 

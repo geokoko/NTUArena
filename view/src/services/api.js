@@ -74,6 +74,7 @@ export const tournamentAPI = {
 	getTournamentPlayers:  (id)  => api.get(`/api/tournaments/${id}/players`),
 	getTournamentGames:    (id)  => api.get(`/api/tournaments/${id}/games`),  
 	getTournamentStandings:(id)  => api.get(`/api/tournaments/${id}/standings`),
+	getLogs:               (id, params = {}) => api.get(`/api/admin/tournaments/${id}/logs`, { params }),
 
 	// CRUD / lifecycle
 	createTournament: (data)     => api.post('/api/admin/tournaments/create', data),
@@ -88,6 +89,7 @@ export const tournamentAPI = {
 
 	// Admin membership management
 	adminAddPlayer:    (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/add`,    { userId }),
+	bulkAddPlayers:    (id, userIds) => api.post(`/api/admin/tournaments/${id}/participants/bulk-add`, { userIds }),
 	adminRemovePlayer: (id, userId) => api.delete(`/api/admin/tournaments/${id}/participants/remove`, { data: { userId } }),
 	pausePlayer:       (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/pause`,   { userId }),
 	resumePlayer:      (id, userId) => api.post(`/api/admin/tournaments/${id}/participants/resume`,  { userId }),
@@ -98,6 +100,7 @@ export const tournamentAPI = {
 export const gameAPI = {
 	getGame:           (id)     => api.get(`/api/games/${id}`),
 	submitGameResult:  (id, result) => api.post(`/api/games/${id}/result`, { result }),
+	cancelGame:        (id, reason = 'manual') => api.post(`/api/games/${id}/cancel`, { reason }),
 };
 
 export default api;

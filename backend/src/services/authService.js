@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { findByIdOrPublicId, ensureDocumentPublicId } = require('../utils/identifiers');
+const { escapeRegex } = require('../utils/escapeRegex');
 
 if (!process.env.JWT_SECRET) {
 	console.error('FATAL: JWT_SECRET environment variable is not set. Exiting.');
@@ -10,11 +11,6 @@ if (!process.env.JWT_SECRET) {
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const BCRYPT_ROUNDS = 12;
-
-/** Escape special regex characters to prevent ReDoS / injection */
-function escapeRegex(str) {
-	return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});
 

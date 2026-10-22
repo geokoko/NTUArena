@@ -1,7 +1,6 @@
 require('dotenv').config();
 
 const mongoose = require('mongoose');
-const crypto = require('crypto');
 
 // Models
 const Tournament = require('../src/models/Tournament');
@@ -73,11 +72,8 @@ async function registerPlayers(tournamentId, users) {
 		user: u._id,
 		tournament: tournamentId,
 		score: 0,
-		liveRating: Number.isFinite(u.liveRating)
-			? u.liveRating
-			: Math.max(800, Math.round(1200 + (Math.random() - 0.5) * 600)),
-		entryRating: Number.isFinite(u.liveRating)
-			? u.liveRating
+		entryRating: Number.isFinite(u.globalElo)
+			? u.globalElo
 			: Math.max(800, Math.round(1200 + (Math.random() - 0.5) * 600)),
 		isPlaying: false,
 		waitingSince: now,
@@ -128,24 +124,24 @@ async function summarize(tournamentId) {
    LOGGING UTILITIES
    ======================= */
 
-let lastStandingsHash = '';
+let lastStandingsSnapshot = '';
 
 async function printStandingsIfChanged(tournamentId, topN = 10) {
 	const players = await Player.find({ tournament: tournamentId })
 		.populate('user', 'username')
-		.sort({ score: -1, liveRating: -1 })
+		.sort({ score: -1, performanceRating: -1 })
 		.limit(topN)
 		.lean();
 
-	const snapshot = players.map(p => [p.user?.username, p.score, p.liveRating]);
-	const hash = crypto.createHash('md5').update(JSON.stringify(snapshot)).digest('hex');
-	if (hash === lastStandingsHash) return;
-	lastStandingsHash = hash;
+	const snapshot = players.map(p => [p.user?.username, p.score, p.performanceRating]);
+	const serialized = JSON.stringify(snapshot);
+	if (serialized === lastStandingsSnapshot) return;
+	lastStandingsSnapshot = serialized;
 
 	const lines = players.map((p, i) =>
 		`${String(i+1).padStart(2,' ')}. ${(p.user?.username || '-').padEnd(16)} `
 			+ `${(p.score ?? 0).toFixed(1)} pts `
-			+ `(LR ${p.liveRating ?? ''})`
+			+ `(PR ${p.performanceRating ?? ''})`
 	);
 
 	console.log('[STANDINGS] Top ' + topN + '\n' + lines.join('\n'));
@@ -154,14 +150,14 @@ async function printStandingsIfChanged(tournamentId, topN = 10) {
 async function printFinalStandings(tournamentId, topN = 10) {
 	const players = await Player.find({ tournament: tournamentId })
 		.populate('user', 'username')
-		.sort({ score: -1, liveRating: -1 })
+		.sort({ score: -1, performanceRating: -1 })
 		.limit(topN)
 		.lean();
 
 	const lines = players.map((p, i) =>
 		`${String(i+1).padStart(2,' ')}. ${(p.user?.username || '-').padEnd(16)} `
 			+ `${(p.score ?? 0).toFixed(1)} pts `
-			+ `(LR ${p.liveRating ?? ''})`
+			+ `(PR ${p.performanceRating ?? ''})`
 	);
 
 	console.log('[FINAL STANDINGS] Top ' + topN + '\n' + lines.join('\n'));
@@ -258,8 +254,8 @@ async function simulate() {
 	const t = new Tournament({
 		name: process.env.SIM_TOURNAMENT_NAME || randomName(),
 		timeControl: process.env.SIM_TIME_CONTROL || '5+0',
-		startDate: start,
-		endDate: end,
+		scheduledStartDate: start,
+		durationMs: end - start,
 		tournStatus: 'upcoming',
 		participants: [],
 	});
@@ -282,7 +278,7 @@ async function simulate() {
 	await registerPlayers(TID, users);
 	console.log(`[SIM] Registered ${users.length} players.`);
 
-	// 3) Admin starts tournament (this seeds Redis queue & starts pairing worker)
+	// 3) Admin starts tournament (this marks players waiting & starts pairing worker)
 	await tournamentService.startTournament(TID);
 	console.log('[SIM] Tournament started. Pairing worker running...');
 

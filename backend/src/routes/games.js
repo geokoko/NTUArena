@@ -8,6 +8,6 @@ router.get('/games/:id', gameCtrl.getGame);
 
 // Admin submits the result of a game
 router.post('/games/:id/result', requireAuth, requireRole('admin'), gameCtrl.submitResult);
+router.post('/games/:id/cancel', requireAuth, requireRole('admin'), gameCtrl.cancelGame);
 
 module.exports = router;
-

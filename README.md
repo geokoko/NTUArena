@@ -33,7 +33,7 @@ Arena is the complete real-time tournament path today. Swiss is still a roadmap 
 ## Features
 
 - **Tournament Management** - Create, start, monitor, and complete OTB tournaments.
-- **Arena Pairing Worker** - Redis-backed real-time queue with graph matching for available players.
+- **Arena Pairing Worker** - Per-tournament worker that pairs the waiting players stored in MongoDB using graph matching.
 - **Graph-Based Pairing** - Maximum-weight matching over legal player-pair edges using Edmonds blossom matching.
 - **Pairing Controls** - Tune the Arena settle window with `PAIRING_SETTLE_MS` and validate choices with simulation/Pareto reports.
 - **Live Standings** - Real-time leaderboard updates during tournaments.
@@ -56,7 +56,6 @@ Arena is the complete real-time tournament path today. Swiss is still a roadmap 
 | **Frontend** | React, React Router |
 | **Backend** | Node.js, Express |
 | **Database** | MongoDB |
-| **Queue/Cache** | Redis |
 | **Reverse Proxy** | Nginx |
 | **Containerization** | Docker Compose |
 
@@ -73,12 +72,10 @@ Arena is the complete real-time tournament path today. Swiss is still a roadmap 
                                         │  (port 5000)│
                                         └──────┬──────┘
                                                │
-                                    ┌──────────┴─────────┐
-                                    │                    │
-                              ┌─────┴─────┐         ┌────┴────┐
-                              │  MongoDB  │         │  Redis  │
-                              │ (replica) │         │ (queue) │
-                              └───────────┘         └─────────┘
+                                         ┌─────┴─────┐
+                                         │  MongoDB  │
+                                         │ (replica) │
+                                         └───────────┘
 ```
 
 ## Quick Start
@@ -101,7 +98,7 @@ cd ArenaManager
 cp .env.example .env
 ```
 
-Edit `.env` before running a real tournament. At minimum, decide the app mode, auth mode, CORS origin, secrets, database/Redis credentials, and Arena pairing settle window.
+Edit `.env` before running a real tournament. At minimum, decide the app mode, auth mode, CORS origin, secrets, database credentials, and Arena pairing settle window.
 
 ### 3. Start the application
 
@@ -129,7 +126,6 @@ These are the variables most likely to affect deployment and tournament behavior
 | `CORS_ORIGIN` | Allowed browser origin | `*` locally, exact public origin in production |
 | `JWT_SECRET` | JWT signing secret | Generate a strong value for production |
 | `MONGO_URI` | Mongo connection string | Compose default or production Mongo URI |
-| `REDIS_URL` | Redis connection string | Required for pairing queue |
 | `PAIRING_SETTLE_MS` | Quiet window before Arena pairing | `10000`, `20000`, `30000`, `45000` |
 
 `PAIRING_SETTLE_MS` is the main pairing behavior toggle. Lower values create faster pairings with thinner waiting pools. Higher values create fuller pools for graph matching but can reduce games played and increase long waits. The default is `30000`.
@@ -148,10 +144,8 @@ Full details: [Pairing Configuration](docs/tournament-operations.md#3-pairing-co
 | `JWT_EXPIRES_IN` | Token expiration time | `7d` |
 | `MONGO_DB` | MongoDB database name | `ntuarena` |
 | `MONGO_URI` | MongoDB connection string | `mongodb://mongo:27017/ntuarena?replicaSet=rs0` |
-| `REDIS_PASSWORD` | Redis password | change in production |
-| `REDIS_URL` | Redis connection string | `redis://:password@redis:6379` |
 | `CORS_ORIGIN` | Allowed CORS origin | `*` |
-| `PAIRING_SETTLE_MS` | Arena pairing quiet window after newest queued player | `30000` |
+| `PAIRING_SETTLE_MS` | Arena pairing quiet window after newest waiting player | `30000` |
 
 ## Dev vs Prod Mode
 
@@ -243,7 +237,7 @@ Short version:
 3. Start with `docker compose up -d --build`.
 4. Create an Arena tournament from the admin UI.
 5. Register/import players.
-6. Start the tournament. This seeds Redis and starts the pairing worker.
+6. Start the tournament. This marks registered players as waiting and starts the pairing worker.
 7. Enter results as games finish; games can finish asynchronously.
 8. Pause or withdraw players who leave early.
 9. Monitor standings, live games, and backend logs.

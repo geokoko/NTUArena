@@ -1,78 +1,70 @@
 const { PairingWorker } = require('./pairing/pairingWorker');
 const { parsePairingSettleMs } = require('./pairing/pairingConfig');
-const { redis, enqueue } = require('./queue/redisQueue');
 const Player = require('../models/Player');
+const Tournament = require('../models/Tournament');
 
 class PairingService {
 	constructor() {
 		this.workers = new Map(); // tournamentId -> worker
+		this.starting = new Map();
 	}
 
-	async seedQueueOnStart(tournamentId, { enqueuedAt = Date.now() } = {}) {
-		// Put all non-playing players into the queue (and set waitingSince)
-		const now = new Date();
-		const players = await Player.find({
-			tournament: tournamentId,
-			isPlaying: false,
-			status: { $nin: ['paused', 'withdrawn'] },
-		})
-			.select('_id user score liveRating entryRating recentOpponents colorHistory waitingSince status');
-		await Player.updateMany(
-			{ tournament: tournamentId, isPlaying: false, status: { $nin: ['paused', 'withdrawn'] } },
-			{ $set: { waitingSince: now } }
+	async markWaitingPlayers(tournamentId, now = new Date()) {
+		// The worker reads its pool from MongoDB; recovery preserves the time
+		// already spent waiting and only stamps players that have none.
+		const { modifiedCount } = await Player.updateMany(
+			{ tournament: tournamentId, isPlaying: false, status: 'active', waitingSince: null },
+			{ $set: { waitingSince: now } },
 		);
-
-		for (const p of players) {
-			await enqueue(tournamentId, {
-				_id: String(p._id),
-				user: p.user,
-				score: p.score ?? 0,
-				liveRating: p.liveRating ?? p.entryRating ?? 0,
-				entryRating: p.entryRating ?? 0,
-				// store as strings for fast compare in scorer
-				recentOpponents: (p.recentOpponents ?? []).map(String),
-				colorHistory: p.colorHistory ?? [],
-				status: p.status,
-				waitingSince: p.waitingSince ?? now,
-				enqueuedAt,
-			});
-		}
-
-		console.log(`[pairing] Seeded queue with ${players.length} non-playing players for tournament ${tournamentId}.`);
+		console.log(`[pairing] Marked ${modifiedCount} non-playing players as waiting for tournament ${tournamentId}.`);
 	}
 
 	async startPairingLoop(tournamentId) {
-		if (this.workers.has(String(tournamentId))) return;
-		if (redis.status !== 'ready' && redis.status !== 'connect') {
-			console.log('[pairing] waiting for Redis...');
-			await new Promise(resolve => {
-				const onReady = () => { 
-					redis.off('ready', onReady); 
-					resolve(); 
-				};
-				redis.once('ready', onReady);
-				setTimeout(resolve, 3000); // fallback to proceed anyway
-			});
+		const key = String(tournamentId);
+		if (this.workers.has(key)) return;
+		if (this.starting.has(key)) return this.starting.get(key).promise;
+		const state = { cancelled: false };
+		this.starting.set(key, state);
+		state.promise = this.startWorker(key, state);
+		try {
+			await state.promise;
+		} finally {
+			if (this.starting.get(key) === state) this.starting.delete(key);
 		}
+	}
 
-		const settleMs = parsePairingSettleMs();
-		// seed queue with all non-playing players. The initial pool is already
-		// complete, so mark it as settled instead of delaying round 1.
-		await this.seedQueueOnStart(tournamentId, { enqueuedAt: Date.now() - settleMs });
+	async startWorker(tournamentId, state) {
+		const tournament = await Tournament.findById(tournamentId);
+		if (state.cancelled || !tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return;
+		if (tournament.endDate && tournament.endDate <= new Date()) return;
+		const startedAt = new Date();
+		await this.markWaitingPlayers(tournamentId, startedAt);
+		if (state.cancelled) return;
 
-		const worker = new PairingWorker({ workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400, settleMs });
-		this.workers.set(String(tournamentId), worker);
-		console.log(`[pairing] Started worker for tournament ${tournamentId} with settleMs=${settleMs}.`);
-		// begin worker
-		worker.start(tournamentId);
+		// Players waiting when the worker starts are treated as settled, so the
+		// first pairing round does not wait for the quiet window.
+		const worker = new PairingWorker({
+			workerId: `pair-${tournamentId}`, batchSize: 80, idleMs: 400,
+			settleMs: parsePairingSettleMs(), settledBefore: startedAt.getTime(),
+		});
+		this.workers.set(tournamentId, worker);
+		// The worker owns a long-running loop. Observe its failures
+		// and let scheduler recovery retry instead of losing the worker silently.
+		worker.start(tournamentId).then(() => {
+			if (this.workers.get(tournamentId) === worker) this.workers.delete(tournamentId);
+		}, (err) => {
+			if (this.workers.get(tournamentId) !== worker) return;
+			this.workers.delete(tournamentId);
+			console.error(`[pairing] worker failed for ${tournamentId}:`, err.message);
+			require('./tournamentScheduler').retryTournament(tournamentId);
+		});
 	}
 
 	stopPairingLoop(tournamentId) {
 		const key = String(tournamentId);
-		const worker = this.workers.get(key);
-		if (!worker) return;
-		// stop and delete worker
-		worker.stop();
+		const starting = this.starting.get(key);
+		if (starting) starting.cancelled = true;
+		this.workers.get(key)?.stop();
 		this.workers.delete(key);
 	}
 }

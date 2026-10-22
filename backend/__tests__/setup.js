@@ -4,7 +4,7 @@ process.env.CORS_ORIGIN = '*';
 process.env.NODE_ENV = 'test';
 
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
 let mongoServer;
 
@@ -12,15 +12,17 @@ let mongoServer;
  * Connect to an in-memory MongoDB instance for testing.
  */
 async function connect() {
-	mongoServer = await MongoMemoryServer.create();
+	mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
 	const uri = mongoServer.getUri();
-	await mongoose.connect(uri);
+	await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
 }
 
 /**
  * Drop all collections after each test.
  */
 async function clearDatabase() {
+	require('../src/services/tournamentScheduler').clearAll();
+	if (mongoose.connection.readyState !== 1) return;
 	const collections = mongoose.connection.collections;
 	for (const key in collections) {
 		await collections[key].deleteMany({});
@@ -31,10 +33,12 @@ async function clearDatabase() {
  * Disconnect and stop the in-memory server.
  */
 async function disconnect() {
-	await mongoose.connection.dropDatabase();
-	await mongoose.disconnect();
-	if (mongoServer) {
-		await mongoServer.stop();
+	require('../src/services/tournamentScheduler').clearAll();
+	try {
+		if (mongoose.connection.readyState === 1) await mongoose.connection.dropDatabase();
+	} finally {
+		await mongoose.disconnect();
+		if (mongoServer) await mongoServer.stop();
 	}
 }
 

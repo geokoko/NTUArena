@@ -213,6 +213,18 @@
 	font-weight: 500;
 }
 
+.tournament-manage__settings-row {
+	display: grid;
+	grid-template-columns: minmax(180px, 1fr) 180px auto;
+	gap: 0.75rem;
+	align-items: end;
+}
+
+.tournament-manage__settings-row .form-label {
+	margin: 0;
+	color: var(--text-muted, #d4c4b0);
+}
+
 /* Divider */
 .tournament-manage__divider {
 	margin: 2rem 0 1.5rem;
@@ -472,6 +484,10 @@
 
 	.tournament-manage__hero-actions .btn {
 		min-width: 0;
+	}
+
+	.tournament-manage__settings-row {
+		grid-template-columns: 1fr;
 	}
 }
 

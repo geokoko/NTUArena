@@ -48,7 +48,7 @@ const setupGame = async (adminToken) => {
 	const tRes = await request(app)
 		.post('/api/admin/tournaments/create')
 		.set('Authorization', `Bearer ${adminToken}`)
-		.send({ name: 'Game Test', startDate: tomorrow(), endDate: dayAfter() });
+		.send({ name: 'Game Test', scheduledStartDate: tomorrow(), durationMs: 24 * 60 * 60 * 1000 });
 
 	const tournamentId = tRes.body.id;
 	const tournDoc = await Tournament.findOne({ publicId: tournamentId });
@@ -74,6 +74,7 @@ const setupGame = async (adminToken) => {
 		playerWhite: players[0]._id,
 		playerBlack: players[1]._id,
 		tournament: tournDoc._id,
+		boardNumber: 1,
 		isFinished: false,
 	});
 	await game.save();
@@ -150,5 +151,19 @@ describe('POST /api/games/:id/result', () => {
 			.send({ result: '1-0' });
 
 		expect(res.status).toBe(403);
+	});
+});
+
+describe('POST /api/games/:id/cancel', () => {
+	test('returns 404 for a missing game and 409 for a duplicate cancellation', async () => {
+		const admin = await registerAndLogin('admin');
+		const missing = await request(app).post('/api/games/missing/cancel')
+			.set('Authorization', `Bearer ${admin.token}`).send({});
+		expect(missing.status).toBe(404);
+		const { game } = await setupGame(admin.token);
+		const cancel = () => request(app).post(`/api/games/${game._id}/cancel`)
+			.set('Authorization', `Bearer ${admin.token}`).send({});
+		expect((await cancel()).status).toBe(200);
+		expect((await cancel()).status).toBe(409);
 	});
 });
