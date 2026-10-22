@@ -130,8 +130,12 @@ Important root backend files:
   - polling loop:
     - dequeue snapshots to pending
     - discard inactive snapshots
-    - greedily pair with best score
+    - pair the batch via `selectBatchPairings`
     - create games, requeue leftovers, ack consumed pending
+- `backend/src/services/pairing/selectBatchPairings.js`
+  - builds a graph of legal pairs (edge cost from `pairingScorer` + cost weights)
+  - picks pairings with Edmonds' Blossom maximum matching (`edmonds-blossom-fixed`) per connected component
+  - the older greedy selector is kept only for tests and `test-scripts/simulatePairingComparison.js`
 - `backend/src/services/queue/redisQueue.js`
   - Redis list/Lua primitives for queue + worker pending safety
   - reclaim pending on restart, remove player snapshots from all lists
@@ -140,6 +144,7 @@ Important root backend files:
 - `backend/src/utils/publicId.js`: random URL-safe IDs
 - `backend/src/utils/identifiers.js`: dual lookup by Mongo `_id` or `publicId`
 - `backend/src/utils/csvParser.js`: shared parser for user/player CSV import
+- `backend/src/utils/escapeRegex.js`: escaping for user-supplied strings used in Mongo regex lookups
 
 ### `backend/__tests__/`
 
@@ -227,6 +232,7 @@ Important frontend root files:
 - `TournamentDetail.js` and `TournamentManage.js` both implement admin management flows (duplicated UX paths).
 - `docs/api/grouping.txt` does not exactly match actual route definitions.
 - Rate limiting in backend is disabled in test env by design.
+- The app is deployed on localhost only, so every client shares one rate-limit key (Express does not set `trust proxy`, and all traffic arrives from nginx). This is accepted; do not treat the shared limit budget, or polling load against it, as a bug.
 - Pairing queue logic depends on Redis availability; tests mock queue/pairing to avoid live workers.
 
 ## 6) Where To Change What (Fast Path)
