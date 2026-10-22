@@ -298,6 +298,7 @@ const TournamentDetail = () => {
 
 	const handleCancelGame = useCallback(async (gameId) => {
 		if (!gameId) return;
+		if (!window.confirm('Cancel this game? It will not be scored, both players go back to waiting, and this cannot be undone.')) return;
 		setSubmittingGameId(gameId);
 		try {
 			await gameAPI.cancelGame(gameId, 'manual');

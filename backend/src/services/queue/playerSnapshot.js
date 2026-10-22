@@ -6,6 +6,7 @@ module.exports = (player, { enqueuedAt = Date.now() } = {}) => ({
 	entryRating: player.entryRating ?? 0,
 	performanceRating: player.performanceRating ?? null,
 	recentOpponents: (player.recentOpponents ?? []).map(String),
+	lastCancelledOpponent: player.lastCancelledOpponent ? String(player.lastCancelledOpponent) : null,
 	colorHistory: player.colorHistory ?? [],
 	status: player.status,
 	waitingSince: player.waitingSince ?? null,

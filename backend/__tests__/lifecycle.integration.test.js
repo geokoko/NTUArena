@@ -168,13 +168,25 @@ test.each(['result', 'cancel'])('%s rolls back the game claim and both players a
 	await expect(settle()).resolves.toMatchObject({ isFinished: true });
 });
 
-test('manual cancellations preserve the rejected encounter in pairing history', async () => {
+test('manual cancellations drop the unplayed game from history but block the rejected pairing', async () => {
 	const { game, players } = await playingTournament();
 	await gameService.cancelGame(game._id);
-	const white = await Player.findById(players[0]._id);
-	expect(white.recentOpponents.map(String)).toEqual([String(players[1]._id)]);
-	expect(white.colorHistory).toEqual(['white']);
+	const [white, black] = await Promise.all(players.map((player) => Player.findById(player._id)));
+	expect(white.recentOpponents).toHaveLength(0);
+	expect(white.colorHistory).toEqual([]);
 	expect(white.gamesPlayed).toBe(0);
+	expect(String(white.lastCancelledOpponent)).toBe(String(black._id));
+	expect(String(black.lastCancelledOpponent)).toBe(String(white._id));
+});
+
+test('the next game clears the cancelled-pairing block', async () => {
+	const { tournament, game, players } = await playingTournament();
+	await gameService.cancelGame(game._id);
+	const third = await Player.create({ tournament: tournament._id, tempName: 'Third', entryRating: 1550 });
+	await gameService.createGameFromPairing(players[0]._id, third._id, tournament._id);
+	const white = await Player.findById(players[0]._id);
+	expect(white.lastCancelledOpponent).toBeNull();
+	expect(white.colorHistory).toEqual(['white']);
 });
 
 test.each(['pausePlayer', 'leaveTournament'])('%s continues cleanup when a concurrent result wins the cancellation', async (action) => {

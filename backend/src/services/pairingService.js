@@ -20,7 +20,7 @@ class PairingService {
 			{ $set: { waitingSince: now } },
 		);
 		const players = await Player.find(eligible)
-			.select('_id user tempName score entryRating performanceRating recentOpponents colorHistory waitingSince status');
+			.select('_id user tempName score entryRating performanceRating recentOpponents lastCancelledOpponent colorHistory waitingSince status');
 		await removePlayersEverywhere(tournamentId, players.map((player) => player._id));
 		await enqueueMany(tournamentId, players.map((player) => playerSnapshot(player, { enqueuedAt })));
 

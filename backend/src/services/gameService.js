@@ -345,6 +345,9 @@ class GameService {
 				white.waitingSince = null;
 				black.waitingSince = null;
 
+				white.lastCancelledOpponent = null;
+				black.lastCancelledOpponent = null;
+
 				await white.save({ session });
 				await black.save({ session });
 				await game.save({ session });
@@ -448,11 +451,16 @@ class GameService {
 		const { game, tournament, white, black } = await changeGame(
 			gameId, { isFinished: true, isCancelled: true, cancelledAt, finishedAt: cancelledAt },
 			({ tournament, white, black }) => {
-				// A manual cancellation keeps the encounter in pairing history to
-				// prevent immediately proposing the same rejected pairing again.
-				if (white && black && ['player.paused', 'player.withdrawn'].includes(reason)) {
+				// A cancelled game was never played, so drop it from color and
+				// opponent history. A manual cancellation still blocks proposing
+				// the same rejected pairing again via lastCancelledOpponent.
+				if (white && black) {
 					rollbackLatestPairingHistory(white, black._id, 'white');
 					rollbackLatestPairingHistory(black, white._id, 'black');
+					if (!['player.paused', 'player.withdrawn'].includes(reason)) {
+						white.lastCancelledOpponent = black._id;
+						black.lastCancelledOpponent = white._id;
+					}
 				}
 				for (const player of [white, black]) {
 					if (!player) continue;
