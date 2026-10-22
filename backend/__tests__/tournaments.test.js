@@ -478,6 +478,22 @@ describe('bulkAddPlayersFromCSV', () => {
 		expect(tempPlayer.entryRating).toBe(1420);
 		expect(tempPlayer.performanceRating).toBeNull();
 	});
+
+	test('does not add temp players beyond maxPlayers', async () => {
+		const tournament = await createTestTournament({ maxPlayers: 2 });
+
+		const result = await tournamentService.bulkAddPlayersFromCSV(tournament.id, [
+			{ name: 'Temp A', rating: '1400', _rowNumber: 2 },
+			{ name: 'Temp B', rating: '1400', _rowNumber: 3 },
+			{ name: 'Temp C', rating: '1400', _rowNumber: 4 },
+		]);
+		const tournamentDoc = await Tournament.findOne({ publicId: tournament.id });
+
+		expect(result.added.map((entry) => entry.name)).toEqual(['Temp A', 'Temp B']);
+		expect(result.errors).toEqual([{ row: 4, name: 'Temp C', error: 'Tournament is full' }]);
+		expect(await Player.countDocuments({ tournament: tournamentDoc._id })).toBe(2);
+		expect(tournamentDoc.participants).toHaveLength(2);
+	});
 });
 
 // ─────────────────────────────────────────────
