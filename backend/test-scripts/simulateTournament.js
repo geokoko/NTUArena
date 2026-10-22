@@ -1,7 +1,6 @@
 require('dotenv').config();
 
 const mongoose = require('mongoose');
-const crypto = require('crypto');
 
 // Models
 const Tournament = require('../src/models/Tournament');
@@ -125,7 +124,7 @@ async function summarize(tournamentId) {
    LOGGING UTILITIES
    ======================= */
 
-let lastStandingsHash = '';
+let lastStandingsSnapshot = '';
 
 async function printStandingsIfChanged(tournamentId, topN = 10) {
 	const players = await Player.find({ tournament: tournamentId })
@@ -135,9 +134,9 @@ async function printStandingsIfChanged(tournamentId, topN = 10) {
 		.lean();
 
 	const snapshot = players.map(p => [p.user?.username, p.score, p.performanceRating]);
-	const hash = crypto.createHash('md5').update(JSON.stringify(snapshot)).digest('hex');
-	if (hash === lastStandingsHash) return;
-	lastStandingsHash = hash;
+	const serialized = JSON.stringify(snapshot);
+	if (serialized === lastStandingsSnapshot) return;
+	lastStandingsSnapshot = serialized;
 
 	const lines = players.map((p, i) =>
 		`${String(i+1).padStart(2,' ')}. ${(p.user?.username || '-').padEnd(16)} `

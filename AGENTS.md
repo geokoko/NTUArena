@@ -142,6 +142,7 @@ Important root backend files:
 - `backend/src/utils/publicId.js`: random URL-safe IDs
 - `backend/src/utils/identifiers.js`: dual lookup by Mongo `_id` or `publicId`
 - `backend/src/utils/csvParser.js`: shared parser for user/player CSV import
+- `backend/src/utils/escapeRegex.js`: escaping for user-supplied strings used in Mongo regex lookups
 
 ### `backend/__tests__/`
 
@@ -229,6 +230,7 @@ Important frontend root files:
 - `TournamentDetail.js` and `TournamentManage.js` both implement admin management flows (duplicated UX paths).
 - `docs/api/grouping.txt` does not exactly match actual route definitions.
 - Rate limiting in backend is disabled in test env by design.
+- The app is deployed on localhost only, so every client shares one rate-limit key (Express does not set `trust proxy`, and all traffic arrives from nginx). This is accepted; do not treat the shared limit budget, or polling load against it, as a bug.
 - MongoDB is the only store for the waiting pool. There is no separate queue: pause/resume/result/cancel only update the `Player`, and the worker sees the change on its next cycle. Do not reintroduce a second copy of player state that has to be kept in sync.
 
 ## 6) Where To Change What (Fast Path)

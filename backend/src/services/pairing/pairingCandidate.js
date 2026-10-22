@@ -1,5 +1,5 @@
 // Fields the pairing scorer and matcher read from a waiting player.
-const PAIRING_CANDIDATE_FIELDS = '_id user tempName score entryRating performanceRating recentOpponents colorHistory status waitingSince';
+const PAIRING_CANDIDATE_FIELDS = '_id user tempName score entryRating performanceRating recentOpponents lastCancelledOpponent colorHistory status waitingSince';
 
 const toPairingCandidate = (player) => ({
 	_id: String(player._id),
@@ -9,6 +9,7 @@ const toPairingCandidate = (player) => ({
 	entryRating: player.entryRating ?? 0,
 	performanceRating: player.performanceRating ?? null,
 	recentOpponents: (player.recentOpponents ?? []).map(String),
+	lastCancelledOpponent: player.lastCancelledOpponent ? String(player.lastCancelledOpponent) : null,
 	colorHistory: player.colorHistory ?? [],
 	status: player.status,
 	waitingSince: player.waitingSince ?? null,

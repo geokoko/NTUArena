@@ -13,6 +13,7 @@ const {
 	isObjectId,
 	normalizeLookupId,
 } = require('../utils/identifiers');
+const { exactCaseInsensitive } = require('../utils/escapeRegex');
 
 const makeError = (message, status = 400) => {
 	const err = new Error(message);
@@ -106,6 +107,14 @@ const buildInitialPlayerData = ({ tournamentId, user = null, tempName = null, se
 		enteredAt: now,
 	};
 };
+
+async function assertTournamentHasCapacity(tournament) {
+	if (typeof tournament.maxPlayers !== 'number' || tournament.maxPlayers <= 0) return;
+	const activeCount = await Player.countDocuments({ tournament: tournament._id, status: { $nin: ['withdrawn'] } });
+	if (activeCount >= tournament.maxPlayers) {
+		throw makeError('Tournament is full');
+	}
+}
 
 // A registration can race an automatic start: the player is built from an
 // 'upcoming' read but saved after the start stamped waitingSince on everyone
@@ -578,15 +587,7 @@ class TournamentService {
 			throw makeError('Tournament already completed or finishing');
 		}
 
-		if (
-			typeof tournament.maxPlayers === 'number' &&
-			tournament.maxPlayers > 0
-		) {
-			const activeCount = await Player.countDocuments({ tournament: tournament._id, status: { $nin: ['withdrawn'] } });
-			if (activeCount >= tournament.maxPlayers) {
-				throw makeError('Tournament is full');
-			}
-		}
+		await assertTournamentHasCapacity(tournament);
 
 		const exists = await Player.findOne({ user: user._id, tournament: tournament._id });
 		if (exists) throw makeError('User already joined the tournament');
@@ -762,11 +763,12 @@ class TournamentService {
 
 		// Pre-fetch all users that match any identifier
 		const normalizedIdentifiers = identifiers.map((id) => id.trim().toLowerCase());
+		const identifierPatterns = identifiers.map(exactCaseInsensitive);
 		const matchingUsers = await User.find({
 			isDeleted: { $ne: true },
 			$or: [
-				{ username: { $in: identifiers.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) } },
-				{ email: { $in: identifiers.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) } },
+				{ username: { $in: identifierPatterns } },
+				{ email: { $in: identifierPatterns } },
 			],
 		});
 
@@ -965,7 +967,6 @@ class TournamentService {
 			throw makeError('Tournament already completed or finishing');
 		}
 
-		// Check tournament capacity
 		const isActiveTournament = tournament.tournStatus === 'in progress';
 
 		// Collect all identifiers to pre-fetch matching users
@@ -977,11 +978,12 @@ class TournamentService {
 		let userByUsername = new Map();
 		let userByEmail = new Map();
 		if (identifiersToLookup.length > 0) {
+			const identifierPatterns = identifiersToLookup.map(exactCaseInsensitive);
 			const matchingUsers = await User.find({
 				isDeleted: { $ne: true },
 				$or: [
-					{ username: { $in: identifiersToLookup.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i')) } },
-					{ email: { $in: identifiersToLookup.map((id) => new RegExp(`^${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}$`, 'i')) } },
+					{ username: { $in: identifierPatterns } },
+					{ email: { $in: identifierPatterns } },
 				],
 			});
 			for (const user of matchingUsers) {
@@ -1056,6 +1058,8 @@ class TournamentService {
 						});
 						continue;
 					}
+
+					await assertTournamentHasCapacity(tournament);
 
 					const now = new Date();
 					const player = new Player(buildInitialPlayerData({

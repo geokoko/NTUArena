@@ -157,10 +157,12 @@ const TournamentManage = () => {
 	);
 
 	const handleCancelGame = useCallback(
-		(gameId) =>
-			withRefresh(async () => {
+		(gameId) => {
+			if (!window.confirm('Cancel this game? It will not be scored, both players go back to waiting, and this cannot be undone.')) return;
+			return withRefresh(async () => {
 				await gameAPI.cancelGame(gameId, 'manual');
-			}),
+			});
+		},
 		[withRefresh]
 	);
 

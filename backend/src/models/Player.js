@@ -18,6 +18,10 @@ const PlayerSchema = new mongoose.Schema({
 	gameHistory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Game' }],
 	colorHistory: [{ type: String, enum: ['white', 'black'] }],
 	recentOpponents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Player' }],
+	// Opponent of a manually cancelled game. Blocks re-proposing that pairing
+	// until this player's next game, without counting the unplayed game in
+	// colorHistory/recentOpponents.
+	lastCancelledOpponent: { type: mongoose.Schema.Types.ObjectId, ref: 'Player', default: null },
 	status: { type: String, enum: ['active', 'paused', 'withdrawn'], default: 'active' },
 	gamesPlayed: { type: Number, default: 0 },
 	wins: { type: Number, default: 0 },

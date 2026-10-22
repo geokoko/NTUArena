@@ -32,7 +32,7 @@ beforeEach(() => {
 	tournamentAPI.getTournamentStandings.mockResolvedValue({ data: [] });
 	userAPI.getAll.mockResolvedValue({ data: [{ id: 'alice', username: 'Alice' }] });
 });
-afterEach(() => { jest.clearAllMocks(); jest.useRealTimers(); });
+afterEach(() => { jest.restoreAllMocks(); jest.clearAllMocks(); jest.useRealTimers(); });
 
 test.each([TournamentDetail, TournamentManage])('%p picks up automatic lifecycle transitions', async (Page) => {
 	jest.useFakeTimers();
@@ -62,12 +62,26 @@ test.each(['result', 'cancel'])('detail updates completion immediately after the
 	const settle = async () => { current.tournStatus = 'completed'; games = []; return { data: {} }; };
 	gameAPI.submitGameResult.mockImplementation(settle);
 	gameAPI.cancelGame.mockImplementation(settle);
+	jest.spyOn(window, 'confirm').mockReturnValue(true);
 	render(<TournamentDetail />);
 	fireEvent.click(await screen.findByRole('button', { name: /Active Games/ }));
 	fireEvent.click(screen.getByRole('checkbox'));
 	fireEvent.click(await screen.findByRole('button', { name: action === 'result' ? /White wins/ : /Cancel/ }));
 	await waitFor(() => expect(screen.getAllByText('Completed').length).toBeGreaterThan(0));
 	expect(screen.queryByText('Finishing')).not.toBeInTheDocument();
+	expect(window.confirm).toHaveBeenCalledTimes(action === 'cancel' ? 1 : 0);
+});
+
+test('declining the cancel confirmation keeps the game', async () => {
+	current.tournStatus = 'in progress';
+	games = [{ id: 'game', isFinished: false, boardNumber: 1, playerWhite: { id: 'white', name: 'White' }, playerBlack: { id: 'black', name: 'Black' } }];
+	jest.spyOn(window, 'confirm').mockReturnValue(false);
+	render(<TournamentDetail />);
+	fireEvent.click(await screen.findByRole('button', { name: /Active Games/ }));
+	fireEvent.click(screen.getByRole('checkbox'));
+	fireEvent.click(await screen.findByRole('button', { name: /Cancel/ }));
+	expect(window.confirm).toHaveBeenCalledTimes(1);
+	expect(gameAPI.cancelGame).not.toHaveBeenCalled();
 });
 
 test.each([TournamentDetail, TournamentManage])('%p keeps withdrawn users unavailable for registration', async (Page) => {

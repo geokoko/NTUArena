@@ -10,6 +10,7 @@ const MAX_COLOR_IMBALANCE = 3; // Hard-block if |whitesPlayed - blacksPlayed| wo
  *   entryRating: number,       // rating at tournament start
  *   standing: number,          // lower = better rank
  *   recentOpponents: string[], // last K opponent player IDs (most recent at end of array)
+ *   lastCancelledOpponent: string|null, // opponent of a manually cancelled game, until the next game
  *   colorHistory: string[],    // last N colors played ('white'/'black', most recent at end)
  *   waitingSince: Date|null    // when the player last became available
  * }
@@ -23,6 +24,11 @@ function justPlayedTogether(a, b) {
 	const aLastOpp = a.recentOpponents?.at(-1);
 	const bLastOpp = b.recentOpponents?.at(-1);
 	return String(aLastOpp) === bId || String(bLastOpp) === aId;
+}
+
+function wasJustCancelled(a, b) {
+	return (a.lastCancelledOpponent != null && String(a.lastCancelledOpponent) === String(b._id))
+		|| (b.lastCancelledOpponent != null && String(b.lastCancelledOpponent) === String(a._id));
 }
 
 /**
@@ -183,6 +189,7 @@ function evaluatePair(a, b, opts = {}) {
 	} = opts;
 
 	if (justPlayedTogether(a, b)) return { ok: false, reason: 'recent_opponents' };
+	if (wasJustCancelled(a, b)) return { ok: false, reason: 'cancelled_pairing' };
 	if (tooManyHeadToHead(a, b, maxHeadToHead)) return { ok: false, reason: 'too_many_meetings' };
 
 	// Rematch color-swap enforcement:
