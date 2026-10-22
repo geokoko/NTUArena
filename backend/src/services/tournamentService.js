@@ -6,8 +6,6 @@ const TournamentLog = require('../models/TournamentLog');
 const pairingService = require('./pairingService');
 const gameService = require('./gameService');
 const { logEvent } = require('./tournamentLogger');
-const { enqueue, removePlayerEverywhere } = require('./queue/redisQueue');
-const playerQueueSnapshot = require('./queue/playerSnapshot');
 const {
 	ensureDocumentPublicId,
 	ensureDocumentsPublicId,
@@ -109,16 +107,18 @@ const buildInitialPlayerData = ({ tournamentId, user = null, tempName = null, se
 	};
 };
 
-async function enqueueRegisteredPlayer(player) {
+// A registration can race an automatic start: the player is built from an
+// 'upcoming' read but saved after the start stamped waitingSince on everyone
+// else. Re-read the tournament so late registrants also wait from now.
+async function markRegisteredPlayerWaiting(player) {
+	if (player.waitingSince) return;
 	const tournament = await Tournament.findById(player.tournament);
 	if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return;
 	if (tournament.endDate && tournament.endDate <= new Date()) return;
-	const waiting = await Player.findOneAndUpdate(
-		{ _id: player._id, status: 'active', isPlaying: false },
-		{ $set: { waitingSince: player.waitingSince || new Date() } },
-		{ returnDocument: 'after' },
+	await Player.updateOne(
+		{ _id: player._id, status: 'active', isPlaying: false, waitingSince: null },
+		{ $set: { waitingSince: new Date() } },
 	);
-	if (waiting) await enqueue(String(tournament._id), playerQueueSnapshot(waiting));
 }
 
 const summarizePlayer = (player) => {
@@ -611,7 +611,7 @@ class TournamentService {
 			{ $addToSet: { participants: player._id } }
 		);
 
-		await enqueueRegisteredPlayer(player);
+		await markRegisteredPlayerWaiting(player);
 
 		await ensureDocumentPublicId(player, Player);
 		return summarizePlayer(await player.populate('user', 'publicId username email profile.firstName profile.lastName globalElo'));
@@ -643,7 +643,6 @@ class TournamentService {
 			{ $pull: { participants: player._id } },
 		);
 
-		await removePlayerEverywhere(String(tournament._id), player._id);
 		await ensureDocumentPublicId(player, Player);
 		await player.populate('user', 'publicId username email globalElo profile.firstName profile.lastName');
 		if (player.user) await ensureDocumentPublicId(player.user, User);
@@ -700,7 +699,6 @@ class TournamentService {
 		player.waitingSince = null;
 		await player.save();
 
-		await removePlayerEverywhere(String(tournament._id), player._id);
 		await ensureDocumentPublicId(player, Player);
 		await player.populate('user', 'publicId username email globalElo profile.firstName profile.lastName');
 		if (player.user) await ensureDocumentPublicId(player.user, User);
@@ -731,10 +729,6 @@ class TournamentService {
 		await ensureDocumentPublicId(player, Player);
 		await player.populate('user', 'publicId username email globalElo profile.firstName profile.lastName');
 		if (player.user) await ensureDocumentPublicId(player.user, User);
-
-		if (inProgress) {
-			await enqueue(String(tournament._id), playerQueueSnapshot(player));
-		}
 
 		await logEvent(tournament._id, 'intervention.manual', {
 			message: 'Player resumed.',
@@ -1078,7 +1072,7 @@ class TournamentService {
 						{ $addToSet: { participants: player._id } }
 					);
 
-					await enqueueRegisteredPlayer(player);
+					await markRegisteredPlayerWaiting(player);
 
 					await ensureDocumentPublicId(player, Player);
 					results.added.push({

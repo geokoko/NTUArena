@@ -279,7 +279,7 @@ async function simulate() {
 	await registerPlayers(TID, users);
 	console.log(`[SIM] Registered ${users.length} players.`);
 
-	// 3) Admin starts tournament (this seeds Redis queue & starts pairing worker)
+	// 3) Admin starts tournament (this marks players waiting & starts pairing worker)
 	await tournamentService.startTournament(TID);
 	console.log('[SIM] Tournament started. Pairing worker running...');
 

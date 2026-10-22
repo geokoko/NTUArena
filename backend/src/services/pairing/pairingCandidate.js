@@ -1,4 +1,7 @@
-module.exports = (player, { enqueuedAt = Date.now() } = {}) => ({
+// Fields the pairing scorer and matcher read from a waiting player.
+const PAIRING_CANDIDATE_FIELDS = '_id user tempName score entryRating performanceRating recentOpponents colorHistory status waitingSince';
+
+const toPairingCandidate = (player) => ({
 	_id: String(player._id),
 	user: player.user || null,
 	tempName: player.tempName || null,
@@ -9,5 +12,9 @@ module.exports = (player, { enqueuedAt = Date.now() } = {}) => ({
 	colorHistory: player.colorHistory ?? [],
 	status: player.status,
 	waitingSince: player.waitingSince ?? null,
-	enqueuedAt,
 });
+
+module.exports = {
+	PAIRING_CANDIDATE_FIELDS,
+	toPairingCandidate,
+};

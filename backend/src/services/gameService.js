@@ -3,8 +3,6 @@ const Game = require('../models/Game');
 const Player = require('../models/Player');
 const User = require('../models/User');
 const Tournament = require('../models/Tournament');
-const { enqueue, removePlayerEverywhere } = require('./queue/redisQueue');
-const playerSnapshot = require('./queue/playerSnapshot');
 const { logEvent } = require('./tournamentLogger');
 const {
 	findByIdOrPublicId,
@@ -101,18 +99,6 @@ function rollbackLatestPairingHistory(player, opponentId, expectedColor) {
 
 	player.recentOpponents = opponents.slice(0, -1);
 	player.colorHistory = colors.slice(0, -1);
-}
-
-async function enqueueIfEligible(player, tournament) {
-	if (!player || player.status !== 'active') return false;
-	if (!tournament || tournament.tournStatus !== 'in progress' || tournament.pairingClosedAt) return false;
-	player.waitingSince = player.waitingSince || new Date();
-	await player.save();
-	// A just-created game's consumed snapshot may still await worker ACK.
-	// Replace that old state before idempotent enqueue of the freed player.
-	await removePlayerEverywhere(String(tournament._id), player._id);
-	await enqueue(String(tournament._id), playerSnapshot(player));
-	return true;
 }
 
 const gameError = (message, status, code) => Object.assign(new Error(message), { status, code });
@@ -315,10 +301,9 @@ class GameService {
 				const white = await Player.findOne({ _id: whitePlayerId, tournament: tournamentId }).session(session).exec();
 				const black = await Player.findOne({ _id: blackPlayerId, tournament: tournamentId }).session(session).exec();
 
-				// Reject paused/withdrawn players. Pairing decisions are made off
-				// stale Redis snapshots taken when the player was enqueued; by the
-				// time we land here, the admin may have flipped status to 'paused'
-				// or 'withdrawn'. isPlaying alone does not catch that.
+				// Reject paused/withdrawn players. The worker read its pool before
+				// matching; by the time we land here, the admin may have flipped
+				// status to 'paused' or 'withdrawn'. isPlaying alone does not catch that.
 				const isInactive = (p) => p.status && p.status !== 'active';
 				if (!white || !black || white.isPlaying || black.isPlaying || isInactive(white) || isInactive(black)) {
 					throw new Error('Players unavailable (busy or inactive)');
@@ -365,7 +350,9 @@ class GameService {
 	}
 
 	/**
-   * Marks game finished, applies result, frees both players, and re-enqueues them.
+   * Marks game finished, applies result, and frees both players. Freed active
+   * players are waiting again via waitingSince; the pairing settle window keeps
+   * them from being re-paired while the admin is still entering results.
    */
 	async submitGameResult(gameId, result) {
 		// Normalize incoming result to one of: 'white' | 'black' | 'draw'
@@ -381,7 +368,7 @@ class GameService {
 		const resultColor = normalize(result);
 		if (!resultColor) throw new Error('Invalid result value');
 
-		const { game, tournament, white, black } = await changeGame(
+		const { game } = await changeGame(
 			gameId, { isFinished: true, resultColor, finishedAt: new Date() },
 			({ game, tournament, white, black }) => {
 				for (const [player, opponent, perspective] of [[white, black, 'white'], [black, white, 'black']]) {
@@ -392,30 +379,10 @@ class GameService {
 			},
 		);
 		await ensureDocumentPublicId(game, Game);
-		const tournamentActive = tournament?.tournStatus === 'in progress';
 
 		// Refresh the persisted standing cache before returning. Refreshes are
 		// still serialized per tournament to avoid stale concurrent writes.
 		await scheduleStandingsRefresh(game.tournament);
-
-		// Small delay before re-enqueueing to prevent instant re-pairing
-		// when admin terminates multiple games quickly
-		const REQUEUE_DELAY_MS = 5000;
-		if (tournamentActive) setTimeout(async () => {
-			try {
-				const currentTournament = await Tournament.findById(game.tournament);
-				if (!currentTournament || currentTournament.tournStatus !== 'in progress' || currentTournament.pairingClosedAt) return;
-				if (currentTournament.endDate && currentTournament.endDate <= new Date()) return;
-				for (const previous of [white, black]) {
-					if (!previous) continue;
-					const player = await Player.findById(previous._id);
-					if (!player || player.isPlaying) continue;
-					await enqueueIfEligible(player, currentTournament);
-				}
-			} catch (err) {
-				console.error('Failed to re-enqueue players after game termination:', err);
-			}
-		}, REQUEUE_DELAY_MS).unref?.();
 
 		await game.populate([
 			{
@@ -475,18 +442,6 @@ class GameService {
 				},
 				actor,
 			});
-		}
-
-		for (const player of [white, black]) {
-			if (!player || excluded.has(String(player._id))) continue;
-			try {
-				const current = await Player.findById(player._id);
-				const currentTournament = await Tournament.findById(game.tournament);
-				if (current && !current.isPlaying) await enqueueIfEligible(current, currentTournament);
-			} catch (err) {
-				console.error('[GameService] cancelled player requeue failed:', err.message);
-				require('./tournamentScheduler').retryTournament(game.tournament);
-			}
 		}
 
 		await this.completeAfterGame(game.tournament);

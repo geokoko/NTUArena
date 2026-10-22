@@ -6,14 +6,14 @@ Core capabilities already implemented:
 - User auth (JWT) with role-based access (`player`, `admin`, `spectator` in schema, mainly `player/admin` in UI)
 - Tournament CRUD and lifecycle (`upcoming` -> `in progress` -> `completed`)
 - Player registration to tournaments (including temp players via CSV)
-- Real-time-ish pairing engine using Redis queue + worker loop (currently only supports Arena format, but Swiss is on the roadmap)
+- Real-time-ish pairing engine: a per-tournament worker loop that pairs the waiting players stored in MongoDB (currently only supports Arena format, but Swiss is on the roadmap)
 - Game result submission and standings updates
 - CSV import for users and tournament participants
 
 Stack:
 - Frontend: React (Create React App), React Router, Axios
 - Backend: Express 5 + Mongoose
-- Infra: MongoDB, Redis, Nginx, Docker Compose
+- Infra: MongoDB, Nginx, Docker Compose
 
 ## 2) Runtime Architecture and Request Flow
 
@@ -33,15 +33,15 @@ Backend startup flow:
 
 Pairing/game loop flow:
 1. Admin starts tournament -> `tournamentService.startTournament`
-2. `pairingService.startPairingLoop` seeds Redis queue with active, idle players
-3. `PairingWorker` batches queue snapshots, scores legal pairs, creates games atomically
+2. `pairingService.startPairingLoop` stamps `waitingSince` on active, idle players and starts the worker
+3. `PairingWorker` reads the waiting pool (`status: 'active'`, `isPlaying: false`) from MongoDB each cycle, matches legal pairs, creates games atomically
 4. Admin submits game result -> `gameService.submitGameResult`
-5. Player stats/rating are updated and active players are re-enqueued (after short delay)
+5. Player stats/rating are updated and freed active players start waiting again (the settle window delays the next pairing)
 
 ## 3) Repository Layout (By Directory)
 
 ### Root
-- `docker-compose.yml`: orchestrates redis, mongo, mongo-init, backend, frontend, nginx
+- `docker-compose.yml`: orchestrates mongo, mongo-init, backend, frontend, nginx
 - `.env.example`: canonical env template
 - `README.md`: user-facing setup and feature overview
 - `AGENTS.md`: this file
@@ -52,7 +52,7 @@ Pairing/game loop flow:
 Important root backend files:
 - `backend/Dockerfile`: production-ish backend image (Node 22 Alpine, healthcheck on `/health`)
 - `backend/entrypoint.sh`: starts `npm start`, waits until health endpoint is ready
-- `backend/jest.config.js`: test config + module mocks for Redis/pairing in tests
+- `backend/jest.config.js`: test config + module mock for the pairing service in tests
 - `backend/package.json`: scripts (`dev`, `test`, `simulate:tournament`)
 
 ### `backend/src/` (layered architecture)
@@ -112,14 +112,14 @@ Important root backend files:
   - join/leave/pause/resume player
   - CSV bulk player import (linked users or temp players)
   - standings/game/player views
-  - queue cleanup and active-game cancellation logic on leave/pause
+  - active-game cancellation logic on leave/pause
 - `backend/src/services/gameService.js`
   - create game from pairing transactionally
   - submit result; updates stats and performance-based live rating
-  - re-enqueues active players after result processing
+  - marks freed active players as waiting after results/cancellations
 - `backend/src/services/pairingService.js`
   - worker lifecycle manager (per tournament worker map)
-  - initial queue seeding when tournament starts
+  - stamps `waitingSince` on idle players when a worker (re)starts; that pool counts as settled
 - `backend/src/services/pairing/pairingScorer.js`
   - pair compatibility and scoring:
     - avoid immediate rematches
@@ -128,13 +128,15 @@ Important root backend files:
     - prefer similar score/rating + reward long waits
 - `backend/src/services/pairing/pairingWorker.js`
   - polling loop:
-    - dequeue snapshots to pending
-    - discard inactive snapshots
-    - greedily pair with best score
-    - create games, requeue leftovers, ack consumed pending
-- `backend/src/services/queue/redisQueue.js`
-  - Redis list/Lua primitives for queue + worker pending safety
-  - reclaim pending on restart, remove player snapshots from all lists
+    - read up to 80 longest-waiting active, idle players from MongoDB
+    - wait for the settle window since the newest `waitingSince`
+    - pair the pool via `selectBatchPairings`
+    - create games; leftovers and failed pairings simply stay waiting in MongoDB
+- `backend/src/services/pairing/selectBatchPairings.js`
+  - builds a graph of legal pairs (edge cost from `pairingScorer` + cost weights)
+  - picks pairings with Edmonds' Blossom maximum matching (`edmonds-blossom-fixed`) per connected component
+  - the older greedy selector is kept only for tests and `test-scripts/simulatePairingComparison.js`
+- `backend/src/services/pairing/pairingCandidate.js`: Player fields the scorer reads, mapped from the MongoDB pool
 
 #### Utilities
 - `backend/src/utils/publicId.js`: random URL-safe IDs
@@ -147,7 +149,7 @@ Test strategy:
 - Uses `mongodb-memory-server` (`backend/__tests__/setup.js`)
 - API tests with `supertest` for auth/users/tournaments/games
 - service/unit tests for auth, users, tournaments, games, middleware, CSV parser, identifiers
-- pairing/redis are mocked via `backend/__mocks__/`
+- the pairing service is mocked via `backend/__mocks__/`; `pairingWorker.integration.test.js` runs the real worker against the in-memory MongoDB
 
 ### `backend/test-scripts/`
 - `simulateTournament.js`: long-running simulator creating tournaments/users, watching pairings/results through Mongo change streams, auto-finishing games, printing standings
@@ -227,7 +229,7 @@ Important frontend root files:
 - `TournamentDetail.js` and `TournamentManage.js` both implement admin management flows (duplicated UX paths).
 - `docs/api/grouping.txt` does not exactly match actual route definitions.
 - Rate limiting in backend is disabled in test env by design.
-- Pairing queue logic depends on Redis availability; tests mock queue/pairing to avoid live workers.
+- MongoDB is the only store for the waiting pool. There is no separate queue: pause/resume/result/cancel only update the `Player`, and the worker sees the change on its next cycle. Do not reintroduce a second copy of player state that has to be kept in sync.
 
 ## 6) Where To Change What (Fast Path)
 

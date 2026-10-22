@@ -2,7 +2,7 @@ const MAX_COLOR_STREAK    = 3; // Hard-block if a player would exceed this many 
 const MAX_COLOR_IMBALANCE = 3; // Hard-block if |whitesPlayed - blacksPlayed| would exceed this
 
 /**
- * Player snapshot shape we expect in the queue:
+ * Pairing candidate shape (see pairingCandidate.js):
  * {
  *   _id: string,
  *   user: string,
@@ -11,7 +11,7 @@ const MAX_COLOR_IMBALANCE = 3; // Hard-block if |whitesPlayed - blacksPlayed| wo
  *   standing: number,          // lower = better rank
  *   recentOpponents: string[], // last K opponent player IDs (most recent at end of array)
  *   colorHistory: string[],    // last N colors played ('white'/'black', most recent at end)
- *   enqueuedAt: number
+ *   waitingSince: Date|null    // when the player last became available
  * }
  */
 
