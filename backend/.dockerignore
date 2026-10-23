@@ -1,0 +1,15 @@
+# The Dockerfile installs dependencies with npm ci and then copies the source.
+# A host node_modules would overwrite that install with whatever happens to be
+# on the build machine.
+node_modules
+npm-debug.log*
+
+# Generated output
+coverage
+test-output
+logs
+*.log
+
+# Secrets
+.env
+.env.*

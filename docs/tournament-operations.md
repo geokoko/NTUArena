@@ -232,10 +232,10 @@ cd backend
 npm ci
 
 # Full backend test suite
-CORS_ORIGIN=http://localhost APP_MODE=test NODE_ENV=test npm test -- --runInBand
+npm test -- --runInBand
 
-# Pairing-focused regression tests
-npm test -- --runInBand pairingWorker.test.js
+# Pairing tests (selector, scorer, worker loop, worker against MongoDB, lifecycle)
+npm test -- --runInBand pairing
 
 # Syntax-check simulation tools
 node --check test-scripts/simulateArenaPairings.js
@@ -260,11 +260,28 @@ docker compose ps
 docker compose logs -f backend
 ```
 
+`scripts/smoke-test.sh` checks a whole stack without touching your data. It builds
+and boots a throwaway compose project from `.env.example` and, through Nginx:
+- checks that the frontend is served;
+- registers and logs in an account;
+- runs a four-player tournament through pairing and results;
+- restarts the stack and checks that the standings, the active game and pairing
+  survived.
+
+It removes the stack and its volume when it finishes. It uses the same container
+names and port 80 as a normal stack, so stop that first. CI runs it for every PR
+in prod and dev mode on x64 and arm64, and weekly on master:
+
+```bash
+APP_MODE=prod scripts/smoke-test.sh
+APP_MODE=dev scripts/smoke-test.sh
+```
+
 Before merging pairing changes, run at least:
 
 ```bash
 cd backend
-CORS_ORIGIN=http://localhost APP_MODE=test NODE_ENV=test npm test -- --runInBand
+npm test -- --runInBand
 npm run simulate:pairing-comparison -- --players 20 --durationMinutes 60 --settleSeconds 30 --seed 20260519
 npm run simulate:pairing-pareto -- --players 12,20 --settleSeconds 10,30 --seedCount 2 --durationMinutes 20
 ```

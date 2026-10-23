@@ -189,10 +189,10 @@ Backend validation:
 
 ```bash
 # Full backend test suite
-CORS_ORIGIN=http://localhost APP_MODE=test NODE_ENV=test npm test -- --runInBand
+npm test -- --runInBand
 
-# Pairing-focused tests
-npm test -- --runInBand pairingWorker.test.js
+# Pairing tests (selector, scorer, worker loop, worker against MongoDB, lifecycle)
+npm test -- --runInBand pairing
 
 # Syntax-check simulation scripts
 node --check test-scripts/simulateArenaPairings.js
@@ -216,6 +216,15 @@ docker compose up -d --build
 docker compose ps
 docker compose logs -f backend
 ```
+
+Stack smoke test (what CI runs for every PR, in both modes on x64 and arm64). It builds and boots a throwaway stack from `.env.example`, drives a short tournament through Nginx, restarts the stack and checks that the tournament survived, then removes the stack. Stop any other NTUArena stack first, because it uses the same container names and port 80:
+
+```bash
+APP_MODE=prod scripts/smoke-test.sh
+APP_MODE=dev scripts/smoke-test.sh
+```
+
+Dependency updates: Dependabot opens weekly PRs. Minor and patch npm and GitHub Actions updates are approved and merged automatically once the backend, frontend and smoke checks pass. Major updates and Docker image updates (Node, Nginx, MongoDB) wait for review.
 
 Pairing simulations:
 
