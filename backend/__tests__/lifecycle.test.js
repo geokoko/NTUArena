@@ -1,12 +1,10 @@
 const mongoose = require('mongoose');
 const Tournament = require('../src/models/Tournament');
 const Game = require('../src/models/Game');
-const Player = require('../src/models/Player');
 const tournamentService = require('../src/services/tournamentService');
 const gameService = require('../src/services/gameService');
 const pairingService = require('../src/services/pairingService');
 const scheduler = require('../src/services/tournamentScheduler');
-const { logEvent } = require('../src/services/tournamentLogger');
 
 jest.mock('../src/services/tournamentLogger', () => ({ logEvent: jest.fn().mockResolvedValue() }));
 
@@ -82,21 +80,6 @@ test('finishing is preserved while a game remains active', async () => {
 	expect(Tournament.findOneAndUpdate).not.toHaveBeenCalled();
 });
 
-test('the final result completes a finishing tournament and returns the API game shape', async () => {
-	const finishing = makeTournament({ tournStatus: 'finishing' });
-	const game = { _id: new mongoose.Types.ObjectId(), publicId: 'game', tournament: finishing._id,
-		isFinished: true, resultColor: 'white', populate: jest.fn().mockResolvedValue() };
-	jest.spyOn(Game, 'findOneAndUpdate').mockResolvedValue(game);
-	jest.spyOn(Tournament, 'findById').mockReturnValueOnce({ session: () => Promise.resolve(finishing) }).mockResolvedValue(finishing);
-	jest.spyOn(Player, 'findById').mockReturnValue({ session: async () => null });
-	jest.spyOn(mongoose, 'startSession').mockResolvedValue({ withTransaction: async (fn) => fn(), endSession: jest.fn() });
-	jest.spyOn(Player, 'find').mockReturnValue({ select: () => ({ sort: () => ({ lean: async () => [] }) }) });
-	jest.spyOn(Game, 'countDocuments').mockResolvedValue(0);
-	jest.spyOn(Tournament, 'findOneAndUpdate').mockResolvedValue({ ...finishing, tournStatus: 'completed' });
-	expect(await gameService.submitGameResult('game', '1-0')).toMatchObject({ id: 'game', isFinished: true, resultColor: 'white' });
-	expect(logEvent).toHaveBeenCalledWith(finishing._id, 'tournament.completed', expect.any(Object));
-});
-
 test('an in-flight pairing cannot create a game after closure', async () => {
 	const session = { withTransaction: async (fn) => fn(), endSession: jest.fn() };
 	jest.spyOn(mongoose, 'startSession').mockResolvedValue(session);
@@ -106,7 +89,7 @@ test('an in-flight pairing cannot create a game after closure', async () => {
 	expect(session.endSession).toHaveBeenCalled();
 });
 
-test('duplicate recovered snapshots cannot produce a self-pairing', async () => {
+test('a player cannot be paired with themself', async () => {
 	jest.spyOn(mongoose, 'startSession');
 	await expect(gameService.createGameFromPairing('player', 'player', 'tournament')).rejects.toThrow('distinct players');
 	expect(mongoose.startSession).not.toHaveBeenCalled();

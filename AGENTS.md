@@ -58,3 +58,11 @@ For setup, runtime architecture, pairing behavior and simulation tools, see
 - `NODE_ENV=test` disables backend rate limiting in `backend/src/app.js`; tests do not validate throttling.
 - In `view/`: `npm test -- --watchAll=false` and `npm run build`.
 - From the repository root: `docker compose up -d --build` starts the full stack.
+- `scripts/smoke-test.sh` (CI: Stack Smoke Test, prod and dev on x64 and arm64) boots
+  the compose stack from `.env.example` and drives a tournament through Nginx,
+  including a full restart. It uses the fixed container names and port 80.
+- Branch protection requires the checks `Backend tests (dockerized)`, `Frontend tests and build`
+  and `Stack smoke test`. Renaming one of these jobs blocks every PR until the rule is updated.
+- `.github/workflows/dependabot-auto-merge.yml` approves and auto-merges minor and patch
+  npm and GitHub Actions updates once those checks pass. Majors and Docker image
+  updates wait for review.

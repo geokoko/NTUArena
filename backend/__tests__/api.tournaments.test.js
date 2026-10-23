@@ -33,11 +33,6 @@ const tomorrow = () => {
 	d.setDate(d.getDate() + 1);
 	return d.toISOString();
 };
-const dayAfter = () => {
-	const d = new Date();
-	d.setDate(d.getDate() + 2);
-	return d.toISOString();
-};
 
 const createTournament = async (token, overrides = {}) => {
 	const res = await request(app)
@@ -143,7 +138,7 @@ describe('POST /api/admin/tournaments/create', () => {
 	test('returns 401 without auth', async () => {
 		const res = await request(app)
 			.post('/api/admin/tournaments/create')
-			.send({ name: 'Unauth', startDate: tomorrow(), endDate: dayAfter() });
+			.send({ name: 'Unauth', scheduledStartDate: tomorrow(), durationMs: 24 * 60 * 60 * 1000 });
 
 		expect(res.status).toBe(401);
 	});
