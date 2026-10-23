@@ -149,6 +149,30 @@ A typical OTB Arena flow:
 10. Monitor standings, live games, and backend logs for pairing warnings.
 11. Stop/complete the tournament from the admin UI when the event is over.
 
+### Entering and correcting results
+
+The Active Games table has one row per board, in board order. A game keeps
+its row until it ends; a finished board shows as **Free** until the next
+pairing takes it, and new boards are added at the bottom. Rows therefore do
+not move while new pairings arrive. A game paired while the table is open is
+highlighted briefly.
+
+**White wins**, **Black wins** and **Draw** open a confirmation that names the
+board and both players. Nothing is saved until **Confirm** is selected, and
+the result can still be switched there. The confirmation is tied to the game
+that was clicked, even if the list refreshes behind it. A confirm click within
+0.4 s of opening (for example, a double-click) is ignored. **Cancel** names the
+board and players in its prompt as well.
+
+To fix a result that was recorded wrongly, open **Game History** (latest
+results first) and select **Edit result**. A correction is allowed in any
+tournament status, including after completion. It only moves both players'
+score, W/D/L and performance rating, then refreshes the standings. It does not
+reopen the game or touch the players' current games or waiting state.
+Cancelled games cannot be corrected. Each correction is logged as
+`game.result_corrected` with the previous and new result and the admin who
+made it. API: `PUT /api/games/:id/result` with `{ "result": "0-1" }`.
+
 ### Start, close pairing, and finish
 
 Create tournaments with a positive integer `durationMs` and an optional future

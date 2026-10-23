@@ -11,6 +11,7 @@ const EVENT_TYPES = [
 	'pairing.summary',
 	'intervention.manual',
 	'game.cancelled',
+	'game.result_corrected',
 ];
 
 const TournamentLogs = ({ tournamentId, refreshKey = 0 }) => {

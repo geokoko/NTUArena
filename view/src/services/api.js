@@ -100,7 +100,8 @@ export const tournamentAPI = {
 export const gameAPI = {
 	getGame:           (id)     => api.get(`/api/games/${id}`),
 	submitGameResult:  (id, result) => api.post(`/api/games/${id}/result`, { result }),
-	cancelGame:        (id, reason = 'manual') => api.post(`/api/games/${id}/cancel`, { reason }),
+	correctGameResult: (id, result) => api.put(`/api/games/${id}/result`, { result }),
+	cancelGame:       (id, reason = 'manual') => api.post(`/api/games/${id}/cancel`, { reason }),
 };
 
 export default api;

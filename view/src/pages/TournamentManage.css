@@ -299,40 +299,6 @@
 	color: #d0d0d0;
 }
 
-.tournament-manage__result-group .btn {
-	font-weight: 500;
-	font-size: 0.8rem;
-	border-radius: 6px;
-	padding: 0.35rem 0.75rem;
-}
-
-.tournament-manage__result-group .btn-outline-success {
-	border-color: rgba(72, 187, 120, 0.4);
-	color: #68d391;
-}
-
-.tournament-manage__result-group .btn-outline-success:hover {
-	background: rgba(72, 187, 120, 0.2);
-}
-
-.tournament-manage__result-group .btn-outline-dark {
-	border-color: rgba(160, 174, 192, 0.4);
-	color: var(--text-secondary, #f5e6d3);
-}
-
-.tournament-manage__result-group .btn-outline-dark:hover {
-	background: rgba(160, 174, 192, 0.2);
-}
-
-.tournament-manage__result-group .btn-outline-secondary {
-	border-color: rgba(160, 174, 192, 0.3);
-	color: var(--text-muted, #d4c4b0);
-}
-
-.tournament-manage__result-group .btn-outline-secondary:hover {
-	background: rgba(160, 174, 192, 0.15);
-}
-
 .tournament-manage__empty {
 	font-weight: 400;
 	color: var(--text-muted, #d4c4b0);

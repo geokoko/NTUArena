@@ -1,8 +1,9 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import TournamentDetail from './TournamentDetail';
 import TournamentManage from './TournamentManage';
+import { INPUT_PROTECTION_MS } from '../components/GameResultDialog';
 import { tournamentAPI, gameAPI, userAPI } from '../services/api';
 
 jest.mock('react-router-dom', () => ({
@@ -18,8 +19,13 @@ jest.mock('../services/api', () => ({
 		getTournamentStandings: jest.fn(),
 	},
 	userAPI: { getAll: jest.fn() },
-	gameAPI: { submitGameResult: jest.fn(), cancelGame: jest.fn() },
+	gameAPI: { submitGameResult: jest.fn(), correctGameResult: jest.fn(), cancelGame: jest.fn() },
 }));
+
+const skipInputProtection = () => {
+	const now = Date.now();
+	jest.spyOn(Date, 'now').mockReturnValue(now + INPUT_PROTECTION_MS);
+};
 
 let current;
 let games;
@@ -66,7 +72,12 @@ test.each(['result', 'cancel'])('detail updates completion immediately after the
 	render(<TournamentDetail />);
 	fireEvent.click(await screen.findByRole('button', { name: /Active Games/ }));
 	fireEvent.click(screen.getByRole('checkbox'));
-	fireEvent.click(await screen.findByRole('button', { name: action === 'result' ? /White wins/ : /Cancel/ }));
+	fireEvent.click(await screen.findByRole('button', { name: action === 'result' ? 'White wins' : /Cancel/ }));
+	if (action === 'result') {
+		expect(gameAPI.submitGameResult).not.toHaveBeenCalled();
+		skipInputProtection();
+		fireEvent.click(screen.getByRole('button', { name: 'Confirm 1-0' }));
+	}
 	await waitFor(() => expect(screen.getAllByText('Completed').length).toBeGreaterThan(0));
 	expect(screen.queryByText('Finishing')).not.toBeInTheDocument();
 	expect(window.confirm).toHaveBeenCalledTimes(action === 'cancel' ? 1 : 0);
@@ -82,6 +93,54 @@ test('declining the cancel confirmation keeps the game', async () => {
 	fireEvent.click(await screen.findByRole('button', { name: /Cancel/ }));
 	expect(window.confirm).toHaveBeenCalledTimes(1);
 	expect(gameAPI.cancelGame).not.toHaveBeenCalled();
+});
+
+test('detail history lists the latest results first and corrects a recorded result', async () => {
+	current.tournStatus = 'in progress';
+	const finished = (id, boardNumber, startedAt, finishedAt, white, black) => ({
+		id, boardNumber, startedAt, finishedAt, isFinished: true, resultColor: 'white',
+		playerWhite: { id: `${id}-w`, name: white }, playerBlack: { id: `${id}-b`, name: black },
+	});
+	games = [
+		finished('short', 1, '2026-10-23T10:30:00Z', '2026-10-23T10:40:00Z', 'Ann', 'Bob'),
+		finished('long', 2, '2026-10-23T10:00:00Z', '2026-10-23T10:50:00Z', 'Cat', 'Dan'),
+		{ ...finished('void', 3, '2026-10-23T09:00:00Z', '2026-10-23T09:05:00Z', 'Eve', 'Fay'), resultColor: null, isCancelled: true },
+	];
+	gameAPI.correctGameResult.mockImplementation(async (gameId, result) => {
+		games = games.map((game) => (game.id === gameId ? { ...game, resultColor: result } : game));
+		return { data: {} };
+	});
+	render(<TournamentDetail />);
+	fireEvent.click(await screen.findByRole('button', { name: 'Game History' }));
+
+	const rows = screen.getAllByRole('row').slice(1);
+	expect(rows.map((row) => row.cells[0].textContent)).toEqual(['#2', '#1', '#3']);
+	expect(screen.getAllByRole('button', { name: 'Edit result' })).toHaveLength(2);
+
+	fireEvent.click(within(rows[1]).getByRole('button', { name: 'Edit result' }));
+	expect(screen.getByRole('dialog', { name: 'Correct result' })).toHaveTextContent('Board 1');
+	fireEvent.click(screen.getByRole('button', { name: /Bob wins/ }));
+	skipInputProtection();
+	fireEvent.click(screen.getByRole('button', { name: 'Change to 0-1' }));
+
+	await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+	expect(gameAPI.correctGameResult).toHaveBeenCalledWith('short', 'black');
+	expect(within(screen.getAllByRole('row')[2]).getByText('0-1')).toBeInTheDocument();
+});
+
+test('management page keeps the result dialog open when saving fails', async () => {
+	current.tournStatus = 'in progress';
+	games = [{ id: 'game', isFinished: false, boardNumber: 1, playerWhite: { id: 'white', name: 'Ann' }, playerBlack: { id: 'black', name: 'Bob' } }];
+	gameAPI.submitGameResult.mockRejectedValue({ status: 409, message: 'Game with ID: game already finished with result black' });
+	render(<TournamentManage />);
+
+	fireEvent.click(await screen.findByRole('button', { name: 'White wins' }));
+	skipInputProtection();
+	fireEvent.click(screen.getByRole('button', { name: 'Confirm 1-0' }));
+
+	expect(await screen.findByRole('alert')).toHaveTextContent('already finished with result black');
+	expect(screen.getByRole('dialog', { name: 'Confirm result' })).toBeInTheDocument();
+	expect(gameAPI.submitGameResult).toHaveBeenCalledWith('game', 'white');
 });
 
 test.each([TournamentDetail, TournamentManage])('%p keeps withdrawn users unavailable for registration', async (Page) => {
