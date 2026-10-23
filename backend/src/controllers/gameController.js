@@ -26,6 +26,11 @@ exports.correctResult = asyncHandler(async (req, res) => {
 	res.json(game);
 });
 
+exports.reopenGame = asyncHandler(async (req, res) => {
+	const game = await gameService.reopenGame(req.params.id, { actor: req.user });
+	res.json(game);
+});
+
 exports.cancelGame = asyncHandler(async (req, res) => {
 	const game = await gameService.cancelGame(req.params.id, {
 		actor: req.user,

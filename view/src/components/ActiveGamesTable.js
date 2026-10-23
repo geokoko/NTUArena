@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import GameResultDialog, { gamePlayerName } from './GameResultDialog';
+import GameResultDialog, { describeGame, gamePlayerName } from './GameResultDialog';
 import './ActiveGamesTable.css';
 
 /**
@@ -48,9 +48,7 @@ const ActiveGamesTable = ({ games, canManage = false, onSubmitResult, onCancelGa
 	const rows = useMemo(() => arrangeBoards(games), [games]);
 
 	const confirmCancel = (game) => {
-		const board = game.boardNumber ? `board #${game.boardNumber}` : 'this game';
-		const players = `${gamePlayerName(game.playerWhite)} vs ${gamePlayerName(game.playerBlack)}`;
-		if (!window.confirm(`Cancel ${board} (${players})? It will not be scored, both players go back to waiting, and this cannot be undone.`)) return;
+		if (!window.confirm(`Cancel ${describeGame(game)}? It will not be scored, both players go back to waiting, and this cannot be undone.`)) return;
 		onCancelGame(game.id);
 	};
 

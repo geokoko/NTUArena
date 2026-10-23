@@ -19,7 +19,7 @@ jest.mock('../services/api', () => ({
 		getTournamentStandings: jest.fn(),
 	},
 	userAPI: { getAll: jest.fn() },
-	gameAPI: { submitGameResult: jest.fn(), correctGameResult: jest.fn(), cancelGame: jest.fn() },
+	gameAPI: { submitGameResult: jest.fn(), correctGameResult: jest.fn(), reopenGame: jest.fn(), cancelGame: jest.fn() },
 }));
 
 const skipInputProtection = () => {
@@ -126,6 +126,44 @@ test('detail history lists the latest results first and corrects a recorded resu
 	await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 	expect(gameAPI.correctGameResult).toHaveBeenCalledWith('short', 'black');
 	expect(within(screen.getAllByRole('row')[2]).getByText('0-1')).toBeInTheDocument();
+});
+
+test('detail history reopens a game scored by mistake while pairing is open', async () => {
+	current.tournStatus = 'in progress';
+	games = [{
+		id: 'wrong', boardNumber: 1, startedAt: '2026-10-23T10:00:00Z', finishedAt: '2026-10-23T10:20:00Z', isFinished: true,
+		resultColor: 'white', playerWhite: { id: 'w', name: 'Ann' }, playerBlack: { id: 'b', name: 'Bob' },
+	}];
+	gameAPI.reopenGame.mockImplementation(async (gameId) => {
+		games = games.map((game) => (game.id === gameId ? { ...game, isFinished: false, resultColor: null, finishedAt: null, boardNumber: 2 } : game));
+		return { data: { id: gameId, boardNumber: 2 } };
+	});
+	jest.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+	jest.spyOn(window, 'alert').mockImplementation(() => {});
+	render(<TournamentDetail />);
+	fireEvent.click(await screen.findByRole('button', { name: 'Game History' }));
+
+	fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+	expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/^Reopen board #1 \(Ann vs Bob\)\?.*The 1-0 result is removed/));
+	expect(gameAPI.reopenGame).not.toHaveBeenCalled();
+
+	fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+	await waitFor(() => expect(screen.getByText('No completed games yet.')).toBeInTheDocument());
+	expect(gameAPI.reopenGame).toHaveBeenCalledWith('wrong');
+	expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('now listed on board #2'));
+});
+
+test('detail history offers only corrections once pairing has closed', async () => {
+	current.tournStatus = 'finishing';
+	games = [{
+		id: 'done', boardNumber: 1, finishedAt: '2026-10-23T10:20:00Z', isFinished: true, resultColor: 'draw',
+		playerWhite: { id: 'w', name: 'Ann' }, playerBlack: { id: 'b', name: 'Bob' },
+	}];
+	render(<TournamentDetail />);
+	fireEvent.click(await screen.findByRole('button', { name: 'Game History' }));
+
+	expect(screen.getByRole('button', { name: 'Edit result' })).toBeInTheDocument();
+	expect(screen.queryByRole('button', { name: 'Reopen' })).not.toBeInTheDocument();
 });
 
 test('management page keeps the result dialog open when saving fails', async () => {

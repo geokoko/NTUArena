@@ -10,6 +10,12 @@ export const INPUT_PROTECTION_MS = 400;
 
 export const gamePlayerName = (player) => player?.name || player?.username || 'Unknown';
 
+// "board #3 (Ann vs Bob)", for prompts that must name the exact game.
+export const describeGame = (game) => {
+	const board = game.boardNumber ? `board #${game.boardNumber}` : 'this game';
+	return `${board} (${gamePlayerName(game.playerWhite)} vs ${gamePlayerName(game.playerBlack)})`;
+};
+
 const RESULT_OPTIONS = [
 	{ value: 'white', outcome: (white) => `${white} wins` },
 	{ value: 'draw', outcome: () => 'Draw' },

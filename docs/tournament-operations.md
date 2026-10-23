@@ -173,6 +173,19 @@ Cancelled games cannot be corrected. Each correction is logged as
 `game.result_corrected` with the previous and new result and the admin who
 made it. API: `PUT /api/games/:id/result` with `{ "result": "0-1" }`.
 
+If the result was entered on a game that is still being played, select
+**Reopen** in Game History instead. It removes the result from both players
+(score, W/D/L, games played, performance) and makes the game active again,
+with both players back in it. Reopen is only offered while the tournament is
+`in progress`, because only then can the freed players be paired into new
+games. Once pairing has closed, correct the result when the game ends.
+
+Reopen is refused while either player is already in another game (cancel that
+game first) or is paused or withdrawn. The game keeps its board unless a new
+pairing took it; in that case it moves to the lowest free board and the admin
+is told the new number. Each reopen is logged as `game.reopened`.
+API: `POST /api/games/:id/reopen`.
+
 ### Start, close pairing, and finish
 
 Create tournaments with a positive integer `durationMs` and an optional future

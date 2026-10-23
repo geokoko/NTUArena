@@ -101,6 +101,13 @@
 	color: #e8e1d7;
 }
 
+.tournament-history__actions {
+	display: flex;
+	gap: 0.35rem;
+	justify-content: flex-end;
+	white-space: nowrap;
+}
+
 /* Admin manage */
 .tournament-admin__table th,
 .tournament-admin__table td {

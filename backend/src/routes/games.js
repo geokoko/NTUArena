@@ -10,6 +10,8 @@ router.get('/games/:id', gameCtrl.getGame);
 router.post('/games/:id/result', requireAuth, requireRole('admin'), gameCtrl.submitResult);
 // Admin corrects the result of a finished game
 router.put('/games/:id/result', requireAuth, requireRole('admin'), gameCtrl.correctResult);
+// Admin undoes a result entered on a game that is still being played
+router.post('/games/:id/reopen', requireAuth, requireRole('admin'), gameCtrl.reopenGame);
 router.post('/games/:id/cancel', requireAuth, requireRole('admin'), gameCtrl.cancelGame);
 
 module.exports = router;

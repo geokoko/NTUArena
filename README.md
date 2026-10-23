@@ -37,7 +37,7 @@ Arena is the complete real-time tournament path today. Swiss is still a roadmap 
 - **Graph-Based Pairing** - Maximum-weight matching over legal player-pair edges using Edmonds blossom matching.
 - **Pairing Controls** - Tune the Arena settle window with `PAIRING_SETTLE_MS` and validate choices with simulation/Pareto reports.
 - **Live Standings** - Real-time leaderboard updates during tournaments.
-- **Game Result Submission** - Admin result entry updates stats, ratings, histories, and pairing eligibility. Boards keep fixed rows, each result is confirmed before saving, and recorded results can be corrected from the game history.
+- **Game Result Submission** - Admin result entry updates stats, ratings, histories, and pairing eligibility. Boards keep fixed rows, each result is confirmed before saving, and recorded results can be corrected, or reopened if the game is still being played, from the game history.
 - **Player Management** - Register users, import participants by CSV, pause/withdraw players who leave early.
 - **Role-Based Access** - Admin, player, and spectator roles with JWT authentication.
 - **Responsive UI** - Works on desktop and mobile browsers.

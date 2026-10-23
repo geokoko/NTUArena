@@ -202,6 +202,30 @@ describe('PUT /api/games/:id/result', () => {
 	});
 });
 
+// ─────────────────────────────────────────────
+// POST /api/games/:id/reopen
+// ─────────────────────────────────────────────
+describe('POST /api/games/:id/reopen', () => {
+	test('only an admin reopens a game scored by mistake', async () => {
+		const admin = await registerAndLogin('admin');
+		const player = await registerAndLogin('player');
+		const { game } = await setupGame(admin.token);
+		await Tournament.updateOne({ _id: game.tournament }, { tournStatus: 'in progress' });
+		await request(app).post(`/api/games/${game.publicId}/result`)
+			.set('Authorization', `Bearer ${admin.token}`).send({ result: '1-0' });
+		const reopen = (token) => request(app).post(`/api/games/${game.publicId}/reopen`)
+			.set('Authorization', `Bearer ${token}`).send({});
+
+		expect((await reopen(player.token)).status).toBe(403);
+		const res = await reopen(admin.token);
+		expect(res.status).toBe(200);
+		expect(res.body).toMatchObject({ id: game.publicId, isFinished: false, resultColor: null, boardNumber: 1 });
+		expect((await reopen(admin.token)).status).toBe(409);
+		const white = await Player.findById(game.playerWhite);
+		expect([white.isPlaying, white.score, white.gamesPlayed]).toEqual([true, 0, 0]);
+	});
+});
+
 describe('POST /api/games/:id/cancel', () => {
 	test('returns 404 for a missing game and 409 for a duplicate cancellation', async () => {
 		const admin = await registerAndLogin('admin');

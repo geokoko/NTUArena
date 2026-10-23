@@ -286,3 +286,98 @@ describe('correctGameResult', () => {
 		expect((await Game.findById(game._id)).resultColor).toBe('white');
 	});
 });
+
+// ─────────────────────────────────────────────
+// reopenGame
+// ─────────────────────────────────────────────
+describe('reopenGame', () => {
+	const PLAYER_FIELDS = ['score', 'wins', 'draws', 'losses', 'gamesPlayed', 'sumOpponentRatings', 'performanceRating', 'isPlaying', 'waitingSince'];
+	const snapshot = async (player) => {
+		const doc = await Player.findById(player._id).lean();
+		return { ...Object.fromEntries(PLAYER_FIELDS.map((field) => [field, doc[field]])), gameHistory: doc.gameHistory.map(String) };
+	};
+	// A started tournament whose players were paired into the fixture game.
+	const runningFixture = async () => {
+		const fixture = await setupGameFixture();
+		await Tournament.updateOne({ _id: fixture.tournament._id }, { tournStatus: 'in progress' });
+		await Player.updateMany({ tournament: fixture.tournament._id }, { waitingSince: null });
+		return fixture;
+	};
+	const tempPlayer = (tournament, tempName) => Player.create({ tournament: tournament._id, tempName, isPlaying: true, waitingSince: null });
+
+	test('puts the game and both players back to before the result', async () => {
+		const { game, whitePlayer, blackPlayer } = await runningFixture();
+		const before = [await snapshot(whitePlayer), await snapshot(blackPlayer)];
+		await gameService.submitGameResult(game.publicId, '1-0');
+
+		const result = await gameService.reopenGame(game.publicId);
+
+		expect(result).toMatchObject({ id: game.publicId, isFinished: false, resultColor: null, finishedAt: null, boardNumber: 1 });
+		expect([await snapshot(whitePlayer), await snapshot(blackPlayer)]).toEqual(before);
+		expect((await Player.findById(whitePlayer._id)).lastResultAt).toBeNull();
+	});
+
+	test('keeps earlier results and the earlier result time', async () => {
+		const { game, tournament, whitePlayer, blackPlayer } = await runningFixture();
+		await gameService.submitGameResult(game.publicId, '1-0');
+		await Player.updateMany({ _id: { $in: [whitePlayer._id, blackPlayer._id] } }, { isPlaying: true, waitingSince: null });
+		const afterFirst = [await snapshot(whitePlayer), await snapshot(blackPlayer)];
+		const second = await Game.create({ playerWhite: blackPlayer._id, playerBlack: whitePlayer._id, tournament: tournament._id, boardNumber: 1 });
+		await gameService.submitGameResult(second.publicId, 'draw');
+
+		await gameService.reopenGame(second.publicId);
+
+		expect([await snapshot(whitePlayer), await snapshot(blackPlayer)]).toEqual(afterFirst);
+		const { finishedAt } = await Game.findById(game._id);
+		expect((await Player.findById(whitePlayer._id)).lastResultAt).toEqual(finishedAt);
+		expect((await Player.findById(blackPlayer._id)).lastResultAt).toEqual(finishedAt);
+	});
+
+	test('moves to the lowest free board when another game took its board, and logs it', async () => {
+		const { game, tournament } = await runningFixture();
+		await gameService.submitGameResult(game.publicId, '1-0');
+		const [cleo, dino] = [await tempPlayer(tournament, 'Cleo'), await tempPlayer(tournament, 'Dino')];
+		await Game.create({ playerWhite: cleo._id, playerBlack: dino._id, tournament: tournament._id, boardNumber: 1 });
+
+		const result = await gameService.reopenGame(game.publicId, { actor: { publicId: 'arbiter', username: 'Arbiter' } });
+
+		expect(result.boardNumber).toBe(2);
+		const log = await TournamentLog.findOne({ tournamentId: tournament._id, eventType: 'game.reopened' }).lean();
+		expect(log).toMatchObject({
+			message: 'Result 1-0 removed; game reopened on board 2 (board 1 was in use).',
+			payload: { gameId: game.publicId, boardNumber: 2, previousBoardNumber: 1, previousResult: 'white' },
+			actor: { userId: 'arbiter', username: 'Arbiter' },
+		});
+	});
+
+	test('refuses while a player is already in another game', async () => {
+		const { game, tournament, whitePlayer } = await runningFixture();
+		await gameService.submitGameResult(game.publicId, '1-0');
+		const cleo = await tempPlayer(tournament, 'Cleo');
+		await Player.updateOne({ _id: whitePlayer._id }, { isPlaying: true, waitingSince: null });
+		await Game.create({ playerWhite: whitePlayer._id, playerBlack: cleo._id, tournament: tournament._id, boardNumber: 3 });
+
+		await expect(gameService.reopenGame(game.publicId)).rejects.toMatchObject({
+			status: 409, code: 'PLAYER_UNAVAILABLE', message: expect.stringContaining('is already playing board 3. Cancel that game first.'),
+		});
+		expect(await Game.findById(game._id)).toMatchObject({ isFinished: true, resultColor: 'white' });
+		expect((await Player.findById(whitePlayer._id)).gamesPlayed).toBe(1);
+	});
+
+	test('refuses unscored games, paused players and tournaments that are not in progress', async () => {
+		const { game, tournament, blackPlayer } = await runningFixture();
+		await expect(gameService.reopenGame(game.publicId)).rejects.toMatchObject({ status: 409, code: 'GAME_NOT_SCORED' });
+
+		await gameService.submitGameResult(game.publicId, 'draw');
+		await Player.updateOne({ _id: blackPlayer._id }, { status: 'paused' });
+		await expect(gameService.reopenGame(game.publicId)).rejects.toMatchObject({
+			status: 409, code: 'PLAYER_UNAVAILABLE', message: expect.stringContaining('is paused'),
+		});
+
+		await Player.updateOne({ _id: blackPlayer._id }, { status: 'active' });
+		await Tournament.updateOne({ _id: tournament._id }, { tournStatus: 'finishing' });
+		await expect(gameService.reopenGame(game.publicId)).rejects.toMatchObject({ status: 409, code: 'TOURNAMENT_NOT_RUNNING' });
+		expect(await Game.findById(game._id)).toMatchObject({ isFinished: true, resultColor: 'draw' });
+		await expect(gameService.reopenGame('missing')).rejects.toMatchObject({ status: 404 });
+	});
+});

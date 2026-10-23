@@ -12,6 +12,7 @@ const EVENT_TYPES = [
 	'intervention.manual',
 	'game.cancelled',
 	'game.result_corrected',
+	'game.reopened',
 ];
 
 const TournamentLogs = ({ tournamentId, refreshKey = 0 }) => {

@@ -112,6 +112,23 @@ function replaceResultForPlayer({ player, previousColor, resultColor, perspectiv
 	refreshPerformanceRating(player);
 }
 
+// Inverse of applyResultToPlayer for a game that turns out to be still in
+// play: the player is back in it and the game no longer counts.
+function withdrawResultFromPlayer({ player, opponentRating, resultColor, perspective, gameId, lastResultAt }) {
+	const outcome = outcomeFor(resultColor, perspective);
+
+	player.isPlaying = true;
+	player.waitingSince = null;
+	player.gamesPlayed = Math.max(asNumber(player.gamesPlayed) - 1, 0);
+	player.score = asNumber(player.score) - outcome.points;
+	player[outcome.counter] = Math.max(asNumber(player[outcome.counter]) - 1, 0);
+	player.gameHistory = (player.gameHistory || []).filter((id) => String(id) !== String(gameId));
+	player.sumOpponentRatings = Math.max(asNumber(player.sumOpponentRatings) - opponentRating, 0);
+	player.lastResultAt = lastResultAt;
+	if (player.gamesPlayed > 0) refreshPerformanceRating(player);
+	else player.performanceRating = null;
+}
+
 function rollbackLatestPairingHistory(player, opponentId, expectedColor) {
 	if (!player) return;
 	const opponents = [...(player.recentOpponents ?? [])];
@@ -479,6 +496,104 @@ class GameService {
 		return serializeGame(game);
 	}
 
+	/**
+	 * Undoes a result that was entered on a game still being played, such as a
+	 * click on the wrong board. The game is active again, both players are back
+	 * in it, and the result no longer counts. Only allowed while the tournament
+	 * is in progress: that is when the freed players can be paired elsewhere.
+	 * Refused once either player is in another game or no longer active. The
+	 * game keeps its board unless another game took it meanwhile.
+	 */
+	async reopenGame(gameId, { actor = null } = {}) {
+		const lookupFilter = gameLookupFilter(gameId);
+
+		const reopened = await inTransaction(async (session) => {
+			const game = await Game.findOne(lookupFilter).session(session);
+			if (!game) throw gameError('Game not found', 404, 'GAME_NOT_FOUND');
+			if (game.isCancelled || !game.isFinished || !game.resultColor) {
+				throw gameError(`Game with ID: ${gameId} has no result to undo`, 409, 'GAME_NOT_SCORED');
+			}
+			// Pairing and ending the tournament write this document too, so a
+			// concurrent pairing or close conflicts with this transaction.
+			const tournament = await Tournament.findOneAndUpdate(
+				{ _id: game.tournament, tournStatus: 'in progress' },
+				{ $inc: { pairingRevision: 1 } },
+				{ session, returnDocument: 'after' },
+			);
+			if (!tournament) {
+				throw gameError(
+					'Games can only be reopened while the tournament is in progress. Correct the result once the game ends.',
+					409, 'TOURNAMENT_NOT_RUNNING',
+				);
+			}
+
+			const loadPlayer = (id) => Player.findById(id).populate('user', GAME_PLAYER_USER_FIELDS).session(session);
+			const white = await loadPlayer(game.playerWhite);
+			const black = await loadPlayer(game.playerBlack);
+			for (const player of [white, black]) {
+				if (!player) throw gameError('A player of this game no longer exists', 409, 'PLAYER_UNAVAILABLE');
+				if (player.isPlaying) {
+					const current = await Game.findOne({
+						tournament: tournament._id, isFinished: false, isCancelled: { $ne: true },
+						$or: [{ playerWhite: player._id }, { playerBlack: player._id }],
+					}).select('boardNumber').session(session);
+					const where = current?.boardNumber ? `board ${current.boardNumber}` : 'another game';
+					throw gameError(`${participantName(player)} is already playing ${where}. Cancel that game first.`, 409, 'PLAYER_UNAVAILABLE');
+				}
+				if (player.status !== 'active') {
+					throw gameError(`${participantName(player)} is ${player.status}. Resume them before reopening this game.`, 409, 'PLAYER_UNAVAILABLE');
+				}
+			}
+
+			const previousBoardNumber = game.boardNumber;
+			const boardTaken = await Game.exists({
+				tournament: tournament._id, isFinished: false, isCancelled: { $ne: true }, boardNumber: previousBoardNumber,
+			}).session(session);
+			const boardNumber = boardTaken ? await lowestFreeBoardNumber(tournament._id, session) : previousBoardNumber;
+			const previousColor = game.resultColor;
+
+			game.set({ isFinished: false, resultColor: undefined, finishedAt: undefined, boardNumber });
+			await game.save({ session });
+
+			for (const [player, opponent, perspective] of [[white, black, 'white'], [black, white, 'black']]) {
+				const previousGame = await Game.findOne({
+					_id: { $ne: game._id }, tournament: tournament._id, isFinished: true, isCancelled: { $ne: true },
+					$or: [{ playerWhite: player._id }, { playerBlack: player._id }],
+				}).sort({ finishedAt: -1 }).select('finishedAt').session(session);
+				withdrawResultFromPlayer({
+					player,
+					opponentRating: resolveOpponentRating(opponent),
+					resultColor: previousColor,
+					perspective,
+					gameId: game._id,
+					lastResultAt: previousGame?.finishedAt ?? null,
+				});
+				await player.save({ session });
+			}
+			return { game, white, black, previousColor, previousBoardNumber };
+		});
+
+		const { game, white, black, previousColor, previousBoardNumber } = reopened;
+		await ensureDocumentPublicId(game, Game);
+		const moved = game.boardNumber !== previousBoardNumber;
+		await logEvent(game.tournament, 'game.reopened', {
+			message: `Result ${RESULT_SCORES[previousColor]} removed; game reopened on board ${game.boardNumber}`
+				+ `${moved ? ` (board ${previousBoardNumber} was in use)` : ''}.`,
+			payload: {
+				gameId: game.publicId || String(game._id),
+				boardNumber: game.boardNumber,
+				previousBoardNumber,
+				previousResult: previousColor,
+				players: [white, black].map((player) => String(player._id)),
+			},
+			actor,
+		});
+		await scheduleStandingsRefresh(game.tournament);
+
+		await populateGamePlayers(game);
+		return serializeGame(game);
+	}
+
 	async cancelGame(gameId, { actor = null, reason = 'manual', excludePlayerIds = [] } = {}) {
 		const cancelledAt = new Date();
 		const excluded = new Set(excludePlayerIds.map(String));
@@ -569,6 +684,9 @@ const buildDisplayName = (user) => {
 	if (parts.length) return parts.join(' ');
 	return user?.username || user?.email || 'Unknown Player';
 };
+
+// CSV temp players have no user account, only a tempName.
+const participantName = (player) => (player?.user ? buildDisplayName(player.user) : player?.tempName || 'A player');
 
 const summarizeGamePlayer = (player) => {
 	if (!player) return null;

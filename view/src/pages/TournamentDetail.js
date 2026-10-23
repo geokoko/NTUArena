@@ -4,7 +4,7 @@ import { tournamentAPI, gameAPI, userAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import ActiveGamesTable from '../components/ActiveGamesTable';
 import CSVImport from '../components/CSVImport';
-import GameResultDialog from '../components/GameResultDialog';
+import GameResultDialog, { describeGame, RESULT_SCORES } from '../components/GameResultDialog';
 import TournamentCountdown from '../components/TournamentCountdown';
 import UserMultiSelect from '../components/UserMultiSelect';
 import './TournamentDetail.css';
@@ -35,6 +35,7 @@ const TournamentDetail = () => {
 	const [actionError, setActionError] = useState('');
 	const [cancellingGameId, setCancellingGameId] = useState(null);
 	const [correctingGame, setCorrectingGame] = useState(null);
+	const [reopeningGameId, setReopeningGameId] = useState(null);
 	const [selectedHistoryPlayerId, setSelectedHistoryPlayerId] = useState('');
 	const [users, setUsers] = useState([]);
 	const [usersError, setUsersError] = useState('');
@@ -298,6 +299,24 @@ const TournamentDetail = () => {
 	const handleCorrectResult = useCallback(async (gameId, result) => {
 		await gameAPI.correctGameResult(gameId, result);
 		await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+	}, [refreshGames, refreshStandings, refreshPlayers]);
+
+	const handleReopenGame = useCallback(async (game) => {
+		const prompt = `Reopen ${describeGame(game)}? Use this when the result was entered on a game that is still being played. `
+			+ `The ${RESULT_SCORES[game.resultColor]} result is removed and both players are back in this game.`;
+		if (!window.confirm(prompt)) return;
+		setReopeningGameId(game.id);
+		try {
+			const { data } = await gameAPI.reopenGame(game.id);
+			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+			if (data?.boardNumber && data.boardNumber !== game.boardNumber) {
+				alert(`Board #${game.boardNumber} was taken by a new pairing, so the game is now listed on board #${data.boardNumber}.`);
+			}
+		} catch (err) {
+			alert(err.message || 'Failed to reopen game');
+		} finally {
+			setReopeningGameId(null);
+		}
 	}, [refreshGames, refreshStandings, refreshPlayers]);
 
 	const handleCancelGame = useCallback(async (gameId) => {
@@ -691,13 +710,27 @@ const TournamentDetail = () => {
 											{isAdmin && (
 												<td className="text-end">
 													{game.resultColor && !game.isCancelled && (
-														<button
-															type="button"
-															className="btn btn-sm btn-outline-secondary"
-															onClick={() => setCorrectingGame(game)}
-														>
-															Edit result
-														</button>
+														<div className="tournament-history__actions">
+															<button
+																type="button"
+																className="btn btn-sm btn-outline-secondary"
+																onClick={() => setCorrectingGame(game)}
+																disabled={!!reopeningGameId}
+															>
+																Edit result
+															</button>
+															{/* Only while pairing is open, when the freed players could be re-paired. */}
+															{tournament.tournStatus === 'in progress' && (
+																<button
+																	type="button"
+																	className="btn btn-sm btn-outline-warning"
+																	onClick={() => handleReopenGame(game)}
+																	disabled={!!reopeningGameId}
+																>
+																	Reopen
+																</button>
+															)}
+														</div>
 													)}
 												</td>
 											)}
