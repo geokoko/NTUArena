@@ -1,40 +1,75 @@
 # Dependabot configuration
-# Groups all dependency updates into unified PRs per ecosystem.
-# - version-updates: batched weekly on Monday
-# - security-updates: also grouped (rather than one PR per package)
+# - Minor and patch version updates are grouped per ecosystem and merged
+#   automatically once CI passes (.github/workflows/dependabot-auto-merge.yml).
+# - Major updates get one PR per dependency and wait for review, so one
+#   breaking release cannot hold back every other update.
+# - Security updates are grouped per directory; they are auto-merged only when
+#   every update in the group is minor or patch.
+# - cooldown waits a week after a release before proposing it, so a broken or
+#   hijacked release is usually yanked before it reaches a PR. It does not
+#   delay security updates.
 
 version: 2
 updates:
-  # Backend (Node.js)
   - package-ecosystem: "npm"
     directory: "/backend"
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     groups:
-      all-backend-deps:
+      backend-minor-patch:
         applies-to: version-updates
-        patterns:
-          - "*"
-      all-backend-security:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      backend-security:
         applies-to: security-updates
-        patterns:
-          - "*"
-    open-pull-requests-limit: 2
+        patterns: ["*"]
 
-  # Frontend (React)
   - package-ecosystem: "npm"
     directory: "/view"
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     groups:
-      all-frontend-deps:
+      frontend-minor-patch:
         applies-to: version-updates
-        patterns:
-          - "*"
-      all-frontend-security:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      frontend-security:
         applies-to: security-updates
-        patterns:
-          - "*"
-    open-pull-requests-limit: 2
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Base images (Node and Nginx in the Dockerfiles, MongoDB in compose) are
+  # never auto-merged. A MongoDB upgrade changes the on-disk data version and
+  # has to follow MongoDB's feature compatibility steps.
+  - package-ecosystem: "docker"
+    directories: ["/backend", "/view"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7

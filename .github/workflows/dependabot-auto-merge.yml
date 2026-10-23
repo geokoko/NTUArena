@@ -1,0 +1,36 @@
+name: Dependabot Auto-merge
+
+# pull_request_target runs this file as it is on master, so a Dependabot PR
+# that bumps the actions below cannot change what runs with write access.
+# Nothing from the PR is checked out or executed.
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge minor and patch updates
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'geokoko/NTUArena'
+    runs-on: ubuntu-latest
+    steps:
+      # Fails if the PR has commits not made by Dependabot.
+      - name: Read Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+
+      # Major updates and Docker image updates (Node, Nginx, MongoDB) wait
+      # for a person. update-type is the largest change in a grouped PR.
+      - name: Approve and merge once required checks pass
+        if: >-
+          contains(fromJSON('["npm_and_yarn", "github_actions"]'), steps.metadata.outputs.package-ecosystem)
+          && contains(fromJSON('["version-update:semver-minor", "version-update:semver-patch"]'), steps.metadata.outputs.update-type)
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$(gh pr view "$PR_URL" --json reviewDecision -q .reviewDecision)" != APPROVED ]; then
+            gh pr review --approve "$PR_URL"
+          fi
+          gh pr merge --auto --squash "$PR_URL"
