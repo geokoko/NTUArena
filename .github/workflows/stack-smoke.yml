@@ -1,0 +1,46 @@
+name: Stack Smoke Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  # The base images use floating tags (node:22-alpine, nginx:alpine), so the
+  # stack can break without a commit. Rebuild it every week.
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Stack smoke (${{ matrix.mode }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [prod, dev]
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Show tool versions
+        run: docker version --format '{{.Server.Version}} {{.Server.Arch}}' && docker compose version && jq --version
+      - name: Run smoke test
+        run: scripts/smoke-test.sh
+        env:
+          APP_MODE: ${{ matrix.mode }}
+
+  # Single required check for branch protection, so the matrix can change
+  # without editing the protection rule.
+  result:
+    name: Stack smoke test
+    if: always()
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every smoke run to pass
+        run: test "${{ needs.smoke.result }}" = success

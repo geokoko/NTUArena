@@ -2,6 +2,7 @@ const { connect, clearDatabase, disconnect } = require('./setup');
 const Tournament = require('../src/models/Tournament');
 const Player = require('../src/models/Player');
 const Game = require('../src/models/Game');
+const TournamentLog = require('../src/models/TournamentLog');
 const tournamentService = require('../src/services/tournamentService');
 const gameService = require('../src/services/gameService');
 const mongoose = require('mongoose');
@@ -28,8 +29,9 @@ test('closing pairing lets the last result settle and then completes', async () 
 	expect((await tournamentService.endTournament(tournament._id)).tournStatus).toBe('finishing');
 	await expect(gameService.createGameFromPairing(players[0]._id, players[1]._id, tournament._id)).rejects.toThrow('pairing is closed');
 	const result = await gameService.submitGameResult(game._id, '1-0');
-	expect(result).toMatchObject({ isFinished: true, resultColor: 'white', boardNumber: 1 });
+	expect(result).toMatchObject({ id: game.publicId, isFinished: true, resultColor: 'white', boardNumber: 1 });
 	expect((await Tournament.findById(tournament._id)).tournStatus).toBe('completed');
+	expect(await TournamentLog.exists({ tournamentId: tournament._id, eventType: 'tournament.completed' })).toBeTruthy();
 	expect((await Player.findById(players[0]._id)).score).toBe(1);
 });
 

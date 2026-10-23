@@ -22,12 +22,12 @@ const registerUser = (data = {}) =>
 // GET /api/auth/status
 // ─────────────────────────────────────────────
 describe('GET /api/auth/status', () => {
-	test('returns authEnabled flag', async () => {
+	test('reports that auth is enabled', async () => {
 		const res = await request(app).get('/api/auth/status');
 
 		expect(res.status).toBe(200);
 		expect(res.body.success).toBe(true);
-		expect(typeof res.body.authEnabled).toBe('boolean');
+		expect(res.body.authEnabled).toBe(true);
 	});
 });
 
