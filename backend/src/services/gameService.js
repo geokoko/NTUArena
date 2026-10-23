@@ -53,38 +53,63 @@ function calculatePerformanceRating({ sumOpponentRatings = 0, gamesPlayed = 0, s
 	return Math.round(Math.max(performance, 0)); // Ensure non-negative
 }
 
-function applyResultToPlayer({ player, opponentRating, resultColor, perspective, gameId }) {
-	if (!player) return;
-	const now = new Date();
-	const isWhite = perspective === 'white';
-	const resultMap = {
-		white: isWhite ? 1 : 0,
-		black: isWhite ? 0 : 1,
-		draw: 0.5,
-	};
+// Normalize incoming result to one of: 'white' | 'black' | 'draw'
+function normalizeResult(result) {
+	if (!result) return null;
+	const v = String(result).toLowerCase().trim();
+	if (v === '1-0' || v === 'white' || v === 'w') return 'white';
+	if (v === '0-1' || v === 'black' || v === 'b') return 'black';
+	if (v === '1/2-1/2' || v === '0.5-0.5' || v === 'draw' || v === '½-½') return 'draw';
+	return null;
+}
 
-	const points = resultMap[resultColor] ?? 0;
+const RESULT_SCORES = { white: '1-0', black: '0-1', draw: '½-½' };
 
-	player.isPlaying = false;
-	player.gamesPlayed = asNumber(player.gamesPlayed) + 1;
-	player.score = asNumber(player.score) + points;
-	player.gameHistory = [...(player.gameHistory || []), gameId].slice(-50);
-	player.sumOpponentRatings = asNumber(player.sumOpponentRatings) + opponentRating;
-	player.lastResultAt = now;
+const OUTCOMES = {
+	win: { points: 1, counter: 'wins' },
+	draw: { points: 0.5, counter: 'draws' },
+	loss: { points: 0, counter: 'losses' },
+};
 
-	if (resultColor === 'draw') {
-		player.draws = asNumber(player.draws) + 1;
-	} else if ((resultColor === 'white' && isWhite) || (resultColor === 'black' && !isWhite)) {
-		player.wins = asNumber(player.wins) + 1;
-	} else {
-		player.losses = asNumber(player.losses) + 1;
-	}
+function outcomeFor(resultColor, perspective) {
+	if (resultColor === 'draw') return OUTCOMES.draw;
+	return resultColor === perspective ? OUTCOMES.win : OUTCOMES.loss;
+}
 
+function refreshPerformanceRating(player) {
 	player.performanceRating = calculatePerformanceRating({
 		sumOpponentRatings: player.sumOpponentRatings,
 		gamesPlayed: player.gamesPlayed,
 		score: player.score,
 	});
+}
+
+function applyResultToPlayer({ player, opponentRating, resultColor, perspective, gameId }) {
+	if (!player) return;
+	const outcome = outcomeFor(resultColor, perspective);
+
+	player.isPlaying = false;
+	player.gamesPlayed = asNumber(player.gamesPlayed) + 1;
+	player.score = asNumber(player.score) + outcome.points;
+	player[outcome.counter] = asNumber(player[outcome.counter]) + 1;
+	player.gameHistory = [...(player.gameHistory || []), gameId].slice(-50);
+	player.sumOpponentRatings = asNumber(player.sumOpponentRatings) + opponentRating;
+	player.lastResultAt = new Date();
+	refreshPerformanceRating(player);
+}
+
+// Swaps a recorded outcome for another. The game still counts once with the
+// same opponent rating, and the player's current game and waiting state are
+// left alone: a correction must not pull anyone out of a newer pairing.
+function replaceResultForPlayer({ player, previousColor, resultColor, perspective }) {
+	if (!player) return;
+	const previous = outcomeFor(previousColor, perspective);
+	const next = outcomeFor(resultColor, perspective);
+
+	player.score = asNumber(player.score) - previous.points + next.points;
+	player[previous.counter] = Math.max(asNumber(player[previous.counter]) - 1, 0);
+	player[next.counter] = asNumber(player[next.counter]) + 1;
+	refreshPerformanceRating(player);
 }
 
 function rollbackLatestPairingHistory(player, opponentId, expectedColor) {
@@ -103,44 +128,75 @@ function rollbackLatestPairingHistory(player, opponentId, expectedColor) {
 
 const gameError = (message, status, code) => Object.assign(new Error(message), { status, code });
 
-async function changeGame(gameId, changes, updatePlayers) {
+const GAME_PLAYER_USER_FIELDS = 'publicId username email globalElo profile.firstName profile.lastName';
+
+async function populateGamePlayers(game) {
+	await game.populate(['playerWhite', 'playerBlack'].map((path) => ({
+		path,
+		populate: { path: 'user', select: GAME_PLAYER_USER_FIELDS },
+	})));
+	for (const player of [game.playerWhite, game.playerBlack]) {
+		if (!player) continue;
+		await ensureDocumentPublicId(player, Player);
+		if (player.user) await ensureDocumentPublicId(player.user, User);
+	}
+	return game;
+}
+
+function gameLookupFilter(gameId) {
 	const lookupId = normalizeLookupId(gameId);
 	if (!lookupId) throw gameError('Game not found', 404, 'GAME_NOT_FOUND');
-	const lookupFilter = isObjectId(lookupId)
+	return isObjectId(lookupId)
 		? { $or: [{ _id: lookupId }, { publicId: lookupId }] }
 		: { publicId: lookupId };
+}
+
+async function inTransaction(work) {
 	const session = await mongoose.startSession();
-	let changed;
 	try {
+		let outcome;
 		await session.withTransaction(async () => {
-			const game = await Game.findOneAndUpdate(
-				{ ...lookupFilter, isFinished: false, isCancelled: { $ne: true } },
-				{ $set: changes },
-				{ session, returnDocument: 'after' },
-			);
-			if (!game) {
-				const existing = await Game.findOne(lookupFilter).select('resultColor isFinished isCancelled').session(session);
-				if (!existing) throw gameError('Game not found', 404, 'GAME_NOT_FOUND');
-				const message = existing.isCancelled
-					? `Game with ID: ${gameId} already cancelled`
-					: `Game with ID: ${gameId} already finished with result ${existing.resultColor}`;
-				throw gameError(message, 409, 'GAME_ALREADY_SETTLED');
-			}
-			// A session cannot run parallel operations. Commit the game and both
-			// player updates together so a failed save leaves the game retryable.
-			const tournament = await Tournament.findById(game.tournament).session(session);
-			const white = await Player.findById(game.playerWhite).session(session);
-			const black = await Player.findById(game.playerBlack).session(session);
-			updatePlayers({ game, tournament, white, black });
-			for (const player of [white, black]) {
-				if (player) await player.save({ session });
-			}
-			changed = { game, tournament, white, black };
+			outcome = await work(session);
 		}, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
-		return changed;
+		return outcome;
 	} finally {
 		await session.endSession();
 	}
+}
+
+// A session cannot run parallel operations, so these reads stay sequential.
+async function loadGameContext(game, session) {
+	const tournament = await Tournament.findById(game.tournament).session(session);
+	const white = await Player.findById(game.playerWhite).session(session);
+	const black = await Player.findById(game.playerBlack).session(session);
+	return { game, tournament, white, black };
+}
+
+async function changeGame(gameId, changes, updatePlayers) {
+	const lookupFilter = gameLookupFilter(gameId);
+	return inTransaction(async (session) => {
+		const game = await Game.findOneAndUpdate(
+			{ ...lookupFilter, isFinished: false, isCancelled: { $ne: true } },
+			{ $set: changes },
+			{ session, returnDocument: 'after' },
+		);
+		if (!game) {
+			const existing = await Game.findOne(lookupFilter).select('resultColor isFinished isCancelled').session(session);
+			if (!existing) throw gameError('Game not found', 404, 'GAME_NOT_FOUND');
+			const message = existing.isCancelled
+				? `Game with ID: ${gameId} already cancelled`
+				: `Game with ID: ${gameId} already finished with result ${existing.resultColor}`;
+			throw gameError(message, 409, 'GAME_ALREADY_SETTLED');
+		}
+		// Commit the game and both player updates together so a failed save
+		// leaves the game retryable.
+		const changed = await loadGameContext(game, session);
+		updatePlayers(changed);
+		for (const player of [changed.white, changed.black]) {
+			if (player) await player.save({ session });
+		}
+		return changed;
+	});
 }
 
 async function lowestFreeBoardNumber(tournamentId, session) {
@@ -247,30 +303,14 @@ class GameService {
 		const game = await findByIdOrPublicId(Game, id);
 		if (!game) throw new Error('Game not found');
 		await ensureDocumentPublicId(game, Game);
-		await game.populate([
-			{
-				path: 'playerWhite',
-				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
-			},
-			{
-				path: 'playerBlack',
-				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
-			},
-		]);
-		if (game.playerWhite) {
-			await ensureDocumentPublicId(game.playerWhite, Player);
-			if (game.playerWhite.user) await ensureDocumentPublicId(game.playerWhite.user, User);
-		}
-		if (game.playerBlack) {
-			await ensureDocumentPublicId(game.playerBlack, Player);
-			if (game.playerBlack.user) await ensureDocumentPublicId(game.playerBlack.user, User);
-		}
+		await populateGamePlayers(game);
 		return serializeGame(game);
 	}
 	/**
-	 * Includes two functions:
+	 * Includes three functions:
 	 * a. createGameFromPairing -> the function that creates the game when the pairing algorithm has decided a pairing
 	 * b. submitGameResult		-> called by the administrator (via controller) when submitting a game result
+	 * c. correctGameResult		-> called by the administrator to fix a result that was recorded wrongly
 	 */
 	async createGameFromPairing(whitePlayerId, blackPlayerId, tournamentId) {
 		if (String(whitePlayerId) === String(blackPlayerId)) {
@@ -358,18 +398,8 @@ class GameService {
    * them from being re-paired while the admin is still entering results.
    */
 	async submitGameResult(gameId, result) {
-		// Normalize incoming result to one of: 'white' | 'black' | 'draw'
-		const normalize = (r) => {
-			if (!r) return null;
-			const v = String(r).toLowerCase().trim();
-			if (v === '1-0' || v === 'white' || v === 'w') return 'white';
-			if (v === '0-1' || v === 'black' || v === 'b') return 'black';
-			if (v === '1/2-1/2' || v === '0.5-0.5' || v === 'draw' || v === '½-½') return 'draw';
-			return null;
-		};
-
-		const resultColor = normalize(result);
-		if (!resultColor) throw new Error('Invalid result value');
+		const resultColor = normalizeResult(result);
+		if (!resultColor) throw gameError('Invalid result value', 400, 'INVALID_RESULT');
 
 		const { game } = await changeGame(
 			gameId, { isFinished: true, resultColor, finishedAt: new Date() },
@@ -386,30 +416,67 @@ class GameService {
 		// Refresh the persisted standing cache before returning. Refreshes are
 		// still serialized per tournament to avoid stale concurrent writes.
 		await scheduleStandingsRefresh(game.tournament);
-
-		await game.populate([
-			{
-				path: 'playerWhite',
-				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
-			},
-			{
-				path: 'playerBlack',
-				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
-			},
-		]);
-
-		if (game.playerWhite) {
-			await ensureDocumentPublicId(game.playerWhite, Player);
-			if (game.playerWhite.user) await ensureDocumentPublicId(game.playerWhite.user, User);
-		}
-		if (game.playerBlack) {
-			await ensureDocumentPublicId(game.playerBlack, Player);
-			if (game.playerBlack.user) await ensureDocumentPublicId(game.playerBlack.user, User);
-		}
+		await populateGamePlayers(game);
 
 		const serialized = serializeGame(game);
 		await this.completeAfterGame(game.tournament);
 		return serialized;
+	}
+
+	/**
+	 * Replaces the result of a finished game, for example after it was entered
+	 * on the wrong board. Only both players' scores, W/D/L and performance move;
+	 * pairing history, availability and the tournament status are unchanged.
+	 * Re-sending the recorded result is a no-op.
+	 */
+	async correctGameResult(gameId, result, { actor = null } = {}) {
+		const resultColor = normalizeResult(result);
+		if (!resultColor) throw gameError('Invalid result value', 400, 'INVALID_RESULT');
+		const lookupFilter = gameLookupFilter(gameId);
+
+		const { game, previousColor, white, black } = await inTransaction(async (session) => {
+			const game = await Game.findOne(lookupFilter).session(session);
+			if (!game) throw gameError('Game not found', 404, 'GAME_NOT_FOUND');
+			if (game.isCancelled || !game.isFinished || !game.resultColor) {
+				const message = game.isCancelled
+					? `Game with ID: ${gameId} was cancelled and has no result to correct`
+					: `Game with ID: ${gameId} has no result yet`;
+				throw gameError(message, 409, 'GAME_NOT_SCORED');
+			}
+			const previousColor = game.resultColor;
+			if (previousColor === resultColor) return { game, previousColor };
+
+			// Snapshot transactions abort on a concurrent write to the game or
+			// either player, and withTransaction retries from this read.
+			game.resultColor = resultColor;
+			await game.save({ session });
+			const context = await loadGameContext(game, session);
+			for (const [player, perspective] of [[context.white, 'white'], [context.black, 'black']]) {
+				if (!player) continue;
+				replaceResultForPlayer({ player, previousColor, resultColor, perspective });
+				await player.save({ session });
+			}
+			return { ...context, previousColor };
+		});
+		await ensureDocumentPublicId(game, Game);
+
+		if (previousColor !== resultColor) {
+			await logEvent(game.tournament, 'game.result_corrected', {
+				message: `Result corrected from ${RESULT_SCORES[previousColor]} to ${RESULT_SCORES[resultColor]}.`,
+				payload: {
+					gameId: game.publicId || String(game._id),
+					boardNumber: game.boardNumber ?? null,
+					previousResult: previousColor,
+					result: resultColor,
+					players: [white, black].filter(Boolean).map((player) => String(player._id)),
+				},
+				actor,
+			});
+			await scheduleStandingsRefresh(game.tournament);
+		}
+
+		await populateGamePlayers(game);
+		return serializeGame(game);
 	}
 
 	async cancelGame(gameId, { actor = null, reason = 'manual', excludePlayerIds = [] } = {}) {
@@ -453,17 +520,7 @@ class GameService {
 		}
 
 		await this.completeAfterGame(game.tournament);
-
-		await game.populate([
-			{
-				path: 'playerWhite',
-				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
-			},
-			{
-				path: 'playerBlack',
-				populate: { path: 'user', select: 'publicId username email globalElo profile.firstName profile.lastName' },
-			},
-		]);
+		await populateGamePlayers(game);
 
 		return serializeGame(game);
 	}

@@ -34,6 +34,9 @@ For setup, runtime architecture, pairing behavior and simulation tools, see
   relies on that alignment. A cancelled game is rolled back from both; a manual
   cancellation blocks the rejected pairing through `lastCancelledOpponent` until the
   player's next game.
+- A result correction (`correctGameResult`, `PUT /api/games/:id/result`) only swaps
+  score, W/D/L and performance for both players. It must not touch `isPlaying`,
+  `waitingSince` or pairing history: by then the players may be in newer games.
 - `backend/scripts/migrateTournamentLifecycle.js` never runs automatically. It makes
   legacy upcoming tournaments manual-start by design (`scheduledStartDate: null`);
   `backend/__tests__/lifecycleMigration.test.js` pins this.

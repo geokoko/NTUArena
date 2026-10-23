@@ -5,6 +5,7 @@ const userService = require('../src/services/userService');
 const Tournament = require('../src/models/Tournament');
 const Player = require('../src/models/Player');
 const Game = require('../src/models/Game');
+const TournamentLog = require('../src/models/TournamentLog');
 
 beforeAll(async () => await connect());
 afterEach(async () => await clearDatabase());
@@ -187,5 +188,101 @@ describe('submitGameResult', () => {
 		await expect(
 			gameService.submitGameResult('nonexistent', '1-0')
 		).rejects.toThrow('Game not found');
+	});
+});
+
+// ─────────────────────────────────────────────
+// correctGameResult
+// ─────────────────────────────────────────────
+describe('correctGameResult', () => {
+	const STAT_FIELDS = ['score', 'wins', 'draws', 'losses', 'gamesPlayed', 'sumOpponentRatings', 'performanceRating'];
+	const statsOf = async (player) => {
+		const doc = await Player.findById(player._id).lean();
+		return Object.fromEntries(STAT_FIELDS.map((field) => [field, doc[field]]));
+	};
+
+	test.each([
+		['1-0', '0-1'],
+		['1-0', '1/2-1/2'],
+		['1/2-1/2', '0-1'],
+		['0-1', '1-0'],
+	])('a %s result corrected to %s matches entering the right result first', async (recorded, corrected) => {
+		const wrong = await setupGameFixture();
+		await gameService.submitGameResult(wrong.game._id.toString(), recorded);
+		const result = await gameService.correctGameResult(wrong.game.publicId, corrected);
+
+		const right = await setupGameFixture();
+		await gameService.submitGameResult(right.game._id.toString(), corrected);
+
+		expect(result.resultColor).toBe((await Game.findById(right.game._id)).resultColor);
+		expect(await statsOf(wrong.whitePlayer)).toEqual(await statsOf(right.whitePlayer));
+		expect(await statsOf(wrong.blackPlayer)).toEqual(await statsOf(right.blackPlayer));
+	});
+
+	test('leaves players in whatever game or wait they moved on to', async () => {
+		const { game, whitePlayer, blackPlayer } = await setupGameFixture();
+		await gameService.submitGameResult(game._id.toString(), '1-0');
+		const waitingSince = new Date('2026-01-01T10:00:00Z');
+		await Player.updateOne({ _id: whitePlayer._id }, { isPlaying: true, waitingSince: null });
+		await Player.updateOne({ _id: blackPlayer._id }, { waitingSince });
+
+		await gameService.correctGameResult(game.publicId, '0-1');
+
+		const white = await Player.findById(whitePlayer._id);
+		const black = await Player.findById(blackPlayer._id);
+		expect(white.isPlaying).toBe(true);
+		expect(white.waitingSince).toBeNull();
+		expect(black.isPlaying).toBe(false);
+		expect(black.waitingSince).toEqual(waitingSince);
+		expect(white.gameHistory.map(String)).toEqual([String(game._id)]);
+	});
+
+	test('refreshes standings and logs who corrected the result', async () => {
+		const { game, tournament, whitePlayer, blackPlayer } = await setupGameFixture();
+		await gameService.submitGameResult(game._id.toString(), '1-0');
+		expect((await Player.findById(whitePlayer._id)).standing).toBe(1);
+
+		await gameService.correctGameResult(game.publicId, '0-1', { actor: { publicId: 'arbiter', username: 'Arbiter' } });
+
+		expect((await Player.findById(blackPlayer._id)).standing).toBe(1);
+		expect((await Player.findById(whitePlayer._id)).standing).toBe(2);
+		const log = await TournamentLog.findOne({ tournamentId: tournament._id, eventType: 'game.result_corrected' }).lean();
+		expect(log).toMatchObject({
+			message: 'Result corrected from 1-0 to 0-1.',
+			payload: { gameId: game.publicId, boardNumber: 1, previousResult: 'white', result: 'black' },
+			actor: { userId: 'arbiter', username: 'Arbiter' },
+		});
+	});
+
+	test('treats the recorded result as a no-op', async () => {
+		const { game, tournament, whitePlayer } = await setupGameFixture();
+		await gameService.submitGameResult(game._id.toString(), 'draw');
+		const before = await statsOf(whitePlayer);
+
+		const result = await gameService.correctGameResult(game.publicId, '1/2-1/2');
+
+		expect(result.resultColor).toBe('draw');
+		expect(await statsOf(whitePlayer)).toEqual(before);
+		expect(await TournamentLog.countDocuments({ tournamentId: tournament._id, eventType: 'game.result_corrected' })).toBe(0);
+	});
+
+	test('rejects games without a recorded result', async () => {
+		const { game } = await setupGameFixture();
+		await expect(gameService.correctGameResult(game.publicId, '1-0'))
+			.rejects.toMatchObject({ status: 409, code: 'GAME_NOT_SCORED' });
+
+		await gameService.cancelGame(game.publicId);
+		await expect(gameService.correctGameResult(game.publicId, '1-0'))
+			.rejects.toMatchObject({ status: 409, code: 'GAME_NOT_SCORED', message: expect.stringContaining('cancelled') });
+	});
+
+	test('rejects invalid results and unknown games', async () => {
+		const { game } = await setupGameFixture();
+		await gameService.submitGameResult(game._id.toString(), '1-0');
+		await expect(gameService.correctGameResult(game.publicId, 'invalid'))
+			.rejects.toMatchObject({ status: 400, message: 'Invalid result value' });
+		await expect(gameService.correctGameResult('missing', '0-1'))
+			.rejects.toMatchObject({ status: 404 });
+		expect((await Game.findById(game._id)).resultColor).toBe('white');
 	});
 });
