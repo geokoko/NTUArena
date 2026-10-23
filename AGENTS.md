@@ -1,259 +1,54 @@
-## 1) What This Repository Is
+# NTUArena
 
-NTUArena is a full-stack OTB chess tournament platform focused on Arena-style real-time operation (Swiss is listed but Arena has the complete implementation path today).
+Arena is the implemented tournament format; Swiss remains roadmap-only.
+For setup, runtime architecture, pairing behavior and simulation tools, see
+[README.md](README.md) and [Tournament Operations Guide](docs/tournament-operations.md).
 
-Core capabilities already implemented:
-- User auth (JWT) with role-based access (`player`, `admin`, `spectator` in schema, mainly `player/admin` in UI)
-- Tournament CRUD and lifecycle (`upcoming` -> `in progress` -> `completed`)
-- Player registration to tournaments (including temp players via CSV)
-- Real-time-ish pairing engine: a per-tournament worker loop that pairs the waiting players stored in MongoDB (currently only supports Arena format, but Swiss is on the roadmap)
-- Game result submission and standings updates
-- CSV import for users and tournament participants
+## Contracts and operational boundaries
 
-Stack:
-- Frontend: React (Create React App), React Router, Axios
-- Backend: Express 5 + Mongoose
-- Infra: MongoDB, Nginx, Docker Compose
+- Public API `id` values come from `publicId`; internal relations use MongoDB
+  ObjectIds. Preserve dual ID/publicId lookup through `backend/src/utils/identifiers.js`.
+- User deletion is soft deletion: `isDeleted=true`, `isActive=false`, and
+  `deletedAt` in `backend/src/models/User.js` and `backend/src/services/userService.js`.
+- Self-registration assigns the `player` role in `backend/src/services/authService.js`.
+- `AUTH_ENABLED=false` bypasses authentication and role checks, including mock
+  admin access. Both `backend/src/middleware/auth.js` and `view/src/contexts/AuthContext.js`
+  implement this mode.
+- User-supplied strings used in MongoDB regex lookups must go through
+  `backend/src/utils/escapeRegex.js`.
+- Browser traffic goes through Nginx: `/api/*` and `/health` reach the backend.
+  `APP_MODE=dev|prod` selects the frontend and proxy configuration in `docker-compose.yml`.
+- The app is deployed on localhost only, so all clients share one rate-limit key
+  (no `trust proxy`; traffic arrives from Nginx). This is accepted; do not report
+  the shared budget or polling load against it as a bug.
+- Run a single backend instance: tournament scheduler timers
+  (`backend/src/services/tournamentScheduler.js`) and pairing workers are owned by
+  that process. MongoDB must be a replica set because game creation and results use transactions.
+- MongoDB is the only store for the pairing pool. A player is waiting when
+  `status: 'active'` and `isPlaying: false`; `backend/src/services/pairing/pairingWorker.js`
+  reads that pool every cycle. Pause, resume, results and cancellations only update
+  the `Player`. Do not reintroduce a second copy of player state (such as a queue)
+  that must be kept in sync. `createGameFromPairing` in `backend/src/services/gameService.js`
+  re-checks availability inside its transaction.
+- `colorHistory[i]` and `recentOpponents[i]` describe the same game, and the scorer
+  relies on that alignment. A cancelled game is rolled back from both; a manual
+  cancellation blocks the rejected pairing through `lastCancelledOpponent` until the
+  player's next game.
+- `backend/scripts/migrateTournamentLifecycle.js` never runs automatically. It makes
+  legacy upcoming tournaments manual-start by design (`scheduledStartDate: null`);
+  `backend/__tests__/lifecycleMigration.test.js` pins this.
+- Both `view/src/pages/TournamentDetail.js` and `view/src/pages/TournamentManage.js`
+  contain admin tournament controls; keep their behavior consistent.
+- `docs/api/grouping.txt` is historical. Current API routes are in `backend/src/routes/`;
+  the frontend API wrapper is `view/src/services/api.js`.
 
-## 2) Runtime Architecture and Request Flow
+## Validation
 
-At runtime, the browser talks only to Nginx on port 80:
-- `/api/*` and `/health` are proxied to backend (`backend:5000`)
-- everything else is proxied to frontend container
-
-Modes:
-- `APP_MODE=dev`: Nginx -> React dev server (`frontend:3000`)
-- `APP_MODE=prod`: Nginx -> built static frontend (`frontend:80`)
-
-Backend startup flow:
-1. `backend/src/server.js` loads env and calls DB connect
-2. `backend/src/config/database.js` retries Mongo connection with backoff
-3. `backend/src/app.js` configures middleware + routes
-4. Pairing workers start only when tournament start endpoint is called
-
-Pairing/game loop flow:
-1. Admin starts tournament -> `tournamentService.startTournament`
-2. `pairingService.startPairingLoop` stamps `waitingSince` on active, idle players and starts the worker
-3. `PairingWorker` reads the waiting pool (`status: 'active'`, `isPlaying: false`) from MongoDB each cycle, matches legal pairs, creates games atomically
-4. Admin submits game result -> `gameService.submitGameResult`
-5. Player stats/rating are updated and freed active players start waiting again (the settle window delays the next pairing)
-
-## 3) Repository Layout (By Directory)
-
-### Root
-- `docker-compose.yml`: orchestrates mongo, mongo-init, backend, frontend, nginx
-- `.env.example`: canonical env template
-- `README.md`: user-facing setup and feature overview
-- `AGENTS.md`: this file
-
-### `backend/`
-- Express API, business logic, data models, tests, simulation script
-
-Important root backend files:
-- `backend/Dockerfile`: production-ish backend image (Node 22 Alpine, healthcheck on `/health`)
-- `backend/entrypoint.sh`: starts `npm start`, waits until health endpoint is ready
-- `backend/jest.config.js`: test config + module mock for the pairing service in tests
-- `backend/package.json`: scripts (`dev`, `test`, `simulate:tournament`)
-
-### `backend/src/` (layered architecture)
-
-#### App/bootstrap
-- `backend/src/app.js`
-  - Security middleware (`helmet`, CORS guardrails)
-  - APP mode / NODE_ENV consistency checks
-  - custom NoSQL sanitization for body/params
-  - rate limiting (skipped in `NODE_ENV=test`)
-  - `/health` route
-  - mounts routes under `/api`
-- `backend/src/server.js`: connects DB and starts Express listener
-
-#### Config
-- `backend/src/config/database.js`: Mongo connect with retry loop and explicit DB name support
-
-#### Middleware
-- `backend/src/middleware/auth.js`
-  - `requireAuth` validates JWT and loads user
-  - `requireRole(...roles)` enforces role checks
-  - if `AUTH_ENABLED=false`, injects a mock admin user and bypasses auth/role checks
-- `backend/src/middleware/asyncHandler.js`: async error wrapper for controllers
-
-#### Models (Mongoose)
-- `backend/src/models/User.js`
-  - auth and profile fields; soft-delete via `isDeleted/isActive/deletedAt`
-  - `publicId` generated by default (external-facing identifier)
-- `backend/src/models/Tournament.js`
-  - name/location/date/timeControl/type/maxPlayers/status
-  - participants array references `Player`
-- `backend/src/models/Player.js`
-  - tournament participant record (linked `user` or `tempName` for CSV temp players)
-  - arena stats: score, entryRating, performanceRating, W/D/L, status, histories
-- `backend/src/models/Game.js`
-  - white/black players, result state, timestamps, cancellation flags
-
-#### Routes
-- `backend/src/routes/auth.js`: `/auth/status`, `/auth/register`, `/auth/login`, `/auth/me`
-- `backend/src/routes/users.js`: admin user management under `/admin/users/*`, plus legacy `/users/register`
-- `backend/src/routes/tournaments.js`: public tournament reads + auth player actions + admin lifecycle/participant actions
-- `backend/src/routes/games.js`: public read by id + admin result submission
-
-#### Controllers
-- thin wrappers in `backend/src/controllers/*Controller.js`
-- validate minimal request fields and delegate to services
-
-#### Services (main business logic)
-- `backend/src/services/authService.js`
-  - register/login/token handling
-  - regex-escaped case-insensitive lookup to prevent regex injection
-  - always forces role to `player` on self-register
-- `backend/src/services/userService.js`
-  - user CRUD, soft-delete, CSV bulk import, payload filtering/sanitization
-- `backend/src/services/tournamentService.js` (largest service)
-  - tournament CRUD/lifecycle
-  - join/leave/pause/resume player
-  - CSV bulk player import (linked users or temp players)
-  - standings/game/player views
-  - active-game cancellation logic on leave/pause
-- `backend/src/services/gameService.js`
-  - create game from pairing transactionally
-  - submit result; updates stats and performance-based live rating
-  - marks freed active players as waiting after results/cancellations
-- `backend/src/services/pairingService.js`
-  - worker lifecycle manager (per tournament worker map)
-  - stamps `waitingSince` on idle players when a worker (re)starts; that pool counts as settled
-- `backend/src/services/pairing/pairingScorer.js`
-  - pair compatibility and scoring:
-    - avoid immediate rematches
-    - limit repeated meetings
-    - enforce color streak constraints
-    - prefer similar score/rating + reward long waits
-- `backend/src/services/pairing/pairingWorker.js`
-  - polling loop:
-    - read up to 80 longest-waiting active, idle players from MongoDB
-    - wait for the settle window since the newest `waitingSince`
-    - pair the pool via `selectBatchPairings`
-    - create games; leftovers and failed pairings simply stay waiting in MongoDB
-- `backend/src/services/pairing/selectBatchPairings.js`
-  - builds a graph of legal pairs (edge cost from `pairingScorer` + cost weights)
-  - picks pairings with Edmonds' Blossom maximum matching (`edmonds-blossom-fixed`) per connected component
-  - the older greedy selector is kept only for tests and `test-scripts/simulatePairingComparison.js`
-- `backend/src/services/pairing/pairingCandidate.js`: Player fields the scorer reads, mapped from the MongoDB pool
-
-#### Utilities
-- `backend/src/utils/publicId.js`: random URL-safe IDs
-- `backend/src/utils/identifiers.js`: dual lookup by Mongo `_id` or `publicId`
-- `backend/src/utils/csvParser.js`: shared parser for user/player CSV import
-- `backend/src/utils/escapeRegex.js`: escaping for user-supplied strings used in Mongo regex lookups
-
-### `backend/__tests__/`
-
-Test strategy:
-- Uses `mongodb-memory-server` (`backend/__tests__/setup.js`)
-- API tests with `supertest` for auth/users/tournaments/games
-- service/unit tests for auth, users, tournaments, games, middleware, CSV parser, identifiers
-- the pairing service is mocked via `backend/__mocks__/`; `pairingWorker.integration.test.js` runs the real worker against the in-memory MongoDB
-
-### `backend/test-scripts/`
-- `simulateTournament.js`: long-running simulator creating tournaments/users, watching pairings/results through Mongo change streams, auto-finishing games, printing standings
-
-### `view/`
-- React SPA and styling
-
-Important frontend root files:
-- `view/Dockerfile.dev`: CRA dev server image
-- `view/Dockerfile.prod`: multi-stage build + nginx static serving
-- `view/nginx.conf`: frontend container nginx config in prod image
-
-### `view/src/` structure
-
-#### App shell
-- `view/src/index.js`: React mount
-- `view/src/App.js`: route tree + `AuthProvider` + `Navbar` + `DynamicBackground`
-
-#### Auth and API
-- `view/src/contexts/AuthContext.js`
-  - bootstraps auth status from `/api/auth/status`
-  - supports `AUTH_ENABLED=false` by auto-auth mock admin
-  - stores token/user in localStorage
-- `view/src/services/api.js`
-  - axios instance + interceptors
-  - attaches bearer token automatically
-  - handles 401 by clearing session and redirecting to login
-  - exports grouped APIs: `authAPI`, `healthAPI`, `userAPI`, `tournamentAPI`, `gameAPI`
-
-#### Routing and pages
-- Public pages:
-  - `pages/Home.js`: marketing/overview + club social links
-  - `pages/Login.js`, `pages/Register.js`: auth forms
-  - `pages/TournamentList.js`: list cards + delete + navigation
-  - `pages/TournamentDetail.js`: primary tournament UI (overview/standings/live games/history/manage)
-  - `pages/ChessboardPage.js`: interactive practice board
-- Protected pages:
-  - `pages/Dashboard.js`: generic dashboard (currently references a non-existent `healthAPI.checkServicesHealth`)
-  - `pages/AdminDashboard.js`: admin links + system health JSON
-  - `pages/AdminCreateUser.js`: manual user creation
-  - `pages/AdminCreateTournament.js`: tournament creation form
-  - `pages/UserDatabasePage.js`: user cards + CSV import + delete
-  - `pages/TournamentManage.js`: admin-focused management surface (overlaps with manage tab in `TournamentDetail`)
-
-#### Components
-- Auth/navigation: `components/ProtectedRoute.js`, `components/Navbar.js`
-- Tournament/admin helpers: `components/CSVImport.js`, `components/GameBoard.js`
-- Chess UI: `components/Chessboard.js` (wrapper over `react-chessboard` + `chess.js`)
-- UI primitives: `Card`, `Button`, `Form`, `Table`, `Spinner`, `Alert`, `Badge`
-- Visual theme/effects: `DynamicBackground`, `DynamicEffects`
-
-#### Frontend utility
-- `view/src/utils/tournamentDisplay.js`: shared status badges, date formatting, display-name logic
-
-### `nginx/`
-- `nginx.dev.conf`: reverse proxy to backend + CRA dev server
-- `nginx.prod.conf`: reverse proxy to backend + built frontend
-
-### `docs/`
-- `docs/diagrams/`: static architecture/UML images
-- `docs/api/grouping.txt`: historical endpoint grouping (partially outdated vs live code)
-
-### `scripts/`
-- `scripts/backup-mongo.sh`: backup mongo container DB to timestamped archive + prune old backups
-
-## 4) Data/Identifier Conventions
-
-- Most API responses expose `id` derived from `publicId`, not Mongo `_id`
-- Internal relations still use ObjectId refs
-- Utility `findByIdOrPublicId` allows both, so many endpoints accept either
-- Soft delete is standard for users; deletion generally means `isDeleted=true` and `isActive=false`
-
-## 5) Important Operational/Codebase Gotchas
-
-- Auth bypass mode is real: `AUTH_ENABLED=false` makes every request act as mock admin.
-- `Dashboard.js` calls `healthAPI.checkServicesHealth()` but `api.js` only defines `checkHealth()`.
-- `TournamentDetail.js` and `TournamentManage.js` both implement admin management flows (duplicated UX paths).
-- `docs/api/grouping.txt` does not exactly match actual route definitions.
-- Rate limiting in backend is disabled in test env by design.
-- The app is deployed on localhost only, so every client shares one rate-limit key (Express does not set `trust proxy`, and all traffic arrives from nginx). This is accepted; do not treat the shared limit budget, or polling load against it, as a bug.
-- MongoDB is the only store for the waiting pool. There is no separate queue: pause/resume/result/cancel only update the `Player`, and the worker sees the change on its next cycle. Do not reintroduce a second copy of player state that has to be kept in sync.
-
-## 6) Where To Change What (Fast Path)
-
-- API endpoint behavior: `backend/src/routes/*` + matching controller/service
-- Tournament rules/pairing behavior: `backend/src/services/tournamentService.js`, `backend/src/services/pairing/*`, `backend/src/services/gameService.js`
-- User/auth policy: `backend/src/services/authService.js`, `backend/src/middleware/auth.js`, `backend/src/services/userService.js`
-- Payload/ID shaping: `backend/src/utils/identifiers.js` and sanitizer helpers in services
-- Frontend API wiring: `view/src/services/api.js`
-- Page behavior: corresponding `view/src/pages/*.js`
-- Shared UI atoms: `view/src/components/*`
-
-## 7) Validation Commands
-
-From repo root:
-- `docker compose up -d --build`
-
-From `backend/`:
-- `npm test`
-- `npm run dev`
-- `npm run simulate:tournament`
-
-From `view/`:
-- `npm start`
-- `npm test -- --watchAll=false`
-- `npm run build`
+- In `backend/`: `npm test`. `backend/jest.config.js` replaces the pairing service
+  with a mock; the suite uses `mongodb-memory-server` via `backend/__tests__/setup.js`.
+  `backend/__tests__/pairingWorker.integration.test.js` runs the real worker against it.
+- CI runs the backend suite in the Dockerfile's `test` stage:
+  `docker build --target test backend` and run the image.
+- `NODE_ENV=test` disables backend rate limiting in `backend/src/app.js`; tests do not validate throttling.
+- In `view/`: `npm test -- --watchAll=false` and `npm run build`.
+- From the repository root: `docker compose up -d --build` starts the full stack.
