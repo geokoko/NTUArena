@@ -129,53 +129,7 @@ function parseCSV(csvText, options = {}) {
 	return { data, errors, headers };
 }
 
-/**
- * Parse a simple single-column CSV (e.g., list of identifiers).
- * @param {string} csvText - Raw CSV content
- * @param {string} columnName - Expected column name (optional, defaults to first column)
- * @returns {{ identifiers: string[], errors: string[] }}
- */
-function parseIdentifierCSV(csvText, columnName = null) {
-	const errors = [];
-	const identifiers = [];
-
-	if (!csvText || typeof csvText !== 'string') {
-		errors.push('CSV content is empty or invalid');
-		return { identifiers, errors };
-	}
-
-	const lines = csvText
-		.replace(/\r\n/g, '\n')
-		.replace(/\r/g, '\n')
-		.split('\n')
-		.filter((line) => line.trim().length > 0);
-
-	if (lines.length === 0) {
-		errors.push('CSV file is empty');
-		return { identifiers, errors };
-	}
-
-	// Check if first line is a header
-	const firstLine = lines[0].trim().toLowerCase();
-	const startIndex = (columnName && firstLine === columnName.toLowerCase()) || 
-		['identifier', 'email', 'username', 'id', 'user'].includes(firstLine) ? 1 : 0;
-
-	for (let i = startIndex; i < lines.length; i++) {
-		const value = lines[i].trim();
-		if (value) {
-			identifiers.push(value);
-		}
-	}
-
-	if (identifiers.length === 0) {
-		errors.push('No valid identifiers found in CSV');
-	}
-
-	return { identifiers, errors };
-}
-
 module.exports = {
 	parseCSV,
-	parseIdentifierCSV,
 	parseLine,
 };

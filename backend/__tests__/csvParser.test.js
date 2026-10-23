@@ -1,4 +1,4 @@
-const { parseCSV, parseIdentifierCSV, parseLine } = require('../src/utils/csvParser');
+const { parseCSV, parseLine } = require('../src/utils/csvParser');
 
 // ─────────────────────────────────────────────
 // parseLine
@@ -103,45 +103,5 @@ describe('parseCSV', () => {
 		const result = parseCSV(csv, { requiredColumns: ['username', 'email'] });
 
 		expect(result.data).toHaveLength(1);
-	});
-});
-
-// ─────────────────────────────────────────────
-// parseIdentifierCSV
-// ─────────────────────────────────────────────
-describe('parseIdentifierCSV', () => {
-	test('parses simple list of identifiers', () => {
-		const csv = 'identifier\njohn\njane';
-		const result = parseIdentifierCSV(csv);
-
-		expect(result.identifiers).toEqual(['john', 'jane']);
-		expect(result.errors).toHaveLength(0);
-	});
-
-	test('auto-detects header row and skips it', () => {
-		const csv = 'username\nalice\nbob';
-		const result = parseIdentifierCSV(csv);
-
-		expect(result.identifiers).toEqual(['alice', 'bob']);
-	});
-
-	test('includes all lines when no header detected', () => {
-		const csv = 'alice\nbob';
-		const result = parseIdentifierCSV(csv);
-
-		expect(result.identifiers).toEqual(['alice', 'bob']);
-	});
-
-	test('returns error for empty input', () => {
-		const result = parseIdentifierCSV('');
-		expect(result.errors.length).toBeGreaterThan(0);
-	});
-
-	test('returns error when no valid identifiers found', () => {
-		const csv = 'identifier\n\n  \n';
-		const result = parseIdentifierCSV(csv);
-
-		// Only the header line, rest are blank
-		expect(result.errors.some(e => e.includes('No valid identifiers'))).toBe(true);
 	});
 });
