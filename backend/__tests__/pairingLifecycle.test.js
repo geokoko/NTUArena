@@ -29,11 +29,12 @@ test('concurrent recovery and start only mark waiting players and start one work
 
 test.each([60000, 0])('startup with override %i settles the existing pool and keeps the environment fallback', async (settleMs) => {
 	Tournament.findById.mockResolvedValue({ tournStatus: 'in progress', settleMs });
-	const now = Date.now();
-	jest.spyOn(Date, 'now').mockReturnValue(now);
+	const before = Date.now();
 	await pairingService.startPairingLoop('tournament');
-	expect(pairingService.markWaitingPlayers).toHaveBeenCalledWith('tournament', new Date(now));
-	expect(PairingWorker).toHaveBeenCalledWith(expect.objectContaining({ settleMs: 30000, settledBefore: now }));
+	expect(pairingService.markWaitingPlayers).toHaveBeenCalledWith('tournament', expect.any(Date));
+	const [, startedAt] = pairingService.markWaitingPlayers.mock.calls[0];
+	expect(startedAt.getTime()).toBeGreaterThanOrEqual(before);
+	expect(PairingWorker).toHaveBeenCalledWith(expect.objectContaining({ settleMs: 30000, settledBefore: startedAt.getTime() }));
 });
 
 test('stopping while marking waiting players prevents a late worker from starting', async () => {
