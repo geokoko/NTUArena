@@ -1,7 +1,7 @@
 # Test stage: Debian-based because mongodb-memory-server (devDep) downloads
 # official mongod binaries built against glibc — Alpine/musl breaks it.
 # libcurl4 is a runtime dep of the downloaded mongod binary.
-FROM node:22-bookworm-slim AS test
+FROM node:25-bookworm-slim AS test
 WORKDIR /app
 ENV NODE_ENV=test
 RUN apt-get update \
@@ -14,7 +14,7 @@ CMD ["npm", "test"]
 
 # Prod stage stays on Alpine. Must be LAST so the default build (no
 # --target) and docker-compose produce the prod image unchanged.
-FROM node:22-alpine AS prod
+FROM node:25-alpine AS prod
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5000
