@@ -181,10 +181,14 @@ with both players back in it. Reopen is only offered while the tournament is
 games. Once pairing has closed, correct the result when the game ends.
 
 Reopen is refused while either player is already in another game (cancel that
-game first) or is paused or withdrawn. The game keeps its board unless a new
-pairing took it; in that case it moves to the lowest free board and the admin
-is told the new number. Each reopen is logged as `game.reopened`.
-API: `POST /api/games/:id/reopen`.
+game first) or is paused or withdrawn. It is also refused once either player
+has played a newer game that was not cancelled: the game has ended at the
+board, so use **Edit result** instead. Cancelling the games paired while the
+wrong result stood normally blocks those pairings until each player's next
+game; reopening lifts those blocks for both sides. The game keeps its board
+unless a new pairing took it; in that case it moves to the lowest free board
+and the admin is told the new number. Each reopen is logged as
+`game.reopened`. API: `POST /api/games/:id/reopen`.
 
 ### Start, close pairing, and finish
 

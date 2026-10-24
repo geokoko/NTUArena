@@ -114,12 +114,14 @@ function replaceResultForPlayer({ player, previousColor, resultColor, perspectiv
 }
 
 // Inverse of applyResultToPlayer for a game that turns out to be still in
-// play: the player is back in it and the game no longer counts.
+// play: the player is back in it and the game no longer counts. Being back in
+// a game lifts a cancellation block, as starting one does.
 function withdrawResultFromPlayer({ player, opponentRating, resultColor, perspective, gameId, lastResultAt }) {
 	const outcome = outcomeFor(resultColor, perspective);
 
 	player.isPlaying = true;
 	player.waitingSince = null;
+	player.lastCancelledOpponent = null;
 	player.gamesPlayed = Math.max(asNumber(player.gamesPlayed) - 1, 0);
 	player.score = asNumber(player.score) - outcome.points;
 	player[outcome.counter] = Math.max(asNumber(player[outcome.counter]) - 1, 0);
@@ -502,8 +504,9 @@ class GameService {
 	 * click on the wrong board. The game is active again, both players are back
 	 * in it, and the result no longer counts. Only allowed while the tournament
 	 * is in progress: that is when the freed players can be paired elsewhere.
-	 * Refused once either player is in another game or no longer active. The
-	 * game keeps its board unless another game took it meanwhile.
+	 * Refused once either player is in another game, is no longer active, or
+	 * has played a newer game that was not cancelled. The game keeps its board
+	 * unless another game took it meanwhile.
 	 */
 	async reopenGame(gameId, { actor = null } = {}) {
 		const lookupFilter = gameLookupFilter(gameId);
@@ -546,6 +549,24 @@ class GameService {
 				}
 			}
 
+			// A newer game that was not cancelled means this one ended at the
+			// board and the players moved on, so only its result can change.
+			// Reopening it would also leave it in their pairing history if it
+			// were cancelled later, because only the latest entry rolls back.
+			const playerIds = [white._id, black._id];
+			const newerGames = await Game.find({
+				_id: { $ne: game._id }, tournament: tournament._id, createdAt: { $gt: game.createdAt },
+				$or: [{ playerWhite: { $in: playerIds } }, { playerBlack: { $in: playerIds } }],
+			}).select('playerWhite playerBlack isCancelled').session(session);
+			const played = newerGames.find((newer) => !newer.isCancelled);
+			if (played) {
+				const mover = [white, black].find((player) => player._id.equals(played.playerWhite) || player._id.equals(played.playerBlack));
+				throw gameError(
+					`${playerName(mover)} has played another game since this one. Use Edit result to change its result.`,
+					409, 'GAME_SUPERSEDED',
+				);
+			}
+
 			const previousBoardNumber = game.boardNumber;
 			const boardTaken = await Game.exists({
 				tournament: tournament._id, isFinished: false, isCancelled: { $ne: true }, boardNumber: previousBoardNumber,
@@ -570,6 +591,20 @@ class GameService {
 					lastResultAt: previousGame?.finishedAt ?? null,
 				});
 				await player.save({ session });
+			}
+
+			// The newer games were all cancelled. They were paired while this
+			// result stood, so these players were still at this board and the
+			// pairings were not rejected on their merits. Lift the blocks those
+			// cancellations left on the other players as well.
+			const displacedIds = newerGames
+				.flatMap((newer) => [newer.playerWhite, newer.playerBlack])
+				.filter((id) => !playerIds.some((own) => own.equals(id)));
+			if (displacedIds.length) {
+				await Player.updateMany(
+					{ _id: { $in: displacedIds }, lastCancelledOpponent: { $in: playerIds } },
+					{ $set: { lastCancelledOpponent: null } },
+				).session(session);
 			}
 			return { game, white, black, previousColor, previousBoardNumber };
 		});

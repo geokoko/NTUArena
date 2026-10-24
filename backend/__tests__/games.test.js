@@ -302,10 +302,19 @@ describe('correctGameResult', () => {
 // reopenGame
 // ─────────────────────────────────────────────
 describe('reopenGame', () => {
-	const PLAYER_FIELDS = ['score', 'wins', 'draws', 'losses', 'gamesPlayed', 'sumOpponentRatings', 'performanceRating', 'isPlaying', 'waitingSince'];
+	const PLAYER_FIELDS = ['score', 'wins', 'draws', 'losses', 'gamesPlayed', 'sumOpponentRatings', 'performanceRating', 'isPlaying', 'waitingSince', 'colorHistory'];
 	const snapshot = async (player) => {
 		const doc = await Player.findById(player._id).lean();
-		return { ...Object.fromEntries(PLAYER_FIELDS.map((field) => [field, doc[field]])), gameHistory: doc.gameHistory.map(String) };
+		return {
+			...Object.fromEntries(PLAYER_FIELDS.map((field) => [field, doc[field]])),
+			gameHistory: doc.gameHistory.map(String),
+			recentOpponents: doc.recentOpponents.map(String),
+			lastCancelledOpponent: doc.lastCancelledOpponent && String(doc.lastCancelledOpponent),
+		};
+	};
+	const blockOf = async (player) => {
+		const { lastCancelledOpponent } = await Player.findById(player._id).lean();
+		return lastCancelledOpponent && String(lastCancelledOpponent);
 	};
 	// A started tournament whose players were paired into the fixture game.
 	const runningFixture = async () => {
@@ -315,6 +324,16 @@ describe('reopenGame', () => {
 		return fixture;
 	};
 	const tempPlayer = (tournament, tempName) => Player.create({ tournament: tournament._id, tempName, isPlaying: true, waitingSince: null });
+	const waitingPlayer = (tournament, tempName) => Player.create({ tournament: tournament._id, tempName });
+	// The fixture players paired by the pairing engine, so the game is in
+	// their color and opponent history as in a real tournament.
+	const pairedFixture = async () => {
+		const fixture = await runningFixture();
+		await Game.deleteOne({ _id: fixture.game._id });
+		await Player.updateMany({ tournament: fixture.tournament._id }, { isPlaying: false });
+		const game = await gameService.createGameFromPairing(fixture.whitePlayer._id, fixture.blackPlayer._id, fixture.tournament._id);
+		return { ...fixture, game };
+	};
 
 	test('puts the game and both players back to before the result', async () => {
 		const { game, whitePlayer, blackPlayer } = await runningFixture();
@@ -373,6 +392,58 @@ describe('reopenGame', () => {
 		});
 		expect(await Game.findById(game._id)).toMatchObject({ isFinished: true, resultColor: 'white' });
 		expect((await Player.findById(whitePlayer._id)).gamesPlayed).toBe(1);
+	});
+
+	test('a reopened game can be scored again and counts once, with pairing history untouched', async () => {
+		const { game, whitePlayer, blackPlayer } = await pairedFixture();
+		const paired = [await snapshot(whitePlayer), await snapshot(blackPlayer)];
+		expect(paired[0]).toMatchObject({ colorHistory: ['white'], recentOpponents: [String(blackPlayer._id)] });
+		await gameService.submitGameResult(game.publicId, '1-0');
+
+		await gameService.reopenGame(game.publicId);
+		expect([await snapshot(whitePlayer), await snapshot(blackPlayer)]).toEqual(paired);
+		await gameService.submitGameResult(game.publicId, '0-1');
+
+		const white = await snapshot(whitePlayer);
+		expect(white).toMatchObject({ score: 0, wins: 0, losses: 1, gamesPlayed: 1, gameHistory: [String(game._id)] });
+		expect(white).toMatchObject({ colorHistory: paired[0].colorHistory, recentOpponents: paired[0].recentOpponents });
+		expect(await snapshot(blackPlayer)).toMatchObject({ score: 1, wins: 1, losses: 0, gamesPlayed: 1 });
+	});
+
+	test('refuses once a player has played a newer game, whose result stands', async () => {
+		const { game, tournament, whitePlayer } = await pairedFixture();
+		await gameService.submitGameResult(game.publicId, '1-0');
+		const cleo = await waitingPlayer(tournament, 'Cleo');
+		const newer = await gameService.createGameFromPairing(whitePlayer._id, cleo._id, tournament._id);
+		await gameService.submitGameResult(newer.publicId, 'draw');
+		const before = await snapshot(whitePlayer);
+
+		await expect(gameService.reopenGame(game.publicId)).rejects.toMatchObject({
+			status: 409, code: 'GAME_SUPERSEDED', message: expect.stringContaining('has played another game since this one'),
+		});
+		expect(await Game.findById(game._id)).toMatchObject({ isFinished: true, resultColor: 'white' });
+		expect(await snapshot(whitePlayer)).toEqual(before);
+	});
+
+	test('reopens once the games paired meanwhile are cancelled, and lifts the blocks those cancellations left', async () => {
+		const { game, tournament, whitePlayer, blackPlayer } = await pairedFixture();
+		const paired = [await snapshot(whitePlayer), await snapshot(blackPlayer)];
+		await gameService.submitGameResult(game.publicId, '1-0');
+		const [cleo, dino] = [await waitingPlayer(tournament, 'Cleo'), await waitingPlayer(tournament, 'Dino')];
+		// Blocked from an earlier cancellation, unrelated to this game.
+		const eve = await Player.create({ tournament: tournament._id, tempName: 'Eve', lastCancelledOpponent: whitePlayer._id });
+		for (const [player, opponent] of [[whitePlayer, cleo], [blackPlayer, dino]]) {
+			const newer = await gameService.createGameFromPairing(player._id, opponent._id, tournament._id);
+			await gameService.cancelGame(newer.publicId, { reason: 'manual' });
+		}
+		expect(await blockOf(whitePlayer)).toBe(String(cleo._id));
+		expect(await blockOf(cleo)).toBe(String(whitePlayer._id));
+
+		await gameService.reopenGame(game.publicId);
+
+		expect([await snapshot(whitePlayer), await snapshot(blackPlayer)]).toEqual(paired);
+		expect([await blockOf(cleo), await blockOf(dino)]).toEqual([null, null]);
+		expect(await blockOf(eve)).toBe(String(whitePlayer._id));
 	});
 
 	test('refuses unscored games, paused players and tournaments that are not in progress', async () => {

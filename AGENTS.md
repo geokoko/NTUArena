@@ -38,8 +38,11 @@ For setup, runtime architecture, pairing behavior and simulation tools, see
   score, W/D/L and performance for both players. It must not touch `isPlaying`,
   `waitingSince` or pairing history: by then the players may be in newer games.
   Reopening (`reopenGame`) is the inverse of a result. It is only allowed while the
-  tournament is `in progress` and both players are active and idle, and it writes
-  the tournament document so that it serializes with pairing and closing.
+  tournament is `in progress`, both players are active and idle, and neither has a
+  newer game that was not cancelled (only the latest pairing-history entry rolls
+  back). It lifts the `lastCancelledOpponent` blocks left by cancelling the games
+  paired meanwhile, and it writes the tournament document so that it serializes
+  with pairing and closing.
 - `backend/scripts/migrateTournamentLifecycle.js` never runs automatically. It makes
   legacy upcoming tournaments manual-start by design (`scheduledStartDate: null`);
   `backend/__tests__/lifecycleMigration.test.js` pins this.
