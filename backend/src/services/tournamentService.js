@@ -14,6 +14,7 @@ const {
 	normalizeLookupId,
 } = require('../utils/identifiers');
 const { exactCaseInsensitive } = require('../utils/escapeRegex');
+const { buildDisplayName } = require('../utils/displayName');
 
 const makeError = (message, status = 400) => {
 	const err = new Error(message);
@@ -25,17 +26,6 @@ const normalizeUser = (user) => {
 	if (!user) return {};
 	if (typeof user.toObject === 'function') return user.toObject();
 	return user;
-};
-
-const buildDisplayName = (user, tempName = null) => {
-	if (!user) {
-		return tempName || 'Unknown Player';
-	}
-	const first = user?.profile?.firstName?.trim?.() || '';
-	const last = user?.profile?.lastName?.trim?.() || '';
-	const parts = [first, last].filter(Boolean);
-	if (parts.length) return parts.join(' ');
-	return user?.username || user?.email || tempName || 'Unknown Player';
 };
 
 const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});

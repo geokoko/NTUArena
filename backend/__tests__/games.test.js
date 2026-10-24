@@ -97,6 +97,17 @@ describe('getGameById', () => {
 			gameService.getGameById('nonexistent')
 		).rejects.toThrow('Game not found');
 	});
+
+	test('names CSV players without an account by their temp name', async () => {
+		const { tournament, whitePlayer } = await setupGameFixture();
+		const guest = await Player.create({ tournament: tournament._id, tempName: 'Guest Player' });
+		const game = await Game.create({ playerWhite: whitePlayer._id, playerBlack: guest._id, tournament: tournament._id, boardNumber: 2 });
+
+		const result = await gameService.getGameById(game.publicId);
+
+		expect(result.playerBlack.name).toBe('Guest Player');
+		expect(result.playerWhite.name).toBe(result.playerWhite.username);
+	});
 });
 
 // ─────────────────────────────────────────────

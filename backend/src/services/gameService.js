@@ -10,6 +10,7 @@ const {
 	isObjectId,
 	normalizeLookupId,
 } = require('../utils/identifiers');
+const { buildDisplayName } = require('../utils/displayName');
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -538,10 +539,10 @@ class GameService {
 						$or: [{ playerWhite: player._id }, { playerBlack: player._id }],
 					}).select('boardNumber').session(session);
 					const where = current?.boardNumber ? `board ${current.boardNumber}` : 'another game';
-					throw gameError(`${participantName(player)} is already playing ${where}. Cancel that game first.`, 409, 'PLAYER_UNAVAILABLE');
+					throw gameError(`${playerName(player)} is already playing ${where}. Cancel that game first.`, 409, 'PLAYER_UNAVAILABLE');
 				}
 				if (player.status !== 'active') {
-					throw gameError(`${participantName(player)} is ${player.status}. Resume them before reopening this game.`, 409, 'PLAYER_UNAVAILABLE');
+					throw gameError(`${playerName(player)} is ${player.status}. Resume them before reopening this game.`, 409, 'PLAYER_UNAVAILABLE');
 				}
 			}
 
@@ -676,17 +677,7 @@ class GameService {
 module.exports = new GameService();
 const toPlain = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc || {});
 
-const buildDisplayName = (user) => {
-	if (!user) return 'Unknown Player';
-	const first = user?.profile?.firstName?.trim?.() || '';
-	const last = user?.profile?.lastName?.trim?.() || '';
-	const parts = [first, last].filter(Boolean);
-	if (parts.length) return parts.join(' ');
-	return user?.username || user?.email || 'Unknown Player';
-};
-
-// CSV temp players have no user account, only a tempName.
-const participantName = (player) => (player?.user ? buildDisplayName(player.user) : player?.tempName || 'A player');
+const playerName = (player) => buildDisplayName(player?.user, player?.tempName);
 
 const summarizeGamePlayer = (player) => {
 	if (!player) return null;
@@ -695,7 +686,7 @@ const summarizeGamePlayer = (player) => {
 	return {
 		id: base.publicId || null,
 		userId: user.publicId || null,
-		name: buildDisplayName(user),
+		name: buildDisplayName(user, base.tempName),
 		username: user.username || null,
 		score: base.score ?? 0,
 		entryRating: base.entryRating ?? user.globalElo ?? 0,
