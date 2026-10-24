@@ -151,10 +151,12 @@ A typical OTB Arena flow:
 
 ### Entering and correcting results
 
-The Active Games table has one row per board, in board order. A game keeps
-its row until it ends; a finished board shows as **Free** until the next
-pairing takes it, and new boards are added at the bottom. Rows therefore do
-not move while new pairings arrive. A game paired while the table is open is
+The Active Games table has one row per board, in board order, up to the
+highest board in use. A game keeps its row until it ends; a finished board
+below the highest one in use shows as **Free** until the next pairing takes it,
+and new boards are added at the bottom. When the highest board finishes, its
+row is removed and the rows above it stay where they are. Rows therefore do not
+move while new pairings arrive. A game paired while the table is open is
 highlighted briefly.
 
 **White wins**, **Black wins** and **Draw** open a confirmation that names the
