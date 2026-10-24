@@ -199,9 +199,8 @@ const TournamentDetail = () => {
 	const getGameResultDisplay = (game) => {
 		if (!game.isFinished) return <span className="badge badge-warning">Ongoing</span>;
 		if (!game.resultColor) return <span className="badge badge-secondary">Cancelled</span>;
-		if (game.resultColor === 'white') return <span className="badge badge-success">1-0</span>;
-		if (game.resultColor === 'black') return <span className="badge badge-success">0-1</span>;
-		return <span className="badge badge-secondary">½-½</span>;
+		const badge = game.resultColor === 'draw' ? 'badge-secondary' : 'badge-success';
+		return <span className={`badge ${badge}`}>{RESULT_SCORES[game.resultColor]}</span>;
 	};
 
 	const getRankClass = (rank) => {
