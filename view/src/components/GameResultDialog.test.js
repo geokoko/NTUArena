@@ -33,12 +33,17 @@ test('a correction starts from the recorded result and needs a different one', a
 	await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
 });
 
-test('Back and Escape close without saving', () => {
+test('Back and Escape close without saving, but not right after opening', () => {
 	const onConfirm = jest.fn();
 	const onClose = jest.fn();
 	render(<GameResultDialog game={finished} initialResult="draw" onConfirm={onConfirm} onClose={onClose} />);
 
 	expect(screen.getByRole('button', { name: 'Confirm ½-½' })).toHaveFocus();
+	fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+	fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+	expect(onClose).not.toHaveBeenCalled();
+
+	jest.spyOn(Date, 'now').mockReturnValue(Date.now() + INPUT_PROTECTION_MS);
 	fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
 	fireEvent.click(screen.getByRole('button', { name: 'Back' }));
 

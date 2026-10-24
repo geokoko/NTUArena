@@ -50,11 +50,11 @@ const GameResultDialog = ({ game, initialResult = null, recordedResult = null, o
 	const justOpened = () => Date.now() - openedAt.current < INPUT_PROTECTION_MS;
 
 	const close = () => {
-		if (!saving) onClose();
+		if (!saving && !justOpened()) onClose();
 	};
 
 	const handleBackdropMouseDown = (event) => {
-		if (event.target === event.currentTarget && !justOpened()) close();
+		if (event.target === event.currentTarget) close();
 	};
 
 	const handleConfirm = async () => {
