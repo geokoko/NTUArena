@@ -51,6 +51,15 @@ test('Back and Escape close without saving, but not right after opening', () => 
 	expect(onConfirm).not.toHaveBeenCalled();
 });
 
+test('a held Enter does not confirm, a fresh press does', () => {
+	render(<GameResultDialog game={finished} initialResult="white" onConfirm={jest.fn()} onClose={jest.fn()} />);
+	const confirm = screen.getByRole('button', { name: 'Confirm 1-0' });
+
+	// fireEvent returns false when the default action (activating the button) was prevented.
+	expect(fireEvent.keyDown(confirm, { key: 'Enter', repeat: true })).toBe(false);
+	expect(fireEvent.keyDown(confirm, { key: 'Enter' })).toBe(true);
+});
+
 test('Tab stays inside the dialog', () => {
 	render(<GameResultDialog game={finished} initialResult="white" onConfirm={jest.fn()} onClose={jest.fn()} />);
 	const confirm = screen.getByRole('button', { name: 'Confirm 1-0' });

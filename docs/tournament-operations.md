@@ -160,9 +160,11 @@ highlighted briefly.
 **White wins**, **Black wins** and **Draw** open a confirmation that names the
 board and both players. Nothing is saved until **Confirm** is selected, and
 the result can still be switched there. The confirmation is tied to the game
-that was clicked, even if the list refreshes behind it. A confirm click within
-0.4 s of opening (for example, a double-click) is ignored. **Cancel** names the
-board and players in its prompt as well.
+that was clicked, even if the list refreshes behind it. For 0.4 s after it
+opens, **Confirm**, **Back**, Escape and clicks outside it are ignored, so the
+second click of a double-click does nothing. Holding Enter on a result button
+does not confirm either: confirming from the keyboard takes a fresh press of
+Enter. **Cancel** names the board and players in its prompt as well.
 
 To fix a result that was recorded wrongly, open **Game History** (latest
 results first) and select **Edit result**. A correction is allowed in any

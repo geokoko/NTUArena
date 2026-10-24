@@ -71,6 +71,12 @@ const GameResultDialog = ({ game, initialResult = null, recordedResult = null, o
 	};
 
 	const handleKeyDown = (event) => {
+		// Enter held on a row button repeats into the focused Confirm once the
+		// opening window has passed. Confirming by keyboard takes a fresh press.
+		if (event.key === 'Enter' && event.repeat) {
+			event.preventDefault();
+			return;
+		}
 		if (event.key === 'Escape') {
 			event.stopPropagation();
 			close();
