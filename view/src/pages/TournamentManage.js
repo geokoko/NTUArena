@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { tournamentAPI, userAPI, gameAPI } from '../services/api';
 import { statusBadge, formatDate } from '../utils/tournamentDisplay';
+import ActiveGamesTable from '../components/ActiveGamesTable';
 import CSVImport from '../components/CSVImport';
 import TournamentCountdown from '../components/TournamentCountdown';
 import TournamentLogs from '../components/TournamentLogs';
@@ -148,21 +149,20 @@ const TournamentManage = () => {
 		[withRefresh, tournamentId]
 	);
 
+	// Rethrow so the result dialog shows the error and stays open.
 	const handleSubmitResult = useCallback(
 		(gameId, result) =>
 			withRefresh(async () => {
 				await gameAPI.submitGameResult(gameId, result);
-			}),
+			}, { rethrow: true }),
 		[withRefresh]
 	);
 
 	const handleCancelGame = useCallback(
-		(gameId) => {
-			if (!window.confirm('Cancel this game? It will not be scored, both players go back to waiting, and this cannot be undone.')) return;
-			return withRefresh(async () => {
+		(gameId) =>
+			withRefresh(async () => {
 				await gameAPI.cancelGame(gameId, 'manual');
-			});
-		},
+			}),
 		[withRefresh]
 	);
 
@@ -450,63 +450,14 @@ const TournamentManage = () => {
 
 				<div className="manage-section mt-3 tournament-manage__panel">
 					<h6 className="text-uppercase text-muted tournament-manage__section-title">Active Games</h6>
-					{derived.activeGames.length === 0 ? (
-						<p className="tournament-manage__empty">No active games at the moment.</p>
-					) : (
-							<div className="table-responsive">
-								<table className="table table-sm align-middle tournament-manage__table">
-									<thead>
-										<tr>
-											<th>White</th>
-											<th>Black</th>
-											<th>Board</th>
-											<th className="text-end">Result</th>
-										</tr>
-									</thead>
-									<tbody>
-										{derived.activeGames.map((game) => (
-											<tr key={game.id}>
-												<td>{game.playerWhite?.name || game.playerWhite?.username || 'Unknown'}</td>
-												<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
-												<td>{game.boardNumber ? `#${game.boardNumber}` : '—'}</td>
-												<td className="text-end">
-													<div className="btn-group btn-group-sm tournament-manage__result-group" role="group">
-														<button
-															className="btn btn-outline-success"
-															onClick={() => handleSubmitResult(game.id, 'white')}
-															disabled={actionLoading}
-														>
-															White
-														</button>
-														<button
-															className="btn btn-outline-dark"
-															onClick={() => handleSubmitResult(game.id, 'black')}
-															disabled={actionLoading}
-														>
-															Black
-														</button>
-														<button
-															className="btn btn-outline-secondary"
-															onClick={() => handleSubmitResult(game.id, 'draw')}
-															disabled={actionLoading}
-														>
-															Draw
-														</button>
-														<button
-															className="btn btn-outline-danger"
-															onClick={() => handleCancelGame(game.id)}
-															disabled={actionLoading}
-														>
-															Cancel
-														</button>
-													</div>
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
-						)}
+					<ActiveGamesTable
+						games={derived.activeGames}
+						canManage
+						onSubmitResult={handleSubmitResult}
+						onCancelGame={handleCancelGame}
+						disabled={actionLoading}
+						tableClassName="tournament-manage__table"
+					/>
 				</div>
 
 				<div className="manage-section mt-3 tournament-manage__panel">

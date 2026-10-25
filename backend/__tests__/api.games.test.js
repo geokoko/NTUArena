@@ -152,6 +152,78 @@ describe('POST /api/games/:id/result', () => {
 
 		expect(res.status).toBe(403);
 	});
+
+	test('returns 400 for an invalid result', async () => {
+		const admin = await registerAndLogin('admin');
+		const { game } = await setupGame(admin.token);
+
+		const res = await request(app)
+			.post(`/api/games/${game._id}/result`)
+			.set('Authorization', `Bearer ${admin.token}`)
+			.send({ result: '2-0' });
+
+		expect(res.status).toBe(400);
+	});
+});
+
+// ─────────────────────────────────────────────
+// PUT /api/games/:id/result
+// ─────────────────────────────────────────────
+describe('PUT /api/games/:id/result', () => {
+	test('admin corrects a recorded result', async () => {
+		const admin = await registerAndLogin('admin');
+		const { game } = await setupGame(admin.token);
+		const result = (value) => request(app).put(`/api/games/${game.publicId}/result`)
+			.set('Authorization', `Bearer ${admin.token}`).send({ result: value });
+
+		expect((await result('0-1')).status).toBe(409);
+		await request(app).post(`/api/games/${game.publicId}/result`)
+			.set('Authorization', `Bearer ${admin.token}`).send({ result: '1-0' });
+
+		const res = await result('0-1');
+		expect(res.status).toBe(200);
+		expect(res.body).toMatchObject({ id: game.publicId, isFinished: true, resultColor: 'black' });
+		const [white, black] = await Promise.all([Player.findById(game.playerWhite), Player.findById(game.playerBlack)]);
+		expect([white.score, white.losses, black.score, black.wins]).toEqual([0, 1, 1, 1]);
+	});
+
+	test('returns 403 for player role', async () => {
+		const admin = await registerAndLogin('admin');
+		const player = await registerAndLogin('player');
+		const { game } = await setupGame(admin.token);
+		await request(app).post(`/api/games/${game.publicId}/result`)
+			.set('Authorization', `Bearer ${admin.token}`).send({ result: '1-0' });
+
+		const res = await request(app).put(`/api/games/${game.publicId}/result`)
+			.set('Authorization', `Bearer ${player.token}`).send({ result: '0-1' });
+
+		expect(res.status).toBe(403);
+		expect((await Game.findById(game._id)).resultColor).toBe('white');
+	});
+});
+
+// ─────────────────────────────────────────────
+// POST /api/games/:id/reopen
+// ─────────────────────────────────────────────
+describe('POST /api/games/:id/reopen', () => {
+	test('only an admin reopens a game scored by mistake', async () => {
+		const admin = await registerAndLogin('admin');
+		const player = await registerAndLogin('player');
+		const { game } = await setupGame(admin.token);
+		await Tournament.updateOne({ _id: game.tournament }, { tournStatus: 'in progress' });
+		await request(app).post(`/api/games/${game.publicId}/result`)
+			.set('Authorization', `Bearer ${admin.token}`).send({ result: '1-0' });
+		const reopen = (token) => request(app).post(`/api/games/${game.publicId}/reopen`)
+			.set('Authorization', `Bearer ${token}`).send({});
+
+		expect((await reopen(player.token)).status).toBe(403);
+		const res = await reopen(admin.token);
+		expect(res.status).toBe(200);
+		expect(res.body).toMatchObject({ id: game.publicId, isFinished: false, resultColor: null, boardNumber: 1 });
+		expect((await reopen(admin.token)).status).toBe(409);
+		const white = await Player.findById(game.playerWhite);
+		expect([white.isPlaying, white.score, white.gamesPlayed]).toEqual([true, 0, 0]);
+	});
 });
 
 describe('POST /api/games/:id/cancel', () => {

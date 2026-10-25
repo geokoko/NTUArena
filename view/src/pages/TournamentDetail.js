@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { tournamentAPI, gameAPI, userAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import ActiveGamesTable from '../components/ActiveGamesTable';
 import CSVImport from '../components/CSVImport';
+import GameResultDialog, { describeGame, RESULT_SCORES } from '../components/GameResultDialog';
 import TournamentCountdown from '../components/TournamentCountdown';
 import UserMultiSelect from '../components/UserMultiSelect';
 import './TournamentDetail.css';
@@ -31,7 +33,9 @@ const TournamentDetail = () => {
 	const [lastUpdated, setLastUpdated] = useState(null);
 	const [actionLoading, setActionLoading] = useState(false);
 	const [actionError, setActionError] = useState('');
-	const [submittingGameId, setSubmittingGameId] = useState(null);
+	const [cancellingGameId, setCancellingGameId] = useState(null);
+	const [correctingGame, setCorrectingGame] = useState(null);
+	const [reopeningGameId, setReopeningGameId] = useState(null);
 	const [selectedHistoryPlayerId, setSelectedHistoryPlayerId] = useState('');
 	const [users, setUsers] = useState([]);
 	const [usersError, setUsersError] = useState('');
@@ -195,9 +199,8 @@ const TournamentDetail = () => {
 	const getGameResultDisplay = (game) => {
 		if (!game.isFinished) return <span className="badge badge-warning">Ongoing</span>;
 		if (!game.resultColor) return <span className="badge badge-secondary">Cancelled</span>;
-		if (game.resultColor === 'white') return <span className="badge badge-success">1-0</span>;
-		if (game.resultColor === 'black') return <span className="badge badge-success">0-1</span>;
-		return <span className="badge badge-secondary">½-½</span>;
+		const badge = game.resultColor === 'draw' ? 'badge-secondary' : 'badge-success';
+		return <span className={`badge ${badge}`}>{RESULT_SCORES[game.resultColor]}</span>;
 	};
 
 	const getRankClass = (rank) => {
@@ -241,13 +244,16 @@ const TournamentDetail = () => {
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}, [players]);
 
+	// Most recently finished first, so a result that was just entered wrongly
+	// is at the top of the list.
 	const historyGames = useMemo(() => {
-		if (!selectedHistoryPlayerId || selectedHistoryPlayerId === 'all') {
-			return completedGames;
-		}
-		return completedGames.filter((game) =>
-			game.playerWhite?.id === selectedHistoryPlayerId || game.playerBlack?.id === selectedHistoryPlayerId
-		);
+		const shown = !selectedHistoryPlayerId || selectedHistoryPlayerId === 'all'
+			? completedGames
+			: completedGames.filter((game) =>
+				game.playerWhite?.id === selectedHistoryPlayerId || game.playerBlack?.id === selectedHistoryPlayerId
+			);
+		const finishedAt = (game) => new Date(game.finishedAt || game.startedAt || 0).getTime() || 0;
+		return [...shown].sort((a, b) => finishedAt(b) - finishedAt(a));
 	}, [completedGames, selectedHistoryPlayerId]);
 
 	const withAdminAction = useCallback(async (fn, { rethrow = false } = {}) => {
@@ -283,30 +289,45 @@ const TournamentDetail = () => {
 			await tournamentAPI.adminRemovePlayer(id, userId);
 		}), [withAdminAction, id]);
 
+	// Errors propagate to the result dialog, which shows them and stays open.
 	const handleSubmitResult = useCallback(async (gameId, result) => {
-		if (!gameId) return;
-		setSubmittingGameId(gameId);
-		try {
-			await gameAPI.submitGameResult(gameId, result);
-			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers(), refreshTournament()]);
-		} catch (err) {
-			alert(err.message || 'Failed to submit result');
-		} finally {
-			setSubmittingGameId(null);
-		}
+		await gameAPI.submitGameResult(gameId, result);
+		await Promise.all([refreshGames(), refreshStandings(), refreshPlayers(), refreshTournament()]);
 	}, [refreshGames, refreshStandings, refreshPlayers, refreshTournament]);
+
+	const handleCorrectResult = useCallback(async (gameId, result) => {
+		await gameAPI.correctGameResult(gameId, result);
+		await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+	}, [refreshGames, refreshStandings, refreshPlayers]);
+
+	const handleReopenGame = useCallback(async (game) => {
+		const prompt = `Reopen ${describeGame(game)}? Use this when the result was entered on a game that is still being played. `
+			+ `The ${RESULT_SCORES[game.resultColor]} result is removed and both players are back in this game.`;
+		if (!window.confirm(prompt)) return;
+		setReopeningGameId(game.id);
+		try {
+			const { data } = await gameAPI.reopenGame(game.id);
+			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers()]);
+			if (data?.boardNumber && data.boardNumber !== game.boardNumber) {
+				alert(`Board #${game.boardNumber} was taken by a new pairing, so the game is now listed on board #${data.boardNumber}.`);
+			}
+		} catch (err) {
+			alert(err.message || 'Failed to reopen game');
+		} finally {
+			setReopeningGameId(null);
+		}
+	}, [refreshGames, refreshStandings, refreshPlayers]);
 
 	const handleCancelGame = useCallback(async (gameId) => {
 		if (!gameId) return;
-		if (!window.confirm('Cancel this game? It will not be scored, both players go back to waiting, and this cannot be undone.')) return;
-		setSubmittingGameId(gameId);
+		setCancellingGameId(gameId);
 		try {
 			await gameAPI.cancelGame(gameId, 'manual');
 			await Promise.all([refreshGames(), refreshStandings(), refreshPlayers(), refreshTournament()]);
 		} catch (err) {
 			alert(err.message || 'Failed to cancel game');
 		} finally {
-			setSubmittingGameId(null);
+			setCancellingGameId(null);
 		}
 	}, [refreshGames, refreshStandings, refreshPlayers, refreshTournament]);
 
@@ -630,69 +651,14 @@ const TournamentDetail = () => {
 							Updated {formatDateTime(lastUpdated)}
 						</div>
 					)}
-					{activeGames.length === 0 ? (
-						<p className="text-muted text-center">No active games at the moment.</p>
-					) : (
-						<div className="table-responsive">
-							<table className="table table-sm align-middle tournament-active__table">
-								<thead>
-									<tr>
-										<th>Board</th>
-										<th>White</th>
-										<th>Black</th>
-										<th>Started</th>
-										<th>Status</th>
-										{isAdmin && <th className="text-end">Set Result</th>}
-									</tr>
-								</thead>
-								<tbody>
-									{activeGames.map((game) => (
-										<tr key={game.id}>
-											<td>{game.boardNumber ? `#${game.boardNumber}` : '—'}</td>
-											<td>{game.playerWhite?.name || game.playerWhite?.username || 'Unknown'}</td>
-											<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
-											<td>{formatDateTime(game.startedAt)}</td>
-											<td>{getGameResultDisplay(game)}</td>
-								{isAdmin && (
-									<td className="text-end">
-										<div className="tournament-active__result-buttons">
-											<button
-												className="btn btn-sm btn-success tournament-active__result-btn tournament-active__result-btn--white"
-												onClick={() => handleSubmitResult(game.id, 'white')}
-												disabled={!!submittingGameId}
-											>
-												White wins
-											</button>
-											<button
-												className="btn btn-sm btn-dark tournament-active__result-btn tournament-active__result-btn--black"
-												onClick={() => handleSubmitResult(game.id, 'black')}
-												disabled={!!submittingGameId}
-											>
-												Black wins
-											</button>
-											<button
-												className="btn btn-sm btn-secondary tournament-active__result-btn tournament-active__result-btn--draw"
-												onClick={() => handleSubmitResult(game.id, 'draw')}
-												disabled={!!submittingGameId}
-											>
-												Draw
-											</button>
-											<button
-												className="btn btn-sm btn-outline-danger tournament-active__result-btn"
-												onClick={() => handleCancelGame(game.id)}
-												disabled={!!submittingGameId}
-											>
-												Cancel
-											</button>
-										</div>
-												</td>
-											)}
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					)}
+					<ActiveGamesTable
+						games={activeGames}
+						canManage={isAdmin}
+						onSubmitResult={handleSubmitResult}
+						onCancelGame={handleCancelGame}
+						disabled={!!cancellingGameId}
+						tableClassName="tournament-active__table"
+					/>
 				</div>
 			)}
 
@@ -724,24 +690,62 @@ const TournamentDetail = () => {
 							<table className="table table-sm align-middle tournament-history__table">
 								<thead>
 									<tr>
+										<th>Board</th>
 										<th>White</th>
 										<th>Black</th>
 										<th>Result</th>
 										<th>Finished</th>
+										{isAdmin && <th className="text-end">Correction</th>}
 									</tr>
 								</thead>
 								<tbody>
 									{historyGames.map((game) => (
 										<tr key={game.id}>
+											<td>{game.boardNumber ? `#${game.boardNumber}` : '—'}</td>
 											<td>{game.playerWhite?.name || game.playerWhite?.username || 'Unknown'}</td>
 											<td>{game.playerBlack?.name || game.playerBlack?.username || 'Unknown'}</td>
 											<td>{getGameResultDisplay(game)}</td>
 											<td>{formatDateTime(game.finishedAt)}</td>
+											{isAdmin && (
+												<td className="text-end">
+													{game.resultColor && !game.isCancelled && (
+														<div className="tournament-history__actions">
+															<button
+																type="button"
+																className="btn btn-sm btn-outline-secondary"
+																onClick={() => setCorrectingGame(game)}
+																disabled={!!reopeningGameId}
+															>
+																Edit result
+															</button>
+															{/* Only while pairing is open, when the freed players could be re-paired. */}
+															{tournament.tournStatus === 'in progress' && (
+																<button
+																	type="button"
+																	className="btn btn-sm btn-outline-warning"
+																	onClick={() => handleReopenGame(game)}
+																	disabled={!!reopeningGameId}
+																>
+																	Reopen
+																</button>
+															)}
+														</div>
+													)}
+												</td>
+											)}
 										</tr>
 									))}
 								</tbody>
 							</table>
 						</div>
+					)}
+					{correctingGame && (
+						<GameResultDialog
+							game={correctingGame}
+							recordedResult={correctingGame.resultColor}
+							onConfirm={(result) => handleCorrectResult(correctingGame.id, result)}
+							onClose={() => setCorrectingGame(null)}
+						/>
 					)}
 				</div>
 			)}

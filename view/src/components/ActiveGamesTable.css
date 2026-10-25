@@ -1,0 +1,73 @@
+/* Every row has the same height, so a free board filling up or a long name
+   never changes where the rows below it sit. */
+.active-games td {
+	height: 3.1rem;
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.active-games__board {
+	width: 4.5rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+
+.active-games__row--free td {
+	color: var(--text-subtle, #c4a882);
+	font-style: italic;
+}
+
+.active-games__row--free .active-games__board {
+	font-style: normal;
+}
+
+/* A game that appears while the table is open gets a short highlight, so a
+   board that just changed hands is noticed before anyone clicks on it. */
+.active-games__row--new {
+	animation: active-games-new 2.5s ease-out;
+}
+
+@keyframes active-games-new {
+	from {
+		background-color: rgba(255, 215, 0, 0.22);
+	}
+}
+
+.active-games__actions {
+	display: flex;
+	gap: 0.35rem;
+	justify-content: flex-end;
+}
+
+.active-games__result-btn {
+	border-radius: 999px;
+	padding: 0.3rem 0.9rem;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+	transition: box-shadow 0.15s ease;
+}
+
+/* No hover lift: a target must not move under the pointer. */
+.active-games .active-games__result-btn:hover:not(:disabled),
+.active-games .active-games__result-btn:active {
+	transform: none;
+	box-shadow: 0 10px 18px rgba(15, 23, 42, 0.18);
+}
+
+.active-games__result-btn--white {
+	background: linear-gradient(135deg, rgba(72, 187, 120, 0.9), rgba(56, 161, 105, 0.9));
+	border-color: rgba(72, 187, 120, 0.9);
+}
+
+.active-games__result-btn--black {
+	background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
+	border-color: rgba(15, 23, 42, 0.9);
+}
+
+.active-games__result-btn--draw {
+	background: linear-gradient(135deg, rgba(148, 163, 184, 0.9), rgba(100, 116, 139, 0.9));
+	border-color: rgba(148, 163, 184, 0.9);
+	color: #0f172a;
+}
