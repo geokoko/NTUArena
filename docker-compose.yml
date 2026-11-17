@@ -1,6 +1,6 @@
 services:
   mongo:
-    image: mongo:8.2
+    image: mongo:9.0
     hostname: mongo
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--quiet"]
     networks:
@@ -21,7 +21,7 @@ services:
 
   # One-shot container: waits for mongod, initiates replica set, then exits
   mongo-init:
-    image: mongo:8.2
+    image: mongo:9.0
     depends_on:
       mongo:
         condition: service_started
