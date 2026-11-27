@@ -1,0 +1,5 @@
+services:
+  mongo:
+    image: "mongo:${MONGO_IMAGE_TAG:?Set MONGO_IMAGE_TAG after following the MongoDB upgrade runbook}"
+  mongo-init:
+    image: "mongo:${MONGO_IMAGE_TAG:?Set MONGO_IMAGE_TAG after following the MongoDB upgrade runbook}"

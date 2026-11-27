@@ -1,3 +1,5 @@
+# Follow the MongoDB upgrade in docs/tournament-operations.md before changing
+# these image tags on an existing deployment.
 services:
   mongo:
     image: mongo:8.2
