@@ -44,6 +44,93 @@ If you change `APP_MODE`, rebuild because Docker Compose selects a different fro
 docker compose up -d --build
 ```
 
+### Upgrade MongoDB from 8.2 to 9.0
+
+The base Compose file stays on `mongo:8.2`. For an existing `mongo-data`
+volume, upgrade the single-node replica set from 8.2 to 8.3 first. Start 9.0 only
+after the 8.3 server reports feature compatibility version (FCV) `8.3` and its
+backup has been verified. Review MongoDB's replica-set guides for
+[8.2 to 8.3](https://www.mongodb.com/docs/v8.3/release-notes/8.3-upgrade-replica-set/)
+and [8.3 to 9.0](https://www.mongodb.com/docs/manual/release-notes/9.0-upgrade-replica-set/)
+and rehearse on a restored copy before upgrading the deployment.
+
+Run these steps from the repository root with the existing Compose project.
+Record the volume name and compare it after each restart. Check the running
+server and FCV at each stage as well.
+
+```bash
+docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data/db"}}{{println .Name}}{{end}}{{end}}' "$(docker compose ps -q mongo)"
+docker compose exec -T mongo mongosh --quiet --eval '
+  printjson({ server: db.version(), primary: db.hello().isWritablePrimary,
+    fcv: db.adminCommand({ getParameter: 1, featureCompatibilityVersion: 1 }).featureCompatibilityVersion })'
+```
+
+Continue only when `primary` is `true` and the server and FCV match the step
+below. An FCV with a `targetVersion` is still transitioning. Wait for the
+command to show a stable FCV before proceeding.
+
+1. With the 8.2 server running, confirm FCV `8.2`. Stop the app and any other
+   database writers. Take an application database backup and verify it by
+   restoring the archive with `mongorestore --archive --gzip` on a separate,
+   empty replica set running the source version. Check the restored collections,
+   document counts and indexes against the source.
+   Keep the archive outside the MongoDB volume and retain it through the rollout.
+
+   ```bash
+   docker compose stop nginx frontend backend
+   MONGO_CONTAINER="$(docker compose ps -q mongo)" BACKUP_DIR="$PWD/backups/pre-8.3" ./scripts/backup-mongo.sh
+   ```
+
+2. Stop the 8.2 server with `docker compose stop -t 120 mongo`. Add the following to
+   the deployment's `.env`. If the project already layers Compose files, keep
+   those files in `COMPOSE_FILE` and append `docker-compose.mongo-upgrade.yml`
+   last. Use the same file list for subsequent commands and restarts.
+
+   ```dotenv
+   COMPOSE_FILE=docker-compose.yml:docker-compose.mongo-upgrade.yml
+   MONGO_IMAGE_TAG=8.3
+   ```
+
+   Check the config for two `mongo:8.3` entries, then start MongoDB on the same volume.
+
+   ```bash
+   docker compose config --images mongo mongo-init
+   docker compose up -d --wait mongo
+   ```
+
+   Confirm server `8.3.x`, primary status and FCV `8.2`. Bring the app back with
+   `docker compose up -d`, check `/health`, and verify existing tournament data
+   and a representative database write before raising FCV.
+
+3. Stop the app and other writers again. On the 8.3 primary, set FCV `8.3` and
+   re-run the server and FCV check. Once the 8.3 server reports stable FCV `8.3`,
+   take and verify a second backup using the same restore check as in step 1.
+
+   ```bash
+   docker compose stop nginx frontend backend
+   docker compose exec -T mongo mongosh --quiet --eval 'db.adminCommand({ setFeatureCompatibilityVersion: "8.3", confirm: true })'
+   ```
+
+   ```bash
+   MONGO_CONTAINER="$(docker compose ps -q mongo)" BACKUP_DIR="$PWD/backups/pre-9.0" ./scripts/backup-mongo.sh
+   ```
+
+4. Stop MongoDB with `docker compose stop -t 120 mongo`. Set `MONGO_IMAGE_TAG=9.0` in
+   the same `.env` and check that `docker compose config --images mongo mongo-init`
+   reports `mongo:9.0` for both services. Run `docker compose up -d --wait mongo`
+   and confirm server `9.0.x`, primary status and FCV `8.3`. Bring the app back
+   with `docker compose up -d` and repeat the application checks from step 2.
+   After a period of stable operation, enable FCV `9.0` and repeat the FCV check.
+
+   ```bash
+   docker compose exec -T mongo mongosh --quiet --eval 'db.adminCommand({ setFeatureCompatibilityVersion: "9.0", confirm: true })'
+   ```
+
+If any stage fails, stop there and preserve `mongo-data` and the backups. For
+recovery, use the matching MongoDB downgrade procedure or restore the previous
+stage's verified archive into a fresh volume on its matching server version.
+A restored archive contains data only up to the time the backup was taken.
+
 ### Local script/test setup
 
 Simulation and test scripts run from `backend/`:
